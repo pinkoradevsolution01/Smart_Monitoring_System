@@ -1,0 +1,65 @@
+# This is a Windows-specific pubspec that excludes Firebase
+# Copy this over pubspec.yaml when building for Windows
+
+name: smart_monitoring_system
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  
+  # Database and persistence
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  
+  # State management and dependency injection
+  get_it: ^9.1.0
+  
+  # Internationalization
+  intl: ^0.20.2
+  
+  # Charts and data visualization
+  fl_chart: ^1.1.1
+  
+  # Barcode scanning and QR codes
+  mobile_scanner: ^7.0.6
+  
+  # Hardware access
+  permission_handler: ^11.0.1
+  
+  # Printing
+  printing: ^5.11.0
+  pdf: ^3.10.0
+  
+  # CCTV and video streaming
+  camera: ^0.10.0+1
+  video_player: ^2.8.1
+  flutter_vlc_player: ^7.4.2
+  http: ^1.1.0
+  connectivity_plus: ^6.1.2
+  path_provider: ^2.1.0
+  image_picker: ^1.0.5
+  file_picker: ^8.1.6
+  
+  # Desktop sqlite ffi for running sqflite on Windows/Linux/macOS
+  sqflite_common_ffi: ^2.4.0
+  shared_preferences: ^2.2.0
+  
+  # Email notifications
+  mailer: ^6.6.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

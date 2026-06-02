@@ -1,0 +1,23 @@
+{
+  // Enable Deno only for Supabase Edge Functions
+  "deno.enable": false,
+  "deno.enablePaths": [
+    "./supabase/functions",
+    "./supabase_functions"
+  ],
+  "deno.unstable": ["--unstable"],
+  
+  // Disable TypeScript for Deno files
+  "[typescript]": {
+    "editor.defaultFormatter": null
+  },
+  
+  // Dart/Flutter settings (existing)
+  "dart.flutterSdkPath": ".fvm/flutter_sdk",
+  "search.exclude": {
+    "**/.fvm": true
+  },
+  "files.watcherExclude": {
+    "**/.fvm": true
+  }
+}

@@ -1,0 +1,155 @@
+========================================
+COPY-PASTE COMMANDS TO FIX EMAIL
+========================================
+
+STEP 1: Get Gmail App Password
+-------------------------------
+Open this URL: https://myaccount.google.com/apppasswords
+Generate new password, copy it, remove spaces
+Example: abcd efgh ijkl mnop → abcdefghijklmnop
+
+
+STEP 2: Open Command Prompt or PowerShell
+-----------------------------------------
+Navigate to project:
+cd C:\smart_monitoring_system
+
+
+STEP 3: Copy-Paste These Commands ONE BY ONE
+--------------------------------------------
+
+Remove expired API keys (these are causing the error):
+
+supabase secrets unset RESEND_API_KEY
+
+supabase secrets unset SENDGRID_API_KEY
+
+
+Set Gmail credentials (replace YOUR_PASSWORD with your actual password):
+
+supabase secrets set SMTP_HOST=smtp.gmail.com
+
+supabase secrets set SMTP_PORT=587
+
+supabase secrets set SMTP_USER=jaybe.gubot01@gmail.com
+
+supabase secrets set SMTP_PASS=YOUR_PASSWORD_HERE
+
+supabase secrets set DEVELOPER_EMAIL=jaybe.gubot01@gmail.com
+
+
+Deploy the function:
+
+supabase functions deploy send-activation-code
+
+
+Verify it worked:
+
+supabase secrets list
+
+
+STEP 4: Test
+------------
+Go to your app and fulfill a customer request.
+Email should send successfully!
+
+
+========================================
+ALTERNATIVE: Use the Batch Script
+========================================
+
+Just double-click: FIX_EMAIL_NOW.bat
+
+It will ask for your Gmail password and do everything automatically!
+
+
+========================================
+MANUAL EMAIL FOR CURRENT CUSTOMER
+========================================
+
+If you need to email the customer right now while fixing the automation:
+
+To: jay-begubot@student.trimexcolleges.edu.ph
+Subject: Your Smart POS Activation Code
+
+Body:
+---
+Hello!
+
+Your Smart POS activation code is ready:
+
+ACTIVATION CODE: 88VDIX91QGS5GAX4WQOJ
+
+HOW TO ACTIVATE:
+1. Open Smart POS app
+2. Tap "Enter Activation Code"
+3. Paste: 88VDIX91QGS5GAX4WQOJ
+4. Tap "Activate"
+
+Valid for 30 days on 1 device.
+
+Questions? Reply to this email.
+
+Best regards,
+Smart Monitoring System Team
+---
+
+
+========================================
+TROUBLESHOOTING
+========================================
+
+Error: "command not found"
+→ Install Supabase CLI: https://supabase.com/docs/guides/cli
+
+Error: "not logged in"
+→ Run: supabase login
+
+Error: "secrets not updating"
+→ Try deleting and re-adding:
+  supabase secrets unset SMTP_PASS
+  supabase secrets set SMTP_PASS=your_password
+
+Still not working?
+→ Check function logs:
+  supabase functions logs send-activation-code --follow
+
+
+========================================
+EXPECTED OUTPUT
+========================================
+
+After running commands, you should see:
+
+✓ Secret SMTP_HOST updated
+✓ Secret SMTP_PORT updated
+✓ Secret SMTP_USER updated
+✓ Secret SMTP_PASS updated
+✓ Secret DEVELOPER_EMAIL updated
+✓ Function deployed successfully
+
+Then in logs when sending email:
+📧 Sending via SMTP: smtp.gmail.com:587
+✅ Email sent via SMTP
+
+
+========================================
+WHY THIS FIXES THE ERROR
+========================================
+
+Error: "authorization grant is invalid, expired, or revoked"
+
+This means:
+- RESEND_API_KEY or SENDGRID_API_KEY was set
+- But the key expired or was revoked
+- The function tries Resend/SendGrid BEFORE Gmail
+
+Solution:
+- Remove expired Resend/SendGrid keys
+- Use Gmail SMTP with fresh App Password
+- Function will use Gmail instead
+
+
+========================================
+Last Updated: March 2, 2026
+========================================

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Auth Callback</title>
+  <link rel="stylesheet" href="/reset_callback.css">
+</head>
+<body>
+  <h2>Authentication Callback</h2>
+  <p>This page extracts tokens from the URL and helps you complete the reset flow.</p>
+  <div class="box">
+    <p><strong>Full URL received:</strong></p>
+    <pre id="fullUrl">(parsing...)</pre>
+
+    <p><strong>Extracted values</strong></p>
+    <pre id="values">(none)</pre>
+
+    <p>
+      <button id="copyBtn">Copy token</button>
+      <button id="openAppBtn">Open in App</button>
+    </p>
+
+    <p class="note">If you don't have the app installed, copy the token and paste it into the app's "Enter OTP" field.</p>
+  </div>
+
+  <script>
+    function parseAll(uri) {
+      const result = {};
+      try {
+        const u = new URL(uri);
+        result.origin = u.origin + u.pathname;
+        // query params
+        u.searchParams.forEach((v,k) => result[k] = v);
+        // fragment params (some providers put tokens in fragment)
+        if (u.hash && u.hash.length>1) {
+          const frag = u.hash.substring(1);
+          const fragParams = new URLSearchParams(frag);
+          fragParams.forEach((v,k)=> result[k] = v);
+        }
+      } catch(e) {
+        // Try fallback parse for non-HTTP schemes
+        try {
+          const qIdx = uri.indexOf('?');
+          const fIdx = uri.indexOf('#');
+          const start = qIdx>=0? qIdx : (fIdx>=0? fIdx : uri.length);
+          const query = (qIdx>=0)? uri.substring(qIdx+1, fIdx>qIdx? fIdx: uri.length) : '';
+          const fragment = (fIdx>=0)? uri.substring(fIdx+1) : '';
+          const qp = new URLSearchParams(query);
+          qp.forEach((v,k)=> result[k]=v);
+          if (fragment) {
+            const fp = new URLSearchParams(fragment);
+            fp.forEach((v,k)=> result[k]=v);
+          }
+        } catch(e2) {
+          // ignore
+        }
+      }
+      return result;
+    }
+
+    (function(){
+      const full = location.href;
+      document.getElementById('fullUrl').textContent = full;
+      const vals = parseAll(full);
+      if (Object.keys(vals).length===0) {
+        document.getElementById('values').textContent = '(no token found in URL)';
+        document.getElementById('copyBtn').disabled = true;
+        document.getElementById('openAppBtn').disabled = true;
+        return;
+      }
+      document.getElementById('values').textContent = JSON.stringify(vals, null, 2);
+
+      // pick best token
+      const token = vals['access_token'] || vals['token'] || vals['accessToken'] || vals['otp'] || vals['recovery_token'] || vals['refresh_token'];
+
+      document.getElementById('copyBtn').addEventListener('click', ()=>{
+        if (!token) return alert('No token found to copy');
+        navigator.clipboard.writeText(token).then(()=> alert('Token copied'));
+      });
+
+      document.getElementById('openAppBtn').addEventListener('click', ()=>{
+        // build app deep link - replace scheme/host if you used something else
+        const scheme = 'smartmonitoring://auth-callback';
+        // append token as query so app can parse it
+        let target = scheme;
+        if (token) target += '?access_token=' + encodeURIComponent(token);
+        // try to open
+        window.location.href = target;
+        // also show instruction in case browser blocked the redirect
+        setTimeout(()=>{
+          alert('If the app did not open, copy the token and paste it into the app OTP dialog.');
+        },800);
+      });
+    })();
+  </script>
+</body>
+</html>

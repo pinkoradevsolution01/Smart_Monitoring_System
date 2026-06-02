@@ -1,0 +1,5 @@
+body { font-family: system-ui, -apple-system, Roboto, Arial, sans-serif; padding: 24px; }
+.box { border: 1px solid #ddd; padding: 16px; border-radius: 8px; background:#fafafa; }
+button { margin-top: 12px; }
+pre { background: #fff; padding: 12px; border-radius:6px; overflow:auto; }
+.note { margin-top: 12px; color: #666; }

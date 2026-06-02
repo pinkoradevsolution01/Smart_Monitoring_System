@@ -1,0 +1,11 @@
+{
+	"terminal.integrated.defaultProfile.windows": "bash",
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "flutter analyze",
+			"type": "shell",
+			"command": "flutter analyze"
+		}
+	]
+}

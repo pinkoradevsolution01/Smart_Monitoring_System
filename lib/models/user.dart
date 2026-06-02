@@ -1,0 +1,135 @@
+enum UserRole {
+  owner,
+  manager,
+  salesPromoter,
+  inventoryClerk,
+  deliveryReceiver,
+  cashier,
+  staff,
+}
+
+class User {
+  final String id;
+  final String name;
+  final String email;
+  final String password;
+  final String? pin;
+  final UserRole role;
+  final String? businessId; // Links user to a business for multi-device sync
+  final DateTime createdAt;
+  final bool isActive;
+  final String authMethod; // 'password' or 'google' - used to identify OAuth users
+
+  User({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.password,
+    this.pin,
+    required this.role,
+    this.businessId,
+    required this.createdAt,
+    this.isActive = true,
+    this.authMethod = 'password',
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'password': password,
+      'pin': pin,
+      'role': role.toString().split('.').last,
+      'businessId': businessId,
+      'createdAt': createdAt.toIso8601String(),
+      'isActive': isActive ? 1 : 0,
+      'authMethod': authMethod,
+    };
+  }
+
+  factory User.fromMap(Map<String, dynamic> map) {
+    final roleStr = (map['role'] ?? 'cashier').toString().toLowerCase();
+    UserRole parsedRole;
+    switch (roleStr) {
+      case 'owner':
+        parsedRole = UserRole.owner;
+        break;
+      case 'manager':
+        parsedRole = UserRole.manager;
+        break;
+      case 'salespromoter':
+      case 'sales_promoter':
+      case 'sales-promoter':
+      case 'sales promoter':
+        parsedRole = UserRole.salesPromoter;
+        break;
+      case 'inventoryclerk':
+      case 'inventory_clerk':
+      case 'inventory-clerk':
+      case 'inventory clerk':
+        parsedRole = UserRole.inventoryClerk;
+        break;
+      case 'deliveryreceiver':
+      case 'delivery_receiver':
+      case 'delivery-receiver':
+      case 'delivery receiver':
+        parsedRole = UserRole.deliveryReceiver;
+        break;
+      case 'cashier':
+        parsedRole = UserRole.cashier;
+        break;
+      default:
+        parsedRole = UserRole.staff;
+    }
+
+    return User(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      email: map['email'] ?? '',
+      password: map['password'] ?? '',
+      pin: map['pin'],
+      role: parsedRole,
+      businessId: map['businessId'],
+      createdAt: map['createdAt'] is String
+          ? DateTime.parse(map['createdAt'])
+          : (map['createdAt'] as DateTime? ?? DateTime.now()),
+      isActive: (map['isActive'] as int?) == 1,
+      authMethod: (map['authMethod'] as String?) ?? 'password',
+    );
+  }
+
+  User copyWith({
+    String? id,
+    String? name,
+    String? email,
+    String? password,
+    String? pin,
+    UserRole? role,
+    String? businessId,
+    DateTime? createdAt,
+    bool? isActive,
+    String? authMethod,
+  }) {
+    return User(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      password: password ?? this.password,
+      pin: pin ?? this.pin,
+      role: role ?? this.role,
+      businessId: businessId ?? this.businessId,
+      createdAt: createdAt ?? this.createdAt,
+      isActive: isActive ?? this.isActive,
+      authMethod: authMethod ?? this.authMethod,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is User && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+}
