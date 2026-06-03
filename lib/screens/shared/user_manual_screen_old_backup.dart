@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:file_picker/file_picker.dart';
@@ -489,9 +488,10 @@ class _UserManualScreenState extends State<UserManualScreen> {
                   Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
-                      scrollCacheExtent: ScrollCacheExtent.pixels(2000),
+                      cacheExtent: 2000,
                       padding: const EdgeInsets.all(24),
-                      itemCount: _sections.length, // Pre-render more items for smooth scrolling
+                      itemCount: _sections
+                          .length, // Pre-render more items for smooth scrolling
                       itemBuilder: (context, index) {
                         final section = _sections[index];
                         return Container(

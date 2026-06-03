@@ -5,6 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:get_it/get_it.dart';
 import '../utils/device_fingerprint.dart';
 import 'supabase_config.dart';
+import 'backend_config.dart';
+import 'backend_api_service.dart';
 import 'user_service.dart';
 import '../models/user.dart';
 
@@ -191,7 +193,15 @@ class LicenseService extends ChangeNotifier {
     }
 
     try {
-      // Check if Supabase is configured
+      if (BackendConfig.useRestBackend) {
+        debugPrint('LicenseService: Validating code via REST backend...');
+        final backendResult = await _validateWithBackend(code);
+        if (backendResult.success) {
+          await _saveActivation(code, backendResult.packageName ?? 'Standard');
+        }
+        return backendResult;
+      }
+
       if (!SupabaseConfig.isConfigured) {
         debugPrint(
           '⚠️ LicenseService: Supabase not configured - using offline mode',
@@ -203,7 +213,6 @@ class LicenseService extends ChangeNotifier {
         return offlineResult;
       }
 
-      // Use Supabase validation (recommended for production)
       debugPrint('LicenseService: Validating code via Supabase...');
       final supabaseResult = await _validateWithSupabase(code);
 
@@ -215,7 +224,6 @@ class LicenseService extends ChangeNotifier {
     } catch (e) {
       debugPrint('LicenseService: Activation error: $e');
 
-      // If Supabase fails, try offline validation as fallback
       final offlineResult = await _validateOffline(code);
       if (offlineResult.success) {
         await _saveActivation(code, offlineResult.packageName ?? 'Standard');
@@ -254,7 +262,8 @@ class LicenseService extends ChangeNotifier {
         debugPrint('LicenseService: Code already used — one-time use only');
         return ActivationResult(
           success: false,
-          message: 'This activation code has already been used. Each code can only be activated once.',
+          message:
+              'This activation code has already been used. Each code can only be activated once.',
         );
       }
 
@@ -278,7 +287,7 @@ class LicenseService extends ChangeNotifier {
       // Get device info and owner's actual name
       final deviceInfo = await DeviceFingerprint.getDeviceInfo();
       final platformName = deviceInfo['platform'] ?? 'Unknown';
-      
+
       // Get the business name from activation_code_requests
       // (This was provided by the developer when they fulfilled the request)
       String businessName = 'Unknown Business';
@@ -289,10 +298,13 @@ class LicenseService extends ChangeNotifier {
             .select('business_name')
             .eq('activation_code', code)
             .maybeSingle();
-        
+
         if (requestResponse != null) {
-          businessName = requestResponse['business_name'] as String? ?? 'Unknown Business';
-          debugPrint('LicenseService: Found business name from request: $businessName');
+          businessName =
+              requestResponse['business_name'] as String? ?? 'Unknown Business';
+          debugPrint(
+            'LicenseService: Found business name from request: $businessName',
+          );
         } else {
           // Fallback: Try to get owner name from local UserService
           if (GetIt.I.isRegistered<UserService>()) {
@@ -300,7 +312,9 @@ class LicenseService extends ChangeNotifier {
             final owners = userService.getUsersByRole(UserRole.owner);
             if (owners.isNotEmpty) {
               businessName = owners.first.name;
-              debugPrint('LicenseService: Using owner name from local UserService: $businessName');
+              debugPrint(
+                'LicenseService: Using owner name from local UserService: $businessName',
+              );
             }
           }
         }
@@ -320,7 +334,9 @@ class LicenseService extends ChangeNotifier {
         }
       }
 
-      debugPrint('LicenseService: Activating code for business: $businessName (platform: $platformName)');
+      debugPrint(
+        'LicenseService: Activating code for business: $businessName (platform: $platformName)',
+      );
 
       // Mark code as used and link to device
       // Store business name (not platform) as device_name for dashboard display
@@ -346,7 +362,8 @@ class LicenseService extends ChangeNotifier {
         'device_id': _deviceId,
         'activation_code': code,
         'package_name': response['package_name'],
-        'device_name': businessName,  // Use business name from activation request
+        'device_name':
+            businessName, // Use business name from activation request
         'activated_at': DateTime.now().toIso8601String(),
         'expires_at': subscriptionExpires.toIso8601String(),
         'status': 'active',
@@ -371,6 +388,29 @@ class LicenseService extends ChangeNotifier {
     } catch (e) {
       debugPrint('LicenseService: Supabase validation error: $e');
       rethrow; // Let caller handle offline fallback
+    }
+  }
+
+  /// Validate activation code using the new REST backend.
+  Future<ActivationResult> _validateWithBackend(String code) async {
+    final apiClient = ApiClient();
+    try {
+      final response = await apiClient.post(
+        'license/activate',
+        body: {'code': code},
+      );
+
+      return ActivationResult(
+        success: response['success'] == true,
+        message: response['message']?.toString() ?? 'Activation failed',
+        packageName: response['package_name']?.toString(),
+      );
+    } catch (e) {
+      debugPrint('LicenseService: Backend validation error: $e');
+      return ActivationResult(
+        success: false,
+        message: 'Backend activation failed: ${e.toString()}',
+      );
     }
   }
 

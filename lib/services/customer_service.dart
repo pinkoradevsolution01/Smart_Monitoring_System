@@ -29,7 +29,7 @@ class CustomerService {
       final itemAmount = item.total; // already accounts for discount
       final pointsForItem = (itemAmount * marginPct).floor();
       total += pointsForItem;
-    }
+    }  
     return total;
   }
 

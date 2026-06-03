@@ -19,5 +19,11 @@
   },
   "files.watcherExclude": {
     "**/.fvm": true
-  }
+  },
+  "java.jdt.ls.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.10-hotspot",
+  "java.import.gradle.java.home": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.10-hotspot",
+  "terminal.integrated.env.windows": {
+    "JAVA_HOME": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.10-hotspot"
+  },
+  "java.configuration.updateBuildConfiguration": "automatic"
 }
