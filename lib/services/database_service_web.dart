@@ -261,6 +261,17 @@ class DatabaseService {
     await updateCustomer(customer.copyWith(isActive: false));
   }
 
+  Future<void> deleteCustomer(int id) async {
+    await _load();
+    _store['loyalty_ledger'] = (_store['loyalty_ledger'] as List<dynamic>)
+        .where((item) => (item['customerId'] as int?) != id)
+        .toList();
+    _store['customers'] = (_store['customers'] as List<dynamic>)
+        .where((item) => (item['id'] as int?) != id)
+        .toList();
+    await _save();
+  }
+
   Future<List<LoyaltyLedgerEntry>> getLoyaltyLedger(int customerId) async {
     await _load();
     final List entries = _store['loyalty_ledger'] as List<dynamic>;

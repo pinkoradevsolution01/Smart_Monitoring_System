@@ -1105,6 +1105,18 @@ class DatabaseService {
     await updateCustomer(customer.copyWith(isActive: false));
   }
 
+  Future<void> deleteCustomer(int id) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'loyalty_ledger',
+        where: 'customerId = ?',
+        whereArgs: [id],
+      );
+      await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
   Future<List<LoyaltyLedgerEntry>> getLoyaltyLedger(int customerId) async {
     final db = await database;
     final rows = await db.query(

@@ -1097,11 +1097,13 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         false;
 
     if (confirm && mounted) {
-      await _customerService.deactivateCustomer(customer.id!);
+      await _customerService.deleteCustomer(customer.id!);
       await _reload();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${customer.fullName} has been deactivated.'),
+          content: Text(
+            '${customer.fullName}\'s membership and loyalty rewards have been deleted.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );

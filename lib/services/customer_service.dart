@@ -29,7 +29,7 @@ class CustomerService {
       final itemAmount = item.total; // already accounts for discount
       final pointsForItem = (itemAmount * marginPct).floor();
       total += pointsForItem;
-    }  
+    }
     return total;
   }
 
@@ -70,6 +70,10 @@ class CustomerService {
 
   Future<void> deactivateCustomer(int id) {
     return _databaseService.deactivateCustomer(id);
+  }
+
+  Future<void> deleteCustomer(int id) {
+    return _databaseService.deleteCustomer(id);
   }
 
   Future<List<LoyaltyLedgerEntry>> getLedger(int customerId) {
