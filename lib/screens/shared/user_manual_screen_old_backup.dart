@@ -485,10 +485,9 @@ class _UserManualScreenState extends State<UserManualScreen> {
                   ),
 
                   // Right Content Area
-                  Expanded(
+                   Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
-                      cacheExtent: 2000,
                       padding: const EdgeInsets.all(24),
                       itemCount: _sections
                           .length, // Pre-render more items for smooth scrolling
