@@ -6,6 +6,29 @@ set(EPHEMERAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ephemeral")
 # Configuration provided via flutter tool.
 include(${EPHEMERAL_DIR}/generated_config.cmake)
 
+# Some machines end up with a stale FLUTTER_ROOT cached in generated_config.cmake
+# after the project is moved. If the generated SDK path no longer exists, fall
+# back to the flutter executable on PATH and derive the SDK root from it.
+if(NOT EXISTS "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat")
+  find_program(FLUTTER_EXE flutter)
+  if(FLUTTER_EXE)
+    get_filename_component(FLUTTER_ROOT "${FLUTTER_EXE}" DIRECTORY)
+    get_filename_component(FLUTTER_ROOT "${FLUTTER_ROOT}" DIRECTORY)
+  endif()
+endif()
+
+if(NOT EXISTS "${FLUTTER_ROOT}/packages/flutter_tools/bin/tool_backend.bat")
+  message(FATAL_ERROR
+    "Unable to locate a valid Flutter SDK root. Update FLUTTER_ROOT or ensure "
+    "flutter is available on PATH.")
+endif()
+
+list(FILTER FLUTTER_TOOL_ENVIRONMENT EXCLUDE REGEX "^FLUTTER_ROOT=")
+set(FLUTTER_TOOL_ENVIRONMENT
+  "FLUTTER_ROOT=${FLUTTER_ROOT}"
+  ${FLUTTER_TOOL_ENVIRONMENT}
+)
+
 # TODO: Move the rest of this into files in ephemeral. See
 # https://github.com/flutter/flutter/issues/57146.
 set(WRAPPER_ROOT "${EPHEMERAL_DIR}/cpp_client_wrapper")

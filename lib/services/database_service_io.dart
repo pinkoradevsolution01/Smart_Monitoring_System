@@ -2080,6 +2080,31 @@ class DatabaseService {
     }
   }
 
+  /// Import database from bytes (for cloud restore)
+  /// WARNING: This will replace all current data
+  Future<void> importDatabaseFromBytes(List<int> bytes) async {
+    try {
+      final db = await database;
+      final dbPath = db.path;
+
+      // Close current database connection
+      await db.close();
+      _database = null;
+
+      // Write bytes to database location
+      final dbFile = File(dbPath);
+      await dbFile.writeAsBytes(bytes);
+
+      debugPrint('✅ Database imported from bytes: ${bytes.length} bytes');
+
+      // Reinitialize database
+      await database;
+    } catch (e) {
+      debugPrint('❌ Import failed: $e');
+      rethrow;
+    }
+  }
+
   // ======================== ATTENDANCE OPERATIONS ========================
 
   /// Replace attendance entries for a user (delete existing then insert provided list).

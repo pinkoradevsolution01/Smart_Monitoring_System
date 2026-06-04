@@ -95,6 +95,11 @@ dependencies:
   # Device authentication (Android/iOS biometric/PIN)
   local_auth: ^2.3.0
 
+  # Google Drive integration for cloud backups
+  google_sign_in: ^6.2.1
+  googleapis: ^11.4.0
+  googleapis_auth: ^1.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
