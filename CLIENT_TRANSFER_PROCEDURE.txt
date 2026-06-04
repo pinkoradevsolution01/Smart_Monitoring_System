@@ -1,0 +1,40 @@
+SMART MONITORING SYSTEM
+OFFLINE CLIENT TRANSFER PROCEDURE
+
+1. Build the Windows release version
+   - Open the project folder in PowerShell.
+   - Run:
+     flutter build windows --release
+
+2. Locate the release files
+   - Go to:
+     build\windows\x64\runner\Release\
+   - The main file is:
+     smart_monitoring_system.exe
+
+3. Package the application
+   - Copy the entire Release folder contents.
+   - Zip the folder for easier transfer.
+   - Send the ZIP file to the client by USB, local network, email, or shared drive.
+
+4. Include the database if needed
+   - If the client needs existing data, include the latest backup .db file.
+   - Use the app's Backup & Restore feature to create the backup.
+   - Transfer the .db backup together with the application files.
+
+5. Client installation steps
+   - Extract the ZIP file to a folder on the client computer.
+   - Open the extracted folder.
+   - Run smart_monitoring_system.exe.
+
+6. Notes
+   - Flutter does not need to be installed on the client machine.
+   - The client does not need your source code.
+   - The application works offline after it is built.
+   - If no database backup is included, the app creates a new local database on first run.
+
+7. Recommended handoff package
+   - Release folder contents
+   - Latest database backup .db file, if required
+   - Short README with the launch file name
+
