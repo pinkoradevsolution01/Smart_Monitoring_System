@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user.dart' as user_model;
 import '../../services/user_service.dart';
 import '../../services/google_auth_service.dart';
@@ -12,6 +11,7 @@ import 'package_selection_screen.dart';
 import '../../services/package_service.dart';
 import '../developer/developer_dashboard.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/backend_api_service.dart';
 
 class OwnerRegistrationScreen extends StatefulWidget {
   const OwnerRegistrationScreen({super.key});
@@ -162,16 +162,21 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
 
         // Record owner as subscriber in Supabase cloud
         try {
-          final supabase = Supabase.instance.client;
-          await supabase.from('subscription_records').insert({
-            'device_id': owner.id,
-            'activation_code': 'GOOGLE_OAUTH_${owner.id}',
-            'package_name': 'owner',
-            'device_name': googleUser['name'],
-            'activated_at': DateTime.now().toIso8601String(),
-            'expires_at': DateTime.now().add(const Duration(days: 365)).toIso8601String(),
-            'status': 'active',
-          });
+          final api = ApiClient();
+          await api.postJson(
+            'license/subscriptions',
+            body: {
+              'device_id': owner.id,
+              'activation_code': 'GOOGLE_OAUTH_${owner.id}',
+              'package_name': 'owner',
+              'device_name': googleUser['name'],
+              'activated_at': DateTime.now().toIso8601String(),
+              'expires_at': DateTime.now()
+                  .add(const Duration(days: 365))
+                  .toIso8601String(),
+              'status': 'active',
+            },
+          );
           debugPrint('✅ Owner recorded as subscriber in Supabase cloud');
         } catch (e) {
           debugPrint('⚠️ Warning: Could not record owner as subscriber: $e');

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/backend_api_service.dart';
 
 class CustomerActivationScreen extends StatefulWidget {
   const CustomerActivationScreen({super.key});
@@ -14,6 +14,7 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
   List<Map<String, dynamic>> _unusedCodes = [];
   bool _isLoading = true;
   String _selectedPackage = 'All';
+  final ApiClient _api = ApiClient();
 
   @override
   void initState() {
@@ -24,18 +25,19 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
   Future<void> _loadUnusedCodes() async {
     setState(() => _isLoading = true);
     try {
-      var query = Supabase.instance.client
-          .from('activation_codes')
-          .select('code, package_name, created_at')
-          .eq('status', 'unused');
+      final response = await _api.getJson(
+        'license/codes/available',
+        queryParameters: {
+          'packageName': _selectedPackage,
+        },
+      );
 
-      if (_selectedPackage != 'All') {
-        query = query.eq('package_name', _selectedPackage);
-      }
+      final codes = response is Map<String, dynamic> && response['codes'] is List
+          ? List<Map<String, dynamic>>.from(response['codes'] as List)
+          : <Map<String, dynamic>>[];
 
-      final response = await query.order('created_at', ascending: false);
       setState(() {
-        _unusedCodes = List<Map<String, dynamic>>.from(response);
+        _unusedCodes = codes;
         _isLoading = false;
       });
     } catch (e) {

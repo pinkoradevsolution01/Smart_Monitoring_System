@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:app_links/app_links.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // sqflite_common_ffi provides a desktop-friendly sqlite implementation.
@@ -29,33 +32,13 @@ import 'services/package_service.dart';
 import 'services/subscriber_service.dart';
 import 'services/shared_api_service.dart';
 import 'services/license_service.dart';
-import 'services/supabase_config.dart';
 import 'services/supabase_sync_service.dart';
 import 'screens/shared/trial_locked_screen.dart';
-import 'package:app_links/app_links.dart';
-import 'dart:async';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase (for license activation and cross-device sync)
-  if (SupabaseConfig.isConfigured) {
-    try {
-      await Supabase.initialize(
-        url: SupabaseConfig.supabaseUrl,
-        anonKey: SupabaseConfig.supabaseAnonKey,
-      );
-      debugPrint('✅ Supabase initialized successfully');
-    } catch (e) {
-      debugPrint('⚠️ Supabase initialization failed: $e');
-      debugPrint('   App will use offline mode for license validation');
-    }
-  } else {
-    debugPrint('⚠️ Supabase not configured - using offline license validation');
-    debugPrint(
-      '   To enable cloud sync, update lib/services/supabase_config.dart',
-    );
-  }
+  debugPrint('✅ Backend auth and sync initialized via REST API');
 
   // Firebase disabled for Windows builds - app runs fully offline
   debugPrint('ℹ️ Running in offline mode (Firebase disabled)');

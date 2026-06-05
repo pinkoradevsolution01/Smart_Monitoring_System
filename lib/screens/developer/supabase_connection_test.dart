@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/backend_api_service.dart';
 
-/// Quick test screen to verify Supabase connection
+/// Quick test screen to verify backend/MySQL connection
 /// Add this to Developer Dashboard for testing
 class SupabaseConnectionTest extends StatefulWidget {
   const SupabaseConnectionTest({super.key});
@@ -15,12 +15,13 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
   bool _isTesting = false;
   Color _statusColor = Colors.grey;
   final List<String> _testResults = [];
+  final ApiClient _api = ApiClient();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🧪 Supabase Connection Test'),
+        title: const Text('Backend Connection Test'),
         backgroundColor: Colors.indigo,
       ),
       body: Padding(
@@ -142,19 +143,17 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
     });
 
     try {
-      final supabase = Supabase.instance.client;
-
-      // Test 1: Check Supabase initialization
-      _addResult(true, 'Supabase client initialized');
+      // Test 1: Check backend client initialization
+      _addResult(true, 'Backend client initialized');
       await Future.delayed(const Duration(milliseconds: 300));
 
       // Test 2: Query activation_codes table
       setState(() => _status = 'Checking activation_codes table...');
       try {
-        final codesResponse = await supabase
-            .from('activation_codes')
-            .select('code, package_name, status')
-            .limit(1);
+        final response = await _api.getJson('license/codes');
+        final codesResponse = response is Map<String, dynamic> && response['codes'] is List
+            ? List<Map<String, dynamic>>.from(response['codes'] as List)
+            : <Map<String, dynamic>>[];
 
         if (codesResponse.isNotEmpty) {
           _addResult(true, 'activation_codes table exists and accessible');
@@ -170,10 +169,13 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
       // Test 3: Count unused codes
       setState(() => _status = 'Counting unused codes...');
       try {
-        final unusedCodes = await supabase
-            .from('activation_codes')
-            .select('code')
-            .eq('status', 'unused');
+        final response = await _api.getJson(
+          'license/codes/available',
+          queryParameters: {'packageName': 'All'},
+        );
+        final unusedCodes = response is Map<String, dynamic> && response['codes'] is List
+            ? List<Map<String, dynamic>>.from(response['codes'] as List)
+            : <Map<String, dynamic>>[];
 
         _addResult(true, 'Found ${unusedCodes.length} unused codes');
       } catch (e) {
@@ -184,10 +186,10 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
       // Test 4: Query subscriptions table
       setState(() => _status = 'Checking subscriptions table...');
       try {
-        final subsResponse = await supabase
-            .from('subscriptions')
-            .select('id, status')
-            .limit(1);
+        final response = await _api.getJson('license/subscriptions');
+        final subsResponse = response is Map<String, dynamic> && response['subscriptions'] is List
+            ? List<Map<String, dynamic>>.from(response['subscriptions'] as List)
+            : <Map<String, dynamic>>[];
 
         _addResult(true, 'subscriptions table exists and accessible');
         if (subsResponse.isNotEmpty) {
@@ -201,9 +203,13 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
       // Test 5: Query subscription_renewals table
       setState(() => _status = 'Checking subscription_renewals table...');
       try {
-        await supabase.from('subscription_renewals').select('id').limit(1);
+        final response = await _api.getJson('license/subscription-renewals');
+        final renewals = response is Map<String, dynamic> && response['renewals'] is List
+            ? List<Map<String, dynamic>>.from(response['renewals'] as List)
+            : <Map<String, dynamic>>[];
 
         _addResult(true, 'subscription_renewals table exists and accessible');
+        _addResult(true, 'Found ${renewals.length} renewal records');
       } catch (e) {
         _addResult(false, 'subscription_renewals error: $e');
       }
@@ -212,7 +218,7 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
       final failedTests = _testResults.where((r) => r.startsWith('❌')).length;
       if (failedTests == 0) {
         setState(() {
-          _status = '✅ All tests passed! Supabase is connected.';
+          _status = '✅ All tests passed! Backend is connected.';
           _statusColor = Colors.green;
         });
       } else {

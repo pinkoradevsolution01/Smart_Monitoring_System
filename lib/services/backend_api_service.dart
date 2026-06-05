@@ -18,6 +18,28 @@ class ApiClient {
     String path, {
     Map<String, String>? queryParameters,
   }) async {
+    final data = await getJson(path, queryParameters: queryParameters);
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    throw Exception('Expected JSON object response from GET $path');
+  }
+
+  Future<Map<String, dynamic>> post(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final data = await postJson(path, body: body);
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    throw Exception('Expected JSON object response from POST $path');
+  }
+
+  Future<dynamic> getJson(
+    String path, {
+    Map<String, String>? queryParameters,
+  }) async {
     final uri = _buildUri(path, queryParameters);
     final response = await _client.get(
       uri,
@@ -26,7 +48,7 @@ class ApiClient {
     return _processResponse(response);
   }
 
-  Future<Map<String, dynamic>> post(
+  Future<dynamic> postJson(
     String path, {
     Map<String, dynamic>? body,
   }) async {
@@ -39,14 +61,27 @@ class ApiClient {
     return _processResponse(response);
   }
 
-  Map<String, dynamic> _processResponse(http.Response response) {
+  Future<dynamic> patchJson(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = _buildUri(path);
+    final response = await _client.patch(
+      uri,
+      headers: BackendConfig.defaultHeaders,
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _processResponse(response);
+  }
+
+  dynamic _processResponse(http.Response response) {
     final statusCode = response.statusCode;
     if (statusCode >= 200 && statusCode < 300) {
       if (response.body.isEmpty) {
         return <String, dynamic>{};
       }
       try {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        return jsonDecode(response.body);
       } catch (e) {
         throw Exception('Unexpected JSON response: ${response.body}');
       }

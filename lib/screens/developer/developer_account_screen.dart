@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:get_it/get_it.dart';
+import '../../services/google_auth_service.dart';
 import '../../services/developer_service.dart';
 import '../shared/developer_auth_screen.dart';
 
@@ -181,13 +181,12 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
   Future<void> _loadDeveloperInfo() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Try to get email from authenticated Supabase user (if signed in with Google)
-    final user = Supabase.instance.client.auth.currentUser;
+    // Try to get email from backend-authenticated Google user first
+    final user = GoogleAuthService().currentUser;
     final String emailToDisplay;
 
-    if (user?.email != null) {
-      // User is signed in with Google OAuth - use their registered email
-      emailToDisplay = user!.email!;
+    if (user != null && user['email'] != null) {
+      emailToDisplay = user['email'].toString();
     } else {
       // No OAuth session - use stored developer email
       emailToDisplay =

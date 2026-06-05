@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/subscription_record.dart';
-import 'supabase_config.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 
-/// Service to fetch and manage subscription records from Supabase cloud database
+/// Service to fetch and manage subscription records from the MySQL backend
 class CloudSubscriptionService extends ChangeNotifier {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final ApiClient _api = ApiClient();
 
   List<SubscriptionRecord> _subscriptions = [];
   bool _isLoading = false;
@@ -25,11 +25,11 @@ class CloudSubscriptionService extends ChangeNotifier {
   int get expiredSubscriptions => _expiredSubscriptions;
   Map<String, int> get packageCounts => _packageCounts;
 
-  /// Fetch all subscription records from Supabase
+  /// Fetch all subscription records from backend
   Future<void> fetchSubscriptions() async {
-    if (!SupabaseConfig.isConfigured) {
+    if (!BackendConfig.useRestBackend) {
       _error =
-          'Supabase not configured. Please set up cloud database credentials.';
+          'Backend not configured. Please set up MySQL backend credentials.';
       notifyListeners();
       return;
     }
@@ -39,20 +39,14 @@ class CloudSubscriptionService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint(
-        'CloudSubscriptionService: Fetching subscriptions from Supabase...',
-      );
+      debugPrint('CloudSubscriptionService: Fetching subscriptions from backend...');
 
-      // Fetch all subscriptions, ordered by most recent first
-      final response = await _supabase
-          .from('subscriptions')
-          .select()
-          .order('activated_at', ascending: false);
+      final response = await _api.getJson('license/subscriptions');
+      final rows = response is Map<String, dynamic> && response['subscriptions'] is List
+          ? List<Map<String, dynamic>>.from(response['subscriptions'] as List)
+          : const <Map<String, dynamic>>[];
 
-      _subscriptions = (response as List)
-          .map((json) => SubscriptionRecord.fromJson(json))
-          .toList();
-
+      _subscriptions = rows.map((json) => SubscriptionRecord.fromJson(json)).toList();
       _calculateStatistics();
 
       debugPrint(
@@ -74,7 +68,6 @@ class CloudSubscriptionService extends ChangeNotifier {
     _activeSubscriptions = _subscriptions.where((s) => s.isActive).length;
     _expiredSubscriptions = _subscriptions.where((s) => s.isExpired).length;
 
-    // Count subscriptions by package
     _packageCounts.clear();
     for (var subscription in _subscriptions) {
       _packageCounts[subscription.packageName] =
@@ -82,7 +75,6 @@ class CloudSubscriptionService extends ChangeNotifier {
     }
   }
 
-  /// Get count of unique devices (subscribers)
   int get uniqueDeviceCount {
     final uniqueDeviceIds = <String>{};
     for (var subscription in _subscriptions) {
@@ -91,7 +83,6 @@ class CloudSubscriptionService extends ChangeNotifier {
     return uniqueDeviceIds.length;
   }
 
-  /// Get count of active unique devices
   int get activeUniqueDeviceCount {
     final uniqueDeviceIds = <String>{};
     for (var subscription in _subscriptions.where((s) => s.isActive)) {
@@ -100,22 +91,18 @@ class CloudSubscriptionService extends ChangeNotifier {
     return uniqueDeviceIds.length;
   }
 
-  /// Get subscriptions by package name
   List<SubscriptionRecord> getSubscriptionsByPackage(String packageName) {
     return _subscriptions.where((s) => s.packageName == packageName).toList();
   }
 
-  /// Get active subscriptions only
   List<SubscriptionRecord> getActiveSubscriptions() {
     return _subscriptions.where((s) => s.isActive).toList();
   }
 
-  /// Get expired subscriptions only
   List<SubscriptionRecord> getExpiredSubscriptions() {
     return _subscriptions.where((s) => s.isExpired).toList();
   }
 
-  /// Search subscriptions by device name or activation code
   List<SubscriptionRecord> searchSubscriptions(String query) {
     final lowercaseQuery = query.toLowerCase();
     return _subscriptions.where((s) {
@@ -125,12 +112,10 @@ class CloudSubscriptionService extends ChangeNotifier {
     }).toList();
   }
 
-  /// Refresh subscriptions (refetch from database)
   Future<void> refresh() async {
     await fetchSubscriptions();
   }
 
-  /// Get subscription by device ID
   SubscriptionRecord? getSubscriptionByDeviceId(String deviceId) {
     try {
       return _subscriptions.firstWhere((s) => s.deviceId == deviceId);
@@ -139,16 +124,12 @@ class CloudSubscriptionService extends ChangeNotifier {
     }
   }
 
-  /// Export subscription data as CSV string
   String exportToCsv() {
     final buffer = StringBuffer();
-
-    // CSV Header
     buffer.writeln(
       'ID,Device ID,Device Name,Activation Code,Package,Status,Activated At,Expires At,Days Remaining',
     );
 
-    // CSV Rows
     for (var sub in _subscriptions) {
       buffer.writeln(
         '${sub.id},'

@@ -4,7 +4,7 @@ import 'package:get_it/get_it.dart';
 import '../../services/package_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/google_auth_service.dart';
-import '../../services/supabase_config.dart';
+import '../../services/backend_config.dart';
 import '../../models/admin_account.dart';
 import 'package_selection_screen.dart';
 import 'loading_screen.dart';
@@ -170,14 +170,13 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
     }
   }
 
-  /// Sign in with Gmail via Supabase OAuth
+  /// Sign in with Gmail via backend-backed Google OAuth
   /// NOTE: Google OAuth requires additional setup for Windows desktop:
   /// Google Sign In for Developer/Founder Account
-  /// Uses GoogleAuthService for consistent authentication flow
   Future<void> _signInWithGoogle() async {
-    if (!SupabaseConfig.isConfigured) {
+    if (!BackendConfig.useRestBackend) {
       _showError(
-        'Supabase not configured. Please set up Supabase credentials first.',
+        'Backend not configured. Please start the Node.js backend first.',
       );
       return;
     }
@@ -185,7 +184,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
     setState(() => _isGoogleLoading = true);
 
     try {
-      // Ensure any existing Supabase/Google session is cleared so the browser
+      // Ensure any existing session is cleared so the browser
       // shows an account chooser instead of reusing an already-authenticated owner.
       await _googleAuth.signOut();
       await _googleAuth.clearSession();
@@ -443,7 +442,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
                       const SizedBox(height: 24),
 
                       // Divider with "OR"
-                      if (SupabaseConfig.isConfigured) ...[
+                      if (BackendConfig.useRestBackend) ...[
                         Row(
                           children: [
                             Expanded(child: Divider(color: Colors.grey[600])),
