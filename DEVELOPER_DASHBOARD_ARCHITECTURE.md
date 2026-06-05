@@ -357,7 +357,7 @@ Suggested stack for the separate website:
 - Frontend: Next.js or React
 - UI: Tailwind CSS or a dashboard component system
 - Backend: Node.js with Express
-- Database: MySQL 
+- Database: MySQL
 - Auth: Secure cookie sessions or JWT
 - Email: SMTP or transactional email provider
 - Logging: Database audit table plus optional external logging
