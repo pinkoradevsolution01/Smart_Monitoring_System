@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:get_it/get_it.dart';
 import '../models/subscriber.dart';
 import '../models/subscription_record.dart';
 import '../models/user.dart';
+import 'backend_api_service.dart';
 import 'cloud_subscription_service.dart';
 import 'admin_service.dart';
 import 'user_service.dart';
@@ -19,6 +19,7 @@ class SubscriberService extends ChangeNotifier {
 
   static const String _key = 'subscribers_data';
   final Map<String, Subscriber> _subs = {};
+  final ApiClient _api = ApiClient();
 
   List<Subscriber> get subscribers => _subs.values.toList();
 
@@ -255,17 +256,16 @@ class SubscriberService extends ChangeNotifier {
           // using the activation code from the subscription
           String customerEmail = subscriberName; // Fallback to business name
           try {
-            final supabase = Supabase.instance.client;
             debugPrint('[SubscriberService] Looking up email for code: ${subscription.activationCode}');
-            
-            final emailResponse = await supabase
-                .from('activation_code_requests')
-                .select('contact_email')
-                .eq('activation_code', subscription.activationCode)
-                .maybeSingle();
-            
-            if (emailResponse != null) {
-              customerEmail = emailResponse['contact_email'] as String? ?? subscriberName;
+
+            final emailResponse = await _api.getJson(
+              'license/requests/by-code/${Uri.encodeComponent(subscription.activationCode)}',
+            );
+
+            if (emailResponse is Map<String, dynamic> &&
+                emailResponse['request'] is Map) {
+              final request = Map<String, dynamic>.from(emailResponse['request'] as Map);
+              customerEmail = request['contact_email'] as String? ?? subscriberName;
               debugPrint('[SubscriberService] ✅ Found email for $subscriberName: $customerEmail');
             } else {
               debugPrint('[SubscriberService] ⚠️ No email request found for code: ${subscription.activationCode}');

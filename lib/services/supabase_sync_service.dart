@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
@@ -7,7 +6,8 @@ import '../models/sale_item.dart';
 import '../models/supplier.dart';
 import '../models/damage_report.dart';
 import 'database_service.dart';
-import 'supabase_config.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 
 /// Comprehensive cloud sync service for Supabase integration
 /// Syncs all business data: products, sales, inventory, purchases, suppliers, etc.
@@ -16,7 +16,7 @@ class SupabaseSyncService extends ChangeNotifier {
   factory SupabaseSyncService() => _instance;
   SupabaseSyncService._internal();
 
-  final _supabase = Supabase.instance.client;
+  final _api = ApiClient();
   final _uuid = const Uuid();
 
   String? _businessId;
@@ -31,7 +31,7 @@ class SupabaseSyncService extends ChangeNotifier {
   DateTime? get lastSyncTime => _lastSyncTime;
   Map<String, int> get syncStats => _syncStats;
   String? get businessId => _businessId;
-  bool get isConfigured => SupabaseConfig.isConfigured && _businessId != null;
+  bool get isConfigured => BackendConfig.useRestBackend && _businessId != null;
 
   /// Initialize business context (call this after license activation)
   Future<void> initializeBusiness({
@@ -39,8 +39,8 @@ class SupabaseSyncService extends ChangeNotifier {
     required String ownerEmail,
     String? existingBusinessId,
   }) async {
-    if (!SupabaseConfig.isConfigured) {
-      throw Exception('Supabase not configured');
+    if (!BackendConfig.useRestBackend) {
+      throw Exception('Backend not configured');
     }
 
     try {
@@ -48,26 +48,16 @@ class SupabaseSyncService extends ChangeNotifier {
         // Use existing business ID
         _businessId = existingBusinessId;
       } else {
-        // Check if business already exists
-        final existing = await _supabase
-            .from('businesses')
-            .select()
-            .eq('owner_email', ownerEmail)
-            .maybeSingle();
-
-        if (existing != null) {
-          _businessId = existing['id'];
-        } else {
-          // Create new business
-          _businessId = _uuid.v4();
-          await _supabase.from('businesses').insert({
-            'id': _businessId,
-            'name': businessName,
-            'owner_id': _uuid.v4(), // Generate a unique owner ID
-            'owner_email': ownerEmail,
-            'is_active': true,
-            'created_at': DateTime.now().toIso8601String(),
-          });
+        final response = await _api.postJson(
+          'business/init',
+          body: {
+            'businessName': businessName,
+            'ownerEmail': ownerEmail,
+            'existingBusinessId': existingBusinessId,
+          },
+        );
+        if (response is Map<String, dynamic>) {
+          _businessId = response['businessId']?.toString();
         }
       }
 
@@ -137,14 +127,18 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('📥 Starting restore from Supabase...');
 
       final db = DatabaseService();
+      final payload = await _api.getJson(
+        'sync/pull',
+        queryParameters: {'businessId': _businessId!},
+      );
 
       // Pull data in order (respecting foreign keys)
-      await _pullSuppliers(db);
-      await _pullProducts(db);
-      await _pullSales(db);
-      await _pullInventoryMovements(db);
-      await _pullPurchaseOrders(db);
-      await _pullDamageReports(db);
+      await _pullSuppliers(db, payload);
+      await _pullProducts(db, payload);
+      await _pullSales(db, payload);
+      await _pullInventoryMovements(db, payload);
+      await _pullPurchaseOrders(db, payload);
+      await _pullDamageReports(db, payload);
 
       _lastSyncTime = DateTime.now();
       _isSyncing = false;
@@ -219,7 +213,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('products').upsert(productData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'products': productData},
+      );
       _syncStats['products_pushed'] = products.length;
       debugPrint('✅ Pushed ${products.length} products');
     } catch (e) {
@@ -261,7 +258,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('sales').upsert(salesData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'sales': salesData},
+      );
       _syncStats['sales_pushed'] = sales.length;
       debugPrint('✅ Pushed ${sales.length} sales');
 
@@ -294,7 +294,10 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       if (allItems.isNotEmpty) {
-        await _supabase.from('sale_items').upsert(allItems);
+        await _api.postJson(
+          'sync/push',
+          body: {'businessId': _businessId, 'saleItems': allItems},
+        );
         _syncStats['sale_items_pushed'] = allItems.length;
         debugPrint('✅ Pushed ${allItems.length} sale items');
       }
@@ -335,7 +338,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('inventory_movements').upsert(movementData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'inventoryMovements': movementData},
+      );
       _syncStats['inventory_movements_pushed'] = movements.length;
       debugPrint('✅ Pushed ${movements.length} inventory movements');
     } catch (e) {
@@ -371,7 +377,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('suppliers').upsert(supplierData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'suppliers': supplierData},
+      );
       _syncStats['suppliers_pushed'] = suppliers.length;
       debugPrint('✅ Pushed ${suppliers.length} suppliers');
     } catch (e) {
@@ -408,7 +417,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('purchase_orders').upsert(orderData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'purchaseOrders': orderData},
+      );
       _syncStats['purchase_orders_pushed'] = orders.length;
       debugPrint('✅ Pushed ${orders.length} purchase orders');
     } catch (e) {
@@ -449,7 +461,10 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
-      await _supabase.from('damage_reports').upsert(reportData);
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'damageReports': reportData},
+      );
       _syncStats['damage_reports_pushed'] = reports.length;
       debugPrint('✅ Pushed ${reports.length} damage reports');
     } catch (e) {
@@ -462,14 +477,13 @@ class SupabaseSyncService extends ChangeNotifier {
   // PULL METHODS (Cloud → Local)
   // ============================================================================
 
-  Future<void> _pullProducts(DatabaseService db) async {
+  Future<void> _pullProducts(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('products')
-          .select()
-          .eq('business_id', _businessId!);
+      final response = payload['products'] is List
+          ? List<Map<String, dynamic>>.from(payload['products'] as List)
+          : <Map<String, dynamic>>[];
 
-      final products = (response as List).map((data) {
+      final products = response.map((data) {
         return Product(
           id: int.tryParse(data['id'].toString()),
           barcode: data['barcode'] ?? '',
@@ -498,15 +512,23 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullSales(DatabaseService db) async {
+  Future<void> _pullSales(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('sales')
-          .select('*, sale_items(*)')
-          .eq('business_id', _businessId!);
+      final response = payload['sales'] is List
+          ? List<Map<String, dynamic>>.from(payload['sales'] as List)
+          : <Map<String, dynamic>>[];
+      final saleItems = payload['saleItems'] is List
+          ? List<Map<String, dynamic>>.from(payload['saleItems'] as List)
+          : <Map<String, dynamic>>[];
 
-      final sales = (response as List).map((data) {
-        final items = (data['sale_items'] as List).map((itemData) {
+      final itemsBySale = <String, List<Map<String, dynamic>>>{};
+      for (final item in saleItems) {
+        final saleId = item['sale_id']?.toString() ?? '';
+        itemsBySale.putIfAbsent(saleId, () => []).add(item);
+      }
+
+      final sales = response.map((data) {
+        final items = (itemsBySale[data['id']?.toString()] ?? []).map((itemData) {
           final unitPrice = (itemData['unit_price'] as num).toDouble();
           final quantity = itemData['quantity'] as int;
           final discount = (itemData['discount'] as num?)?.toDouble() ?? 0.0;
@@ -550,15 +572,14 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullInventoryMovements(DatabaseService db) async {
+  Future<void> _pullInventoryMovements(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('inventory_movements')
-          .select()
-          .eq('business_id', _businessId!);
+      final response = payload['inventoryMovements'] is List
+          ? List<Map<String, dynamic>>.from(payload['inventoryMovements'] as List)
+          : <Map<String, dynamic>>[];
 
-      _syncStats['inventory_movements_pulled'] = (response as List).length;
-      debugPrint('✅ Pulled ${(response).length} inventory movements');
+      _syncStats['inventory_movements_pulled'] = response.length;
+      debugPrint('✅ Pulled ${response.length} inventory movements');
       // Note: Local InventoryMovement model may need adjustments
     } catch (e) {
       debugPrint('❌ Error pulling inventory movements: $e');
@@ -566,14 +587,13 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullSuppliers(DatabaseService db) async {
+  Future<void> _pullSuppliers(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('suppliers')
-          .select()
-          .eq('business_id', _businessId!);
+      final response = payload['suppliers'] is List
+          ? List<Map<String, dynamic>>.from(payload['suppliers'] as List)
+          : <Map<String, dynamic>>[];
 
-      final suppliers = (response as List).map((data) {
+      final suppliers = response.map((data) {
         return Supplier(
           id: int.tryParse(data['id'].toString()),
           name: data['name'],
@@ -599,15 +619,14 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullPurchaseOrders(DatabaseService db) async {
+  Future<void> _pullPurchaseOrders(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('purchase_orders')
-          .select()
-          .eq('business_id', _businessId!);
+      final response = payload['purchaseOrders'] is List
+          ? List<Map<String, dynamic>>.from(payload['purchaseOrders'] as List)
+          : <Map<String, dynamic>>[];
 
-      _syncStats['purchase_orders_pulled'] = (response as List).length;
-      debugPrint('✅ Pulled ${(response).length} purchase orders');
+      _syncStats['purchase_orders_pulled'] = response.length;
+      debugPrint('✅ Pulled ${response.length} purchase orders');
       debugPrint(
         '⚠️ Purchase order line items not synced (requires additional implementation)',
       );
@@ -617,14 +636,13 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullDamageReports(DatabaseService db) async {
+  Future<void> _pullDamageReports(DatabaseService db, Map<String, dynamic> payload) async {
     try {
-      final response = await _supabase
-          .from('damage_reports')
-          .select()
-          .eq('business_id', _businessId!);
+      final response = payload['damageReports'] is List
+          ? List<Map<String, dynamic>>.from(payload['damageReports'] as List)
+          : <Map<String, dynamic>>[];
 
-      final reports = (response as List).map((data) {
+      final reports = response.map((data) {
         final quantity = data['quantity'] as int;
         final unitPrice = 0.0; // Not stored in cloud, would need product lookup
         return DamageReport(

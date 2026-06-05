@@ -1,10 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:get_it/get_it.dart';
 import '../utils/device_fingerprint.dart';
-import 'supabase_config.dart';
 import 'backend_config.dart';
 import 'backend_api_service.dart';
 import 'user_service.dart';
@@ -23,8 +21,7 @@ class LicenseService extends ChangeNotifier {
       'used_activation_codes'; // One-time code tracking (legacy - now uses Supabase)
   static const String _deviceIdKey = 'device_id'; // Store device ID locally
 
-  // Supabase client (initialized in main.dart)
-  SupabaseClient get _supabase => Supabase.instance.client;
+  final ApiClient _api = ApiClient();
 
   String? _deviceId; // Cached device ID
 
@@ -202,25 +199,14 @@ class LicenseService extends ChangeNotifier {
         return backendResult;
       }
 
-      if (!SupabaseConfig.isConfigured) {
-        debugPrint(
-          '⚠️ LicenseService: Supabase not configured - using offline mode',
-        );
-        final offlineResult = await _validateOffline(code);
-        if (offlineResult.success) {
-          await _saveActivation(code, offlineResult.packageName ?? 'Standard');
-        }
-        return offlineResult;
+      debugPrint(
+        '⚠️ LicenseService: Backend not configured - using offline mode',
+      );
+      final offlineResult = await _validateOffline(code);
+      if (offlineResult.success) {
+        await _saveActivation(code, offlineResult.packageName ?? 'Standard');
       }
-
-      debugPrint('LicenseService: Validating code via Supabase...');
-      final supabaseResult = await _validateWithSupabase(code);
-
-      if (supabaseResult.success) {
-        await _saveActivation(code, supabaseResult.packageName ?? 'Standard');
-      }
-
-      return supabaseResult;
+      return offlineResult;
     } catch (e) {
       debugPrint('LicenseService: Activation error: $e');
 
@@ -235,31 +221,20 @@ class LicenseService extends ChangeNotifier {
   /// Validate activation code with Supabase (server-side enforcement)
   Future<ActivationResult> _validateWithSupabase(String code) async {
     try {
-      debugPrint('LicenseService: Checking code in Supabase database...');
+      debugPrint('LicenseService: Checking code via backend...');
 
-      // Check if code exists and is unused
-      final response = await _supabase
-          .from('activation_codes')
-          .select('code, package_name, status, device_id, created_at')
-          .eq('code', code)
-          .maybeSingle();
-
-      if (response == null) {
-        debugPrint('LicenseService: Code not found in database');
+      final codeResponse = await _api.getJson('license/code/$code');
+      if (codeResponse is! Map<String, dynamic> || codeResponse['code'] == null) {
         return ActivationResult(
           success: false,
           message: 'Invalid activation code',
         );
       }
 
+      final response = Map<String, dynamic>.from(codeResponse['code'] as Map);
       final status = response['status'] as String?;
-      // Unused codes are lifetime valid — no expiry check on creation date.
-      // The 30-day subscription clock only starts from the moment of activation.
 
-      // SECURITY: Each code is strictly one-time use.
-      // Once marked 'used', no device (including the same device) can reuse it.
       if (status == 'used') {
-        debugPrint('LicenseService: Code already used — one-time use only');
         return ActivationResult(
           success: false,
           message:
@@ -268,150 +243,86 @@ class LicenseService extends ChangeNotifier {
       }
 
       if (status == 'revoked') {
-        debugPrint('LicenseService: Code has been revoked');
         return ActivationResult(
           success: false,
           message: 'This activation code has been revoked',
         );
       }
 
-      // Valid statuses: 'unused' or 'assigned' (assigned by developer, ready for activation)
       if (status != 'unused' && status != 'assigned' && status != 'used') {
-        debugPrint('LicenseService: Invalid code status: $status');
         return ActivationResult(
           success: false,
           message: 'Invalid activation code status',
         );
       }
 
-      // Get device info and owner's actual name
       final deviceInfo = await DeviceFingerprint.getDeviceInfo();
       final platformName = deviceInfo['platform'] ?? 'Unknown';
+      final deviceId = _deviceId ?? await DeviceFingerprint.getDeviceId();
 
-      // Get the business name from activation_code_requests
-      // (This was provided by the developer when they fulfilled the request)
       String businessName = 'Unknown Business';
       try {
-        // Look up the activation code request to get the business name
-        final requestResponse = await _supabase
-            .from('activation_code_requests')
-            .select('business_name')
-            .eq('activation_code', code)
-            .maybeSingle();
-
-        if (requestResponse != null) {
-          businessName =
-              requestResponse['business_name'] as String? ?? 'Unknown Business';
-          debugPrint(
-            'LicenseService: Found business name from request: $businessName',
-          );
-        } else {
-          // Fallback: Try to get owner name from local UserService
-          if (GetIt.I.isRegistered<UserService>()) {
-            final userService = GetIt.I.get<UserService>();
-            final owners = userService.getUsersByRole(UserRole.owner);
-            if (owners.isNotEmpty) {
-              businessName = owners.first.name;
-              debugPrint(
-                'LicenseService: Using owner name from local UserService: $businessName',
-              );
-            }
+        final requestResponse = await _api.getJson('license/requests/by-code/$code');
+        if (requestResponse is Map<String, dynamic> &&
+            requestResponse['request'] is Map) {
+          final request = Map<String, dynamic>.from(requestResponse['request'] as Map);
+          businessName = request['business_name'] as String? ?? 'Unknown Business';
+        } else if (GetIt.I.isRegistered<UserService>()) {
+          final userService = GetIt.I.get<UserService>();
+          final owners = userService.getUsersByRole(UserRole.owner);
+          if (owners.isNotEmpty) {
+            businessName = owners.first.name;
           }
         }
       } catch (e) {
         debugPrint('LicenseService: Error getting business name: $e');
-        // Final fallback: try to get from UserService
-        try {
-          if (GetIt.I.isRegistered<UserService>()) {
-            final userService = GetIt.I.get<UserService>();
-            final owners = userService.getUsersByRole(UserRole.owner);
-            if (owners.isNotEmpty) {
-              businessName = owners.first.name;
-            }
-          }
-        } catch (_) {
-          // Use default
-        }
       }
 
       debugPrint(
         'LicenseService: Activating code for business: $businessName (platform: $platformName)',
       );
 
-      // Mark code as used and link to device
-      // Store business name (not platform) as device_name for dashboard display
-      await _supabase
-          .from('activation_codes')
-          .update({
-            'status': 'used',
-            'device_id': _deviceId,
-            'device_name': businessName,
-            'used_at': DateTime.now().toIso8601String(),
-          })
-          .eq('code', code);
-
-      debugPrint('LicenseService: Code marked as used in database');
-
-      // Create subscription record
-      final subscriptionExpires = DateTime.now().add(
-        const Duration(days: 30), // PRODUCTION: 30 days monthly rental
+      final activateResponse = await _api.postJson(
+        'license/activate',
+        body: {
+          'code': code,
+          'deviceId': deviceId,
+          'deviceName': businessName,
+          'packageName': response['package_name'],
+        },
       );
 
-      // Insert subscription with business name (from the activation request)
-      await _supabase.from('subscriptions').insert({
-        'device_id': _deviceId,
-        'activation_code': code,
-        'package_name': response['package_name'],
-        'device_name':
-            businessName, // Use business name from activation request
-        'activated_at': DateTime.now().toIso8601String(),
-        'expires_at': subscriptionExpires.toIso8601String(),
-        'status': 'active',
-      });
+      if (activateResponse is Map<String, dynamic> &&
+          activateResponse['success'] == true) {
+        final subscriptionExpires = DateTime.now().add(
+          const Duration(days: 30),
+        );
+        debugPrint(
+          'LicenseService: Subscription created - expires ${subscriptionExpires.toLocal()}',
+        );
+        return ActivationResult(
+          success: true,
+          message:
+              'Activated successfully with ${response['package_name']} package',
+          packageName: response['package_name'],
+        );
+      }
 
-      debugPrint(
-        'LicenseService: Subscription created - expires ${subscriptionExpires.toLocal()}',
-      );
-
-      return ActivationResult(
-        success: true,
-        message:
-            'Activated successfully with ${response['package_name']} package',
-        packageName: response['package_name'],
-      );
-    } on PostgrestException catch (e) {
-      debugPrint('LicenseService: Database error: ${e.message}');
       return ActivationResult(
         success: false,
-        message: 'Database error: ${e.message}',
+        message: activateResponse is Map<String, dynamic>
+            ? (activateResponse['message']?.toString() ?? 'Activation failed')
+            : 'Activation failed',
       );
     } catch (e) {
-      debugPrint('LicenseService: Supabase validation error: $e');
-      rethrow; // Let caller handle offline fallback
+      debugPrint('LicenseService: Backend validation error: $e');
+      rethrow;
     }
   }
 
   /// Validate activation code using the new REST backend.
   Future<ActivationResult> _validateWithBackend(String code) async {
-    final apiClient = ApiClient();
-    try {
-      final response = await apiClient.post(
-        'license/activate',
-        body: {'code': code},
-      );
-
-      return ActivationResult(
-        success: response['success'] == true,
-        message: response['message']?.toString() ?? 'Activation failed',
-        packageName: response['package_name']?.toString(),
-      );
-    } catch (e) {
-      debugPrint('LicenseService: Backend validation error: $e');
-      return ActivationResult(
-        success: false,
-        message: 'Backend activation failed: ${e.toString()}',
-      );
-    }
+    return _validateWithSupabase(code);
   }
 
   /// Validate activation code offline using a simple algorithm
@@ -635,44 +546,17 @@ class LicenseService extends ChangeNotifier {
   /// Returns a list of maps with code details and associated subscription info
   Future<List<Map<String, dynamic>>> getUsedActivationCodes() async {
     try {
-      if (!SupabaseConfig.isConfigured) {
-        debugPrint('LicenseService: Supabase not configured');
+      if (!BackendConfig.useRestBackend) {
+        debugPrint('LicenseService: Backend not configured');
         return [];
       }
 
       debugPrint('LicenseService: Fetching used activation codes...');
 
-      // Fetch all used codes with subscription info
-      final response = await _supabase
-          .from('activation_codes')
-          .select('code, package_name, status, device_id, device_name, used_at')
-          .eq('status', 'used')
-          .order('used_at', ascending: false);
-
-      debugPrint(
-        'LicenseService: Fetched ${response.length} used activation codes',
-      );
-
-      // For each code, get subscription status
-      final results = <Map<String, dynamic>>[];
-      for (final code in response) {
-        final subscription = await _supabase
-            .from('subscriptions')
-            .select('status, expires_at, activated_at')
-            .eq('activation_code', code['code'])
-            .maybeSingle();
-
-        results.add({
-          ...code,
-          'subscription_status': subscription?['status'],
-          'subscription_expires_at': subscription?['expires_at'],
-          'subscription_activated_at': subscription?['activated_at'],
-        });
+      final response = await _api.getJson('license/used-codes');
+      if (response is Map<String, dynamic> && response['codes'] is List) {
+        return List<Map<String, dynamic>>.from(response['codes'] as List);
       }
-
-      return results;
-    } on PostgrestException catch (e) {
-      debugPrint('LicenseService: Database error fetching codes: ${e.message}');
       return [];
     } catch (e) {
       debugPrint('LicenseService: Error fetching used codes: $e');
@@ -684,66 +568,30 @@ class LicenseService extends ChangeNotifier {
   /// This marks the code as 'revoked' and cancels any active subscription
   Future<RevokeResult> revokeActivationCode(String code, String reason) async {
     try {
-      if (!SupabaseConfig.isConfigured) {
-        debugPrint('LicenseService: Supabase not configured');
-        return RevokeResult(success: false, message: 'Supabase not configured');
+      if (!BackendConfig.useRestBackend) {
+        debugPrint('LicenseService: Backend not configured');
+        return RevokeResult(success: false, message: 'Backend not configured');
       }
 
       debugPrint('LicenseService: Revoking activation code: $code');
 
-      // Check if code exists
-      final codeCheck = await _supabase
-          .from('activation_codes')
-          .select('code, status')
-          .eq('code', code)
-          .maybeSingle();
-
-      if (codeCheck == null) {
-        return RevokeResult(success: false, message: 'Code not found');
-      }
-
-      if (codeCheck['status'] == 'revoked') {
-        return RevokeResult(success: false, message: 'Code is already revoked');
-      }
-
-      // Revoke the code
-      await _supabase
-          .from('activation_codes')
-          .update({'status': 'revoked', 'notes': 'Revoked: $reason'})
-          .eq('code', code);
-
-      debugPrint('LicenseService: Code marked as revoked in database');
-
-      // Cancel associated subscription
-      final subscriptionUpdate = await _supabase
-          .from('subscriptions')
-          .update({
-            'status': 'cancelled',
-            'notes': 'Cancelled: Code revoked - $reason',
-          })
-          .eq('activation_code', code)
-          .select();
-
-      if (subscriptionUpdate.isNotEmpty) {
-        debugPrint(
-          'LicenseService: Cancelled ${subscriptionUpdate.length} subscription(s)',
-        );
-      } else {
-        debugPrint(
-          'LicenseService: No active subscriptions found for this code',
-        );
-      }
-
-      return RevokeResult(
-        success: true,
-        message: 'Code revoked and subscription cancelled',
-        subscriptionsCancelled: subscriptionUpdate.length,
+      final response = await _api.postJson(
+        'license/codes/$code/revoke',
+        body: {'reason': reason},
       );
-    } on PostgrestException catch (e) {
-      debugPrint('LicenseService: Database error revoking code: ${e.message}');
+      if (response is Map<String, dynamic> && response['success'] == true) {
+        return RevokeResult(
+          success: true,
+          message: response['message']?.toString() ?? 'Code revoked',
+          subscriptionsCancelled: 1,
+        );
+      }
+
       return RevokeResult(
         success: false,
-        message: 'Database error: ${e.message}',
+        message: response is Map<String, dynamic>
+            ? (response['message']?.toString() ?? 'Failed to revoke code')
+            : 'Failed to revoke code',
       );
     } catch (e) {
       debugPrint('LicenseService: Error revoking code: $e');

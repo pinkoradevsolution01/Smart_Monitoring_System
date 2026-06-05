@@ -1,30 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/supabase_config.dart';
+import '../services/backend_config.dart';
 
-/// Utility to check OAuth configuration status
+/// Utility to check auth configuration status
 class OAuthChecker {
   static Future<Map<String, dynamic>> checkSetup() async {
     final results = <String, dynamic>{};
 
     try {
-      // Check Supabase connection
-      final supabase = Supabase.instance.client;
-      results['supabase_initialized'] = true;
-      results['supabase_url'] = SupabaseConfig.supabaseUrl;
-
-      // Check if Google provider might be configured
-      // Note: We can't directly test without triggering OAuth flow
-      try {
-        // Just check if auth is available
-        supabase.auth.currentSession; // Access to verify auth system works
-        results['google_provider_configured'] =
-            true; // Assume configured if no error
-      } catch (e) {
-        results['google_provider_configured'] = false;
-        results['google_error'] = e.toString();
-      }
-
+      results['backend_initialized'] = BackendConfig.useRestBackend;
+      results['backend_url'] = BackendConfig.apiBaseUrl;
+      results['google_provider_configured'] = BackendConfig.useRestBackend;
       results['success'] = true;
     } catch (e) {
       results['success'] = false;
@@ -53,14 +38,14 @@ class OAuthChecker {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildStatusRow(
-                    'Supabase Initialized',
-                    results['supabase_initialized'] == true,
+                    'Backend Initialized',
+                    results['backend_initialized'] == true,
                   ),
-                  if (results['supabase_url'] != null)
+                  if (results['backend_url'] != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 16, top: 4),
                       child: Text(
-                        results['supabase_url'],
+                        results['backend_url'],
                         style: const TextStyle(
                           fontSize: 10,
                           color: Colors.grey,
@@ -69,17 +54,9 @@ class OAuthChecker {
                     ),
                   const SizedBox(height: 12),
                   _buildStatusRow(
-                    'Google Provider',
+                    'Google Auth Enabled',
                     results['google_provider_configured'] == true,
                   ),
-                  if (results['google_error'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 4),
-                      child: Text(
-                        results['google_error'],
-                        style: const TextStyle(fontSize: 10, color: Colors.red),
-                      ),
-                    ),
                   const SizedBox(height: 16),
                   if (results['google_provider_configured'] != true)
                     Container(
@@ -102,11 +79,10 @@ class OAuthChecker {
                           const SizedBox(height: 8),
                           Text(
                             'To use Google Sign In:\n\n'
-                            '1. Configure Google OAuth in Google Cloud Console\n'
-                            '2. Enable Google provider in Supabase Authentication\n'
-                            '3. Deploy database schema in Supabase SQL Editor\n\n'
-                            '📖 See QUICK_OAUTH_SETUP.md for step-by-step guide\n'
-                            '📖 Or SUPABASE_OAUTH_SETUP_GUIDE.md for detailed instructions',
+                            '1. Configure Google OAuth credentials on the backend\n'
+                            '2. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET\n'
+                            '3. Start the Node.js backend before signing in\n\n'
+                            '📖 See backend/README.md for setup steps',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.orange.shade900,
