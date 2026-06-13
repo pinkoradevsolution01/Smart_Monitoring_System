@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:get_it/get_it.dart';
@@ -113,9 +113,12 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
       }
     } catch (e) {
       if (!mounted) return;
+      final errorMessage = e is PlatformException
+          ? '${e.message}\nCheck Android OAuth client package name and SHA-1 configuration.'
+          : e.toString();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Sign-in failed: $e')));
+      ).showSnackBar(SnackBar(content: Text('Sign-in failed: $errorMessage')));
     }
   }
 
@@ -715,18 +718,26 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
                                 ],
                               ),
                             ),
-                            ElevatedButton(
-                              onPressed: _isSignedInToGoogle
-                                  ? _signOutFromGoogle
-                                  : _signInToGoogle,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _isSignedInToGoogle
-                                    ? Colors.red.shade600
-                                    : Colors.blue.shade600,
-                              ),
-                              child: Text(
-                                _isSignedInToGoogle ? 'Sign Out' : 'Sign In',
-                                style: const TextStyle(color: Colors.white),
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 180),
+                              child: ElevatedButton(
+                                onPressed: _isSignedInToGoogle
+                                    ? _signOutFromGoogle
+                                    : _signInToGoogle,
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size(0, 48),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 14,
+                                  ),
+                                  backgroundColor: _isSignedInToGoogle
+                                      ? Colors.red.shade600
+                                      : Colors.blue.shade600,
+                                ),
+                                child: Text(
+                                  _isSignedInToGoogle ? 'Sign Out' : 'Sign In',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
                               ),
                             ),
                           ],

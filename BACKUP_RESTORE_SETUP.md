@@ -54,9 +54,24 @@ The backup and restore feature now includes support for:
 **Step 2: Configure Android**
 1. Go to Google Cloud Console > Credentials
 2. Create OAuth 2.0 credentials for Android
-3. Add SHA-1 fingerprint of your debug/release keystore
-4. Download the credentials JSON
-5. Update `android/app/src/main/AndroidManifest.xml`:
+3. Use the package name from `android/app/build.gradle.kts` (`com.example.smart_monitoring_system` by default)
+4. Add the SHA-1 fingerprint for your signing key
+   - Debug builds: use the debug keystore fingerprint
+     ```powershell
+     keytool -list -v -keystore "%USERPROFILE%\.android\debug.keystore" -alias androiddebugkey -storepass android -keypass android
+     ```
+5. Enable the Google Drive API for this project
+6. Download `google-services.json` and place it at `android/app/google-services.json`
+7. Add the Google Services Gradle plugin to your Android build:
+   - In `android/settings.gradle.kts`, add:
+     ```kotlin
+     id("com.google.gms.google-services") version "4.4.0" apply false
+     ```
+   - In `android/app/build.gradle.kts`, add:
+     ```kotlin
+     id("com.google.gms.google-services")
+     ```
+8. Add this metadata to `android/app/src/main/AndroidManifest.xml` if it is not already present:
    ```xml
    <application>
        <meta-data
@@ -64,6 +79,8 @@ The backup and restore feature now includes support for:
            android:value="@integer/google_play_services_version" />
    </application>
    ```
+
+> If you see `ApiException: 10`, the most common cause is a mismatch between the Android package name/SHA-1 fingerprint and the OAuth client configuration in Google Cloud.
 
 **Step 3: Configure iOS**
 1. Download the OAuth 2.0 credentials for iOS
