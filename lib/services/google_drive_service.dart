@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:http/http.dart' as http;
-import 'dart:typed_data';
 
 /// Custom HTTP client that adds authentication headers
 class _AuthenticatedHttpClient extends http.BaseClient {
@@ -55,7 +55,9 @@ class GoogleDriveService {
   Future<bool> signIn() async {
     try {
       if (!isSupported) {
-        debugPrint('ℹ️ Google Drive backups are not supported on this platform');
+        debugPrint(
+          'ℹ️ Google Drive backups are not supported on this platform',
+        );
         return false;
       }
 
@@ -68,6 +70,9 @@ class GoogleDriveService {
       await _initializeDriveApi();
       await _getOrCreateBackupFolder();
       return true;
+    } on PlatformException catch (e) {
+      debugPrint('❌ Sign-in error (${e.code}): ${e.message}');
+      return false;
     } catch (e) {
       debugPrint('❌ Sign-in error: $e');
       return false;

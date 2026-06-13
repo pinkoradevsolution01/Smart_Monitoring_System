@@ -10,7 +10,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 - Basic authentication via `POST /api/auth/login`
 
 ## Setup
-
+ 
 1. Copy `.env.example` to `.env`.
 2. Configure MySQL credentials and JWT secret.
 3. Create the database and tables:
