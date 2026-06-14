@@ -468,6 +468,7 @@ class _OwnerChangePasswordDialog extends StatefulWidget {
 
 class _OwnerChangePasswordDialogState
     extends State<_OwnerChangePasswordDialog> {
+  final ApiClient _api = ApiClient();
   late TextEditingController _currentController;
   late TextEditingController _newController;
   late TextEditingController _confirmController;

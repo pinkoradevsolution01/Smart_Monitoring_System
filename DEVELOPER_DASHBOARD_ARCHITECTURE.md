@@ -51,7 +51,7 @@ flowchart TD
   SB --> API
   L --> API
   M --> API
-  T --> API
+  T --> AP
 
   API --> DB[(Primary Database)]
   API --> Q[Notification / Job Queue]
