@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
 const { query } = require('../db');
 
 const router = express.Router();
@@ -110,7 +111,10 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const rows = await query('SELECT id, email, password_hash, role, full_name FROM users WHERE email = ?', [email]);
+    const rows = await query(
+      'SELECT id, email, password_hash, role, full_name, contact_number, auth_method FROM users WHERE email = ?',
+      [email],
+    );
     if (!rows.length) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
@@ -135,11 +139,215 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         fullName: user.full_name,
+        contactNumber: user.contact_number || null,
+        authMethod: user.auth_method || 'password',
       },
     });
   } catch (error) {
     console.error('Auth /login error:', error);
     return res.status(500).json({ success: false, message: 'Login failed due to server error.' });
+  }
+});
+
+router.post('/google/register-owner', async (req, res) => {
+  const { id, email, fullName, avatarUrl, contactNumber } = req.body || {};
+  const normalizedEmail = typeof email === 'string' ? email.trim() : '';
+
+  if (!normalizedEmail) {
+    return res.status(400).json({ success: false, message: 'Email is required.' });
+  }
+
+  try {
+    const existingRows = await query(
+      'SELECT id, email, role, full_name, contact_number, auth_method FROM users WHERE email = ? LIMIT 1',
+      [normalizedEmail],
+    );
+
+    let userRow;
+    let created = false;
+
+    if (existingRows.length) {
+      userRow = existingRows[0];
+      await query(
+        'UPDATE users SET full_name = ?, role = ?, contact_number = ?, auth_method = ? WHERE id = ?',
+        [
+          fullName || userRow.full_name || normalizedEmail.split('@')[0],
+          'owner',
+          contactNumber || null,
+          'google',
+          userRow.id,
+        ],
+      );
+    } else {
+      const placeholderHash = await bcrypt.hash(randomUUID(), 10);
+      await query(
+        'INSERT INTO users (email, password_hash, role, full_name, contact_number, auth_method) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          normalizedEmail,
+          placeholderHash,
+          'owner',
+          fullName || normalizedEmail.split('@')[0],
+          contactNumber || null,
+          'google',
+        ],
+      );
+
+      const insertedRows = await query(
+        'SELECT id, email, role, full_name, contact_number, auth_method, created_at FROM users WHERE email = ? LIMIT 1',
+        [normalizedEmail],
+      );
+      userRow = insertedRows[0];
+      created = true;
+    }
+
+    return res.json({
+      success: true,
+      created,
+      user: {
+        id: userRow.id,
+        email: userRow.email,
+        role: 'owner',
+        fullName: userRow.full_name || fullName || normalizedEmail.split('@')[0],
+        contactNumber: userRow.contact_number || contactNumber || null,
+        avatarUrl: avatarUrl || null,
+        authMethod: userRow.auth_method || 'google',
+      },
+      googleUserId: id || null,
+    });
+  } catch (error) {
+    console.error('Auth /google/register-owner error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to register owner account.' });
+  }
+});
+
+router.patch('/users/:id', async (req, res) => {
+  const { id } = req.params;
+  const { fullName, email, contactNumber, role } = req.body || {};
+  const normalizedEmail = typeof email === 'string' ? email.trim() : '';
+
+  try {
+    const existingRows = await query(
+      'SELECT id, email, full_name, contact_number, role, auth_method FROM users WHERE id = ? LIMIT 1',
+      [id],
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const existing = existingRows[0];
+    if (normalizedEmail && normalizedEmail !== existing.email) {
+      const duplicate = await query(
+        'SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1',
+        [normalizedEmail, id],
+      );
+      if (duplicate.length) {
+        return res.status(409).json({ success: false, message: 'Email already in use.' });
+      }
+    }
+
+    await query(
+      `UPDATE users
+       SET full_name = ?, email = ?, contact_number = ?, role = ?
+       WHERE id = ?`,
+      [
+        fullName || existing.full_name || existing.email.split('@')[0],
+        normalizedEmail || existing.email,
+        contactNumber !== undefined ? contactNumber : existing.contact_number || null,
+        role || existing.role,
+        id,
+      ],
+    );
+
+    const updatedRows = await query(
+      'SELECT id, email, role, full_name, contact_number, auth_method, created_at FROM users WHERE id = ? LIMIT 1',
+      [id],
+    );
+
+    const updated = updatedRows[0];
+    return res.json({
+      success: true,
+      user: {
+        id: updated.id,
+        email: updated.email,
+        role: updated.role,
+        fullName: updated.full_name,
+        contactNumber: updated.contact_number || null,
+        authMethod: updated.auth_method || 'password',
+        createdAt: updated.created_at,
+      },
+    });
+  } catch (error) {
+    console.error('Auth /users/:id update error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update user.' });
+  }
+});
+
+router.patch('/users/:id/password', async (req, res) => {
+  const { id } = req.params;
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ success: false, message: 'New password must be at least 6 characters.' });
+  }
+
+  try {
+    const existingRows = await query(
+      'SELECT id, email, password_hash, auth_method FROM users WHERE id = ? LIMIT 1',
+      [id],
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const existing = existingRows[0];
+    const isGoogleAccount = (existing.auth_method || '').toLowerCase() === 'google';
+
+    if (!isGoogleAccount) {
+      if (!currentPassword) {
+        return res.status(400).json({ success: false, message: 'Current password is required.' });
+      }
+
+      const passwordMatches = await bcrypt.compare(currentPassword, existing.password_hash);
+      if (!passwordMatches) {
+        return res.status(401).json({ success: false, message: 'Current password is incorrect.' });
+      }
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await query(
+      'UPDATE users SET password_hash = ?, auth_method = ? WHERE id = ?',
+      [newHash, 'password', id],
+    );
+
+    return res.json({
+      success: true,
+      user: {
+        id: existing.id,
+        email: existing.email,
+      },
+    });
+  } catch (error) {
+    console.error('Auth /users/:id/password update error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update password.' });
+  }
+});
+
+router.delete('/users/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const existingRows = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [id]);
+    if (!existingRows.length) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    await query('DELETE FROM users WHERE id = ?', [id]);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Auth /users/:id delete error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete user.' });
   }
 });
 

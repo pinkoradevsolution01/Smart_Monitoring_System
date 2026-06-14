@@ -8,23 +8,43 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 - Business onboarding via `POST /api/business/init`
 - Data sync push/pull via `POST /api/sync/push` and `GET /api/sync/pull`
 - Basic authentication via `POST /api/auth/login`
+- Google owner registration via `POST /api/auth/google/register-owner`
+- Owner profile updates via `PATCH /api/auth/users/:id`
+- Owner password changes via `PATCH /api/auth/users/:id/password`
+- Owner deletion via `DELETE /api/auth/users/:id`
 
 ## Setup
  
 1. Copy `.env.example` to `.env`.
-2. Configure MySQL credentials and JWT secret.
+2. Configure MySQL credentials and JWT secret in `backend/.env`.
 3. Create the database and tables:
    - `mysql -u root -p < backend/schema.sql`
 4. Install dependencies:
    - `cd backend && npm install`
 5. Start the server:
-   - `npm start`
+   - `cd backend && npm start`
+
+## Verify
+
+- `GET /api/health` checks whether the backend is running.
+- `GET /api/health/db` checks whether the backend can query MySQL.
+
+Example:
+
+```bash
+curl http://localhost:3000/api/health/db
+```
 
 ## API Endpoints
 
 - `GET /api/health`
+- `GET /api/health/db`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `POST /api/auth/google/register-owner`
+- `PATCH /api/auth/users/:id`
+- `PATCH /api/auth/users/:id/password`
+- `DELETE /api/auth/users/:id`
 - `POST /api/business/init`
 - `POST /api/license/activate`
 - `GET /api/license/code/:code`
@@ -52,6 +72,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
   - `suppliers`
   - `cameras`
   - `cctv_timestamps`
+- The `users` table includes `contact_number` and `auth_method` for owner profile and Google/password account tracking.
 
 ## Migrating From Supabase
 

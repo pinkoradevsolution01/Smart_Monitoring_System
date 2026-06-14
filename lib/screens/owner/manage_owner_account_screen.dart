@@ -3,6 +3,8 @@ import 'package:get_it/get_it.dart';
 import '../../services/user_service.dart';
 import '../../models/user.dart';
 import '../../utils/app_localizations.dart';
+import '../../services/backend_api_service.dart';
+import '../../services/backend_config.dart';
 
 class ManageOwnerAccountScreen extends StatefulWidget {
   const ManageOwnerAccountScreen({super.key});
@@ -14,6 +16,7 @@ class ManageOwnerAccountScreen extends StatefulWidget {
 
 class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
   late UserService _userService;
+  final ApiClient _api = ApiClient();
   User? _owner;
 
   late TextEditingController _nameController;
@@ -74,6 +77,33 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
             ? _contactController.text.trim()
             : _owner!.pin,
       );
+
+      if (BackendConfig.useRestBackend) {
+        try {
+          final response = await _api.patchJson(
+            'auth/users/${Uri.encodeComponent(_owner!.id)}',
+            body: {
+              'fullName': updated.name,
+              'email': updated.email,
+              'contactNumber': updated.pin,
+              'role': updated.role.toString().split('.').last,
+            },
+          );
+          if (response is! Map<String, dynamic> || response['success'] != true) {
+            throw Exception('Failed to update owner in backend');
+          }
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to save owner changes to MySQL: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
       final success = await _userService.updateUser(updated);
       if (!mounted) return;
       if (success) {
@@ -85,9 +115,52 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
         );
       }
     } else {
-      final id = 'owner-${DateTime.now().millisecondsSinceEpoch}';
+      final provisionalId = 'owner-${DateTime.now().millisecondsSinceEpoch}';
+      var ownerId = provisionalId;
+
+      if (BackendConfig.useRestBackend) {
+        try {
+          final registerResponse = await _api.postJson(
+            'auth/google/register-owner',
+            body: {
+              'id': provisionalId,
+              'email': _emailController.text.trim(),
+              'fullName': _nameController.text.trim(),
+              'contactNumber': _contactController.text.trim(),
+            },
+          );
+          if (registerResponse is! Map<String, dynamic> ||
+              registerResponse['success'] != true ||
+              registerResponse['user'] is! Map) {
+            throw Exception('Failed to create owner in backend');
+          }
+
+          final backendUser =
+              Map<String, dynamic>.from(registerResponse['user'] as Map);
+          ownerId = backendUser['id']?.toString() ?? ownerId;
+
+          final passwordResponse = await _api.patchJson(
+            'auth/users/${Uri.encodeComponent(ownerId)}/password',
+            body: {'newPassword': 'owner'},
+          );
+          if (passwordResponse is! Map<String, dynamic> ||
+              passwordResponse['success'] != true) {
+            throw Exception('Failed to set owner password in backend');
+          }
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to create owner in MySQL: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
       final user = User(
-        id: id,
+        id: ownerId,
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: 'owner',
@@ -96,6 +169,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
         createdAt: DateTime.now(),
         isActive: true,
       );
+
       final success = await _userService.addUser(user);
       if (!mounted) return;
       if (success) {
@@ -142,6 +216,26 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
       ),
     );
     if (confirmed != true) return;
+
+    if (BackendConfig.useRestBackend) {
+      try {
+        final response = await _api.deleteJson(
+          'auth/users/${Uri.encodeComponent(_owner!.id)}',
+        );
+        if (response is! Map<String, dynamic> || response['success'] != true) {
+          throw Exception('Failed to delete owner in backend');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete owner from MySQL: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
 
     final success = await _userService.deleteUserPermanently(_owner!.id);
     if (!mounted) return;
@@ -397,10 +491,10 @@ class _OwnerChangePasswordDialogState
 
   Future<void> _changePassword() async {
     if (widget.owner == null) return;
-    
+
     // If owner has no password (Google OAuth user), skip current password check
     final hasCurrentPassword = widget.owner!.password.isNotEmpty;
-    
+
     if (hasCurrentPassword) {
       if (!widget.userService.authenticate(
         widget.owner!.email,
@@ -415,7 +509,7 @@ class _OwnerChangePasswordDialogState
         return;
       }
     }
-    
+
     if (_newController.text.length < 6) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -432,7 +526,35 @@ class _OwnerChangePasswordDialogState
     }
 
     setState(() => _isLoading = true);
-    final updated = widget.owner!.copyWith(password: _newController.text);
+    if (BackendConfig.useRestBackend) {
+      try {
+        final response = await _api.patchJson(
+          'auth/users/${Uri.encodeComponent(widget.owner!.id)}/password',
+          body: {
+            if (hasCurrentPassword) 'currentPassword': _currentController.text,
+            'newPassword': _newController.text,
+          },
+        );
+        if (response is! Map<String, dynamic> || response['success'] != true) {
+          throw Exception('Failed to update password in backend');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to change password in MySQL: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    final updated = widget.owner!.copyWith(
+      password: _newController.text,
+      authMethod: hasCurrentPassword ? widget.owner!.authMethod : 'password',
+    );
     final success = await widget.userService.updateUser(updated);
     if (!mounted) return;
     setState(() => _isLoading = false);

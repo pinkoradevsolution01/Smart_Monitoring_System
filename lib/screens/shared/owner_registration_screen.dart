@@ -10,7 +10,6 @@ import '../../utils/policy_dialogs.dart';
 import 'package_selection_screen.dart';
 import '../../services/package_service.dart';
 import '../developer/developer_dashboard.dart';
-import '../../services/supabase_sync_service.dart';
 import '../../services/backend_api_service.dart';
 
 class OwnerRegistrationScreen extends StatefulWidget {
@@ -119,13 +118,50 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         return;
       }
 
-      // Generate unique business ID for multi-device sync
-      final businessId = 'biz-${DateTime.now().millisecondsSinceEpoch}';
+      final api = ApiClient();
+
+      // Persist the owner in MySQL first so the backend becomes the source of truth.
+      final ownerResponse = await api.postJson(
+        'auth/google/register-owner',
+        body: {
+          'id': googleUser['id'],
+          'email': googleUser['email'],
+          'fullName': googleUser['name'],
+          'avatarUrl': googleUser['avatar_url'],
+        },
+      );
+
+      if (ownerResponse is! Map<String, dynamic> ||
+          ownerResponse['success'] != true ||
+          ownerResponse['user'] is! Map) {
+        throw Exception('Failed to register owner in backend');
+      }
+
+      final backendOwner =
+          Map<String, dynamic>.from(ownerResponse['user'] as Map);
+      final backendOwnerId = backendOwner['id']?.toString() ?? '';
+
+      final businessResponse = await api.postJson(
+        'business/init',
+        body: {
+          'businessName': googleUser['name'],
+          'ownerEmail': googleUser['email'],
+          'ownerId': backendOwnerId,
+        },
+      );
+
+      if (businessResponse is! Map<String, dynamic> ||
+          businessResponse['success'] != true ||
+          businessResponse['businessId'] == null) {
+        throw Exception('Failed to initialize business in backend');
+      }
+
+      final businessId = businessResponse['businessId'].toString();
 
       // Create owner user from Google account
       final owner = user_model.User(
-        id: googleUser['id'] as String,
-        name: googleUser['name'] as String,
+        id: backendOwnerId.isNotEmpty ? backendOwnerId : googleUser['id'] as String,
+        name: backendOwner['fullName'] as String? ?? googleUser['name'] as String,
         email: googleUser['email'] as String,
         password: '', // No password for OAuth users
         pin: null,
@@ -145,42 +181,6 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         await prefs.setString('business_name', googleUser['name'] as String);
         await prefs.setBool('is_google_auth', true);
         await _googleAuth.storeSession();
-
-        // Initialize business in Supabase for cloud sync
-        try {
-          final supabaseSyncService = GetIt.I<SupabaseSyncService>();
-          await supabaseSyncService.initializeBusiness(
-            businessName: googleUser['name'] as String,
-            ownerEmail: googleUser['email'] as String,
-            existingBusinessId: businessId,
-          );
-          debugPrint('✅ Business initialized in Supabase for cloud sync');
-        } catch (e) {
-          debugPrint('⚠️ Warning: Could not initialize business in Supabase: $e');
-          // App will continue - sync will work when owner activates license
-        }
-
-        // Record owner as subscriber in Supabase cloud
-        try {
-          final api = ApiClient();
-          await api.postJson(
-            'license/subscriptions',
-            body: {
-              'device_id': owner.id,
-              'activation_code': 'GOOGLE_OAUTH_${owner.id}',
-              'package_name': 'owner',
-              'device_name': googleUser['name'],
-              'activated_at': DateTime.now().toIso8601String(),
-              'expires_at': DateTime.now()
-                  .add(const Duration(days: 365))
-                  .toIso8601String(),
-              'status': 'active',
-            },
-          );
-          debugPrint('✅ Owner recorded as subscriber in Supabase cloud');
-        } catch (e) {
-          debugPrint('⚠️ Warning: Could not record owner as subscriber: $e');
-        }
       }
 
       if (!mounted) return;

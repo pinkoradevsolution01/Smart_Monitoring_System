@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { initDb } = require('./db');
+const { initDb, query } = require('./db');
 const authRouter = require('./routes/auth');
 const businessRouter = require('./routes/business');
 const licenseRouter = require('./routes/license');
@@ -22,6 +22,25 @@ app.get('/api/health', (req, res) => {
     backend: 'Smart Monitoring System',
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get('/api/health/db', async (req, res) => {
+  try {
+    const rows = await query('SELECT 1 AS ok');
+    return res.json({
+      status: 'ok',
+      database: process.env.MYSQL_DATABASE || 'smart_monitoring',
+      timestamp: new Date().toISOString(),
+      result: rows[0],
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: 'error',
+      database: process.env.MYSQL_DATABASE || 'smart_monitoring',
+      timestamp: new Date().toISOString(),
+      message: error.message,
+    });
+  }
 });
 
 const port = Number(process.env.PORT || 3000);

@@ -74,6 +74,18 @@ class ApiClient {
     return _processResponse(response);
   }
 
+  Future<dynamic> deleteJson(
+    String path, {
+    Map<String, String>? queryParameters,
+  }) async {
+    final uri = _buildUri(path, queryParameters);
+    final response = await _client.delete(
+      uri,
+      headers: BackendConfig.defaultHeaders,
+    );
+    return _processResponse(response);
+  }
+
   dynamic _processResponse(http.Response response) {
     final statusCode = response.statusCode;
     if (statusCode >= 200 && statusCode < 300) {

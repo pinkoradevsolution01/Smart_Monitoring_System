@@ -2,6 +2,22 @@
 
 A new Flutter project.
 
+## Backend Launcher
+
+To start the Node.js backend from the repo root:
+
+```bat
+start_backend.bat
+```
+
+That script changes into `backend/` and runs `npm start` with the current `.env`.
+
+If you are using Bash:
+
+```bash
+bash start_backend.sh
+```
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.

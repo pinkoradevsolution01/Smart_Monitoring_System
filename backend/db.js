@@ -10,6 +10,33 @@ const {
 
 let pool;
 
+async function ensureUsersTableColumns() {
+  const columns = [
+    ['contact_number', 'VARCHAR(64) NULL'],
+    ['auth_method', "VARCHAR(32) NOT NULL DEFAULT 'password'"],
+  ];
+
+  for (const [columnName, columnDefinition] of columns) {
+    const [rows] = await pool.execute(
+      `SELECT COUNT(*) AS count
+       FROM information_schema.columns
+       WHERE table_schema = DATABASE()
+         AND table_name = 'users'
+         AND column_name = ?`,
+      [columnName],
+    );
+
+    const exists = rows[0]?.count > 0;
+    if (!exists) {
+      await pool.execute(`ALTER TABLE users ADD COLUMN ${columnName} ${columnDefinition}`);
+    }
+  }
+
+  await pool.execute(
+    "UPDATE users SET auth_method = 'password' WHERE auth_method IS NULL OR auth_method = ''",
+  );
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -25,6 +52,7 @@ async function initDb() {
 
   const connection = await pool.getConnection();
   await connection.ping();
+  await ensureUsersTableColumns();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);

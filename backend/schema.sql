@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(64) NOT NULL DEFAULT 'owner',
   full_name VARCHAR(255),
+  contact_number VARCHAR(64),
+  auth_method VARCHAR(32) NOT NULL DEFAULT 'password',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
