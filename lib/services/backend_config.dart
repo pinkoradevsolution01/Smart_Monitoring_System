@@ -4,6 +4,12 @@ class BackendConfig {
   /// Example: `http://localhost:3000/api`
   static const String apiBaseUrl = 'http://localhost:3000/api';
 
+  /// Google OAuth web client ID used by `google_sign_in` to request an ID token
+  /// on Android/iOS. Pass this at build time with:
+  /// `--dart-define=GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com`
+  static const String googleWebClientId =
+      String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+
   /// Optional API key header for backend authentication.
   static const String apiKey = '';
 

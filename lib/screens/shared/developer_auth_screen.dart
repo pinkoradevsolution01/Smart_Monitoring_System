@@ -5,6 +5,7 @@ import '../../services/package_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
+import '../../utils/oauth_checker.dart';
 import '../../models/admin_account.dart';
 import 'package_selection_screen.dart';
 import 'loading_screen.dart';
@@ -193,8 +194,15 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       final googleUser = await _googleAuth.signInWithGoogle();
 
       if (googleUser == null) {
+        final setupStatus = await OAuthChecker.checkSetup();
+        final missingClientId =
+            setupStatus['google_web_client_id_configured'] != true;
         setState(() => _isGoogleLoading = false);
-        _showError('Google sign-in cancelled or failed');
+        _showError(
+          missingClientId
+              ? 'Google sign-in is not fully configured yet. Build the app with --dart-define=GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com.'
+              : 'Google sign-in cancelled or failed',
+        );
         return;
       }
 
@@ -203,7 +211,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       final userId = googleUser['id'] as String;
       final userPicture = googleUser['avatar_url'] as String?;
 
-      debugPrint('✅ Gmail sign-in successful: $userEmail');
+      debugPrint('OK: Gmail sign-in successful: $userEmail');
 
       // Prevent using the Owner/Admin account as the Developer account.
       final adminService = GetIt.I.get<AdminService>();
@@ -258,7 +266,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       // Use email as username and store the oauth userId as a non-empty password
       // (DeveloperService requires a password field for legacy flows).
       await devService.updateDeveloperAccount(username: email, password: userId);
-      debugPrint('✅ Developer account saved: $email');
+      debugPrint('OK: Developer account saved: $email');
     } catch (e) {
       debugPrint('Error saving developer account: $e');
     }

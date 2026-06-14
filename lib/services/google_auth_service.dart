@@ -3,16 +3,18 @@ import 'dart:convert';
 import 'dart:io' show HttpRequest, HttpServer, Platform, Process;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend_api_service.dart';
+import 'backend_config.dart';
 
 /// Google authentication helper backed by the Node/MySQL backend.
 ///
 /// Desktop platforms use a browser-based OAuth code flow so Windows/Linux/macOS
-/// can keep their current UX. Web/mobile use the Google Sign-In plugin and then
-/// exchange the Google ID token with the backend for an app session.
+/// can keep their current UX. Mobile platforms use the Google Sign-In plugin and
+/// then exchange the Google ID token with the backend for an app session.
 class GoogleAuthService {
   static final GoogleAuthService _instance = GoogleAuthService._internal();
   factory GoogleAuthService() => _instance;
@@ -23,7 +25,12 @@ class GoogleAuthService {
   static const String _sessionUserKey = 'backend_user';
 
   final ApiClient _api = ApiClient();
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  late final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: const ['email', 'profile'],
+    serverClientId: BackendConfig.googleWebClientId.isEmpty
+        ? null
+        : BackendConfig.googleWebClientId,
+  );
 
   Map<String, dynamic>? _currentUser;
   String? _accessToken;
@@ -38,12 +45,23 @@ class GoogleAuthService {
 
   Future<Map<String, dynamic>?> signInWithGoogle() async {
     try {
+      if (!_isDesktop && BackendConfig.googleWebClientId.isEmpty) {
+        debugPrint(
+          'WARNING: GOOGLE_WEB_CLIENT_ID is not configured. Android/iOS Google Sign-In may return null until a web client ID is supplied.',
+        );
+      }
+
       if (_isDesktop) {
         return await _signInWithDesktopBrowserFlow();
       }
       return await _signInWithGoogleSignIn();
+    } on PlatformException catch (e) {
+      debugPrint(
+        'ERROR: Google sign in platform error: ${e.code} ${e.message ?? ''} ${e.details ?? ''}',
+      );
+      return null;
     } catch (e) {
-      debugPrint('❌ Google sign in error: $e');
+      debugPrint('ERROR: Google sign in error: $e');
       return null;
     }
   }
@@ -51,13 +69,17 @@ class GoogleAuthService {
   Future<Map<String, dynamic>?> _signInWithGoogleSignIn() async {
     final account = await _googleSignIn.signIn();
     if (account == null) {
-      debugPrint('❌ Google sign in cancelled or failed');
+      debugPrint(
+        'ERROR: Google sign in returned null. On Android/iOS this usually means the OAuth client is not configured correctly, the user cancelled the account chooser, or Google Play Services rejected the app configuration.',
+      );
       return null;
     }
 
     final auth = await account.authentication;
     if (auth.idToken == null) {
-      debugPrint('❌ Google Sign-In did not return an ID token');
+      debugPrint(
+        'ERROR: Google Sign-In did not return an ID token. Set a web client ID with --dart-define=GOOGLE_WEB_CLIENT_ID=... and make sure it matches the backend Google OAuth client.',
+      );
       return null;
     }
 
@@ -74,7 +96,7 @@ class GoogleAuthService {
 
     try {
       callbackServer = await HttpServer.bind('localhost', _callbackPort);
-      debugPrint('✅ Local callback server started on port $_callbackPort');
+      debugPrint('OK: Local callback server started on port $_callbackPort');
 
       callbackServer.listen((HttpRequest request) async {
         final uri = request.uri;
@@ -112,12 +134,12 @@ class GoogleAuthService {
           : null;
 
       if (authUrl == null || authUrl.isEmpty) {
-        debugPrint('❌ Backend did not return a Google auth URL');
+        debugPrint('ERROR: Backend did not return a Google auth URL');
         return null;
       }
 
       await _openUrlInBrowser(authUrl);
-      debugPrint('⏳ Browser opened. Please complete authentication...');
+      debugPrint('WAITING: Browser opened. Please complete authentication...');
 
       final code = await completer.future.timeout(
         const Duration(minutes: 2),
@@ -137,19 +159,19 @@ class GoogleAuthService {
 
   Future<Map<String, dynamic>?> _storeBackendSession(dynamic response) async {
     if (response is! Map<String, dynamic>) {
-      debugPrint('❌ Invalid backend auth response');
+      debugPrint('ERROR: Invalid backend auth response');
       return null;
     }
 
     if (response['success'] != true) {
-      debugPrint('❌ Backend auth failed: ${response['message']}');
+      debugPrint('ERROR: Backend auth failed: ${response['message']}');
       return null;
     }
 
     final token = response['token']?.toString();
     final user = response['user'];
     if (token == null || user is! Map) {
-      debugPrint('❌ Backend auth response missing token or user');
+      debugPrint('ERROR: Backend auth response missing token or user');
       return null;
     }
 
@@ -160,7 +182,7 @@ class GoogleAuthService {
     await prefs.setString(_sessionTokenKey, token);
     await prefs.setString(_sessionUserKey, jsonEncode(_currentUser));
 
-    debugPrint('✅ Signed in as: ${_currentUser?['email']}');
+    debugPrint('OK: Signed in as: ${_currentUser?['email']}');
     return {
       'id': _currentUser?['id'] ?? '',
       'email': _currentUser?['email'] ?? '',
@@ -176,9 +198,9 @@ class GoogleAuthService {
         await _googleSignIn.signOut();
       }
       await clearSession();
-      debugPrint('✅ Signed out successfully');
+      debugPrint('OK: Signed out successfully');
     } catch (e) {
-      debugPrint('❌ Sign out error: $e');
+      debugPrint('ERROR: Sign out error: $e');
     }
   }
 
@@ -188,9 +210,9 @@ class GoogleAuthService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sessionTokenKey, _accessToken!);
       await prefs.setString(_sessionUserKey, jsonEncode(_currentUser));
-      debugPrint('✅ Session stored');
+      debugPrint('OK: Session stored');
     } catch (e) {
-      debugPrint('❌ Error storing session: $e');
+      debugPrint('ERROR: Error storing session: $e');
     }
   }
 
@@ -209,10 +231,10 @@ class GoogleAuthService {
 
       _accessToken = token;
       _currentUser = Map<String, dynamic>.from(jsonDecode(userJson) as Map);
-      debugPrint('✅ Session restored: ${_currentUser?['email']}');
+      debugPrint('OK: Session restored: ${_currentUser?['email']}');
       return true;
     } catch (e) {
-      debugPrint('❌ Error restoring session: $e');
+      debugPrint('ERROR: Error restoring session: $e');
       return false;
     }
   }
@@ -224,9 +246,9 @@ class GoogleAuthService {
       await prefs.remove(_sessionUserKey);
       _accessToken = null;
       _currentUser = null;
-      debugPrint('✅ Session cleared');
+      debugPrint('OK: Session cleared');
     } catch (e) {
-      debugPrint('❌ Error clearing session: $e');
+      debugPrint('ERROR: Error clearing session: $e');
     }
   }
 

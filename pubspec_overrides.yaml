@@ -1,0 +1,5 @@
+# sqlite3 override disabled — avoid treating project root as sqlite3 package.
+# If you need to build sqlite3 from source, point `path:` to the sqlite3 package directory.
+# dependency_overrides:
+#   sqlite3:
+#     path: ./path/to/sqlite3

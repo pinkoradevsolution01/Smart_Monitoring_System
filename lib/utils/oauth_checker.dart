@@ -9,7 +9,11 @@ class OAuthChecker {
     try {
       results['backend_initialized'] = BackendConfig.useRestBackend;
       results['backend_url'] = BackendConfig.apiBaseUrl;
-      results['google_provider_configured'] = BackendConfig.useRestBackend;
+      results['google_web_client_id_configured'] =
+          BackendConfig.googleWebClientId.isNotEmpty;
+      results['google_provider_configured'] =
+          BackendConfig.useRestBackend &&
+          BackendConfig.googleWebClientId.isNotEmpty;
       results['success'] = true;
     } catch (e) {
       results['success'] = false;
@@ -57,6 +61,22 @@ class OAuthChecker {
                     'Google Auth Enabled',
                     results['google_provider_configured'] == true,
                   ),
+                  const SizedBox(height: 8),
+                  _buildStatusRow(
+                    'Google Web Client ID',
+                    results['google_web_client_id_configured'] == true,
+                  ),
+                  if (results['google_web_client_id_configured'] != true)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, top: 4),
+                      child: Text(
+                        'Pass --dart-define=GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com at build time.',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   if (results['google_provider_configured'] != true)
                     Container(
@@ -70,7 +90,7 @@ class OAuthChecker {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '⚠️ Setup Required',
+                            'Setup Required',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: Colors.orange.shade900,
@@ -81,8 +101,9 @@ class OAuthChecker {
                             'To use Google Sign In:\n\n'
                             '1. Configure Google OAuth credentials on the backend\n'
                             '2. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET\n'
-                            '3. Start the Node.js backend before signing in\n\n'
-                            '📖 See backend/README.md for setup steps',
+                            '3. Pass GOOGLE_WEB_CLIENT_ID to the Flutter build\n'
+                            '4. Start the Node.js backend before signing in\n\n'
+                            'See backend/README.md for setup steps',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.orange.shade900,
