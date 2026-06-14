@@ -2,7 +2,7 @@
 class BackendConfig {
   /// Set this to your Node.js backend URL, including `/api` if desired.
   /// Example: `http://localhost:3000/api`
-  static const String apiBaseUrl = 'http://localhost:3000/api';
+  static const String apiBaseUrl = 'http://192.168.1.9:3000/api';
 
   /// Google OAuth web client ID used by `google_sign_in` to request an ID token
   /// on Android/iOS. Pass this at build time with:
