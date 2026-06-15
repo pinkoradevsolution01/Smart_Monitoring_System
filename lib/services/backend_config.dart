@@ -1,8 +1,25 @@
 /// Backend REST API configuration for MySQL-based sync and license services.
 class BackendConfig {
   /// Set this to your Node.js backend URL, including `/api` if desired.
-  /// Example: `http://localhost:3000/api`
-  static const String apiBaseUrl = 'http://localhost:3000/api';
+  ///
+  /// Override it at build time with:
+  /// `--dart-define=BACKEND_API_BASE_URL=http://<your-pc-ip>:3000/api`
+  ///
+  /// Common values:
+  /// - Android emulator: `http://10.0.2.2:3000/api`
+  /// - Physical device on same LAN: `http://<your-pc-lan-ip>:3000/api`
+  static const String _envApiBaseUrl = String.fromEnvironment(
+    'BACKEND_API_BASE_URL',
+    defaultValue: '',
+  );
+  static const String _defaultApiBaseUrl = 'http://192.168.1.9:3000/api';
+
+  static String get apiBaseUrl {
+    if (_envApiBaseUrl.isNotEmpty) {
+      return _envApiBaseUrl;
+    }
+    return _defaultApiBaseUrl;
+  }
 
   /// Google OAuth web client ID used by `google_sign_in` to request an ID token
   /// on Android/iOS. Pass this at build time with:
