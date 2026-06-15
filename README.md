@@ -18,6 +18,42 @@ If you are using Bash:
 bash start_backend.sh
 ```
 
+## Auto-start On Windows
+
+If you want the backend to start automatically every time you sign in to Windows, run this once from the repo root:
+
+```bat
+install_backend_autostart.bat
+```
+
+To disable it later:
+
+```bat
+remove_backend_autostart.bat
+```
+
+This creates a shortcut in your Windows Startup folder, so the backend launches without opening VS Code first.
+If your backend depends on XAMPP MySQL, make sure MySQL is also started automatically or is already running before the backend starts.
+
+## Boot-Time Startup
+
+If you want the backend to start at Windows boot before you sign in, run this once from the repo root:
+
+```bat
+install_backend_startup_task.bat
+```
+
+You will need to approve the Windows UAC prompt because creating a boot-time task as `SYSTEM` requires Administrator privileges.
+
+To remove the boot-time task:
+
+```bat
+remove_backend_startup_task.bat
+```
+
+This registers a scheduled task named `Smart Monitoring System Backend` that runs `start_backend.bat --no-pause` as `SYSTEM` at startup.
+That is the closest built-in Windows option to a service without installing a third-party wrapper like NSSM.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
