@@ -153,6 +153,53 @@ router.get('/codes/available', async (req, res) => {
   }
 });
 
+// Bulk create activation codes (used by Developer Dashboard Code Generator)
+router.post('/codes', async (req, res) => {
+  const body = req.body || {};
+  const codes = Array.isArray(body.codes) ? body.codes : [];
+  if (!codes.length) {
+    return res.status(400).json({ success: false, message: 'No codes provided.' });
+  }
+
+  const { getConnection } = require('../db');
+
+  let conn;
+  try {
+    conn = await getConnection();
+    await conn.beginTransaction();
+
+    // Prepare bulk values: [code, package_name, status, created_at]
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const values = codes.map((c) => [
+      c.code,
+      c.package_name || 'Standard',
+      c.status || 'unused',
+      now,
+    ]);
+
+    // Use INSERT IGNORE to skip duplicates when a code already exists
+    await conn.query(
+      'INSERT IGNORE INTO activation_codes (code, package_name, status, created_at) VALUES ?',
+      [values],
+    );
+
+    await conn.commit();
+    return res.json({ success: true, inserted: values.length });
+  } catch (error) {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (e) {
+        console.error('Rollback failed:', e);
+      }
+    }
+    console.error('Bulk create activation codes error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create activation codes.' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 router.post('/codes/:code/assign', async (req, res) => {
   const { code } = req.params;
   try {
