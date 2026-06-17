@@ -327,9 +327,14 @@ CREATE TABLE IF NOT EXISTS cameras (
   name VARCHAR(255) NOT NULL,
   location TEXT,
   stream_url TEXT NOT NULL,
+  type VARCHAR(32) NOT NULL DEFAULT 'http',
+  position INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  username VARCHAR(255),
+  password VARCHAR(255),
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_cameras_business (business_id),
+  KEY idx_cameras_position (position),
   CONSTRAINT fk_cameras_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
@@ -341,8 +346,10 @@ CREATE TABLE IF NOT EXISTS cctv_timestamps (
   business_id VARCHAR(64) NOT NULL,
   camera_id VARCHAR(64) NOT NULL,
   label VARCHAR(255) NOT NULL,
+  description TEXT,
   `timestamp` DATETIME NOT NULL,
   notes TEXT,
+  video_path TEXT,
   created_by VARCHAR(255),
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_cctv_timestamps_business (business_id),
@@ -353,6 +360,183 @@ CREATE TABLE IF NOT EXISTS cctv_timestamps (
     ON UPDATE CASCADE,
   CONSTRAINT fk_cctv_timestamps_camera
     FOREIGN KEY (camera_id) REFERENCES cameras(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS customers (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  customer_code VARCHAR(64) NOT NULL,
+  full_name VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(64),
+  email VARCHAR(255),
+  address TEXT,
+  points_balance INT NOT NULL DEFAULT 0,
+  lifetime_points INT NOT NULL DEFAULT 0,
+  barcode_value VARCHAR(128) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  UNIQUE KEY uq_customers_customer_code (customer_code),
+  UNIQUE KEY uq_customers_barcode_value (barcode_value),
+  KEY idx_customers_business (business_id),
+  KEY idx_customers_full_name (full_name),
+  KEY idx_customers_email (email),
+  CONSTRAINT fk_customers_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS loyalty_ledger (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  customer_id BIGINT NOT NULL,
+  sale_id VARCHAR(64) NULL,
+  entry_type ENUM('earn', 'redeem', 'adjust') NOT NULL,
+  points INT NOT NULL,
+  balance_after INT NOT NULL,
+  notes TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_loyalty_ledger_business (business_id),
+  KEY idx_loyalty_ledger_customer (customer_id),
+  KEY idx_loyalty_ledger_sale (sale_id),
+  KEY idx_loyalty_ledger_created_at (created_at),
+  CONSTRAINT fk_loyalty_ledger_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_loyalty_ledger_customer
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_loyalty_ledger_sale
+    FOREIGN KEY (sale_id) REFERENCES sales(id)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance_entries (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  time DATETIME NOT NULL,
+  type VARCHAR(16) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_attendance_entries_business (business_id),
+  KEY idx_attendance_entries_user (user_id),
+  KEY idx_attendance_entries_time (business_id, time),
+  CONSTRAINT fk_attendance_entries_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance_leaves (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  date_key VARCHAR(16) NOT NULL,
+  payload LONGTEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_attendance_leaves_business (business_id),
+  KEY idx_attendance_leaves_user (user_id),
+  KEY idx_attendance_leaves_date (business_id, date_key),
+  CONSTRAINT fk_attendance_leaves_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance_schedule (
+  business_id VARCHAR(64) NOT NULL,
+  `key` VARCHAR(64) NOT NULL,
+  value LONGTEXT NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id, `key`),
+  CONSTRAINT fk_attendance_schedule_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS restock_records (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  product_id VARCHAR(64) NOT NULL,
+  product_name VARCHAR(255) NOT NULL,
+  quantity INT NOT NULL,
+  supplier_id VARCHAR(64) NULL,
+  supplier_name VARCHAR(255),
+  delivery_receipt_no VARCHAR(128),
+  damage_quantity INT NOT NULL DEFAULT 0,
+  damage_reason TEXT,
+  notes TEXT,
+  referenced_by VARCHAR(255) NOT NULL,
+  restock_date DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_restock_records_business (business_id),
+  KEY idx_restock_records_product (product_id),
+  KEY idx_restock_records_supplier (supplier_id),
+  KEY idx_restock_records_date (business_id, restock_date),
+  CONSTRAINT fk_restock_records_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_restock_records_product
+    FOREIGN KEY (product_id) REFERENCES products(id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_restock_records_supplier
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  order_id VARCHAR(64) NOT NULL,
+  product_id VARCHAR(64) NOT NULL,
+  product_name VARCHAR(255) NOT NULL,
+  quantity INT NOT NULL,
+  unit_price DECIMAL(12, 2) NOT NULL,
+  total_price DECIMAL(12, 2) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_purchase_order_items_business (business_id),
+  KEY idx_purchase_order_items_order (order_id),
+  KEY idx_purchase_order_items_product (product_id),
+  KEY idx_purchase_order_items_sync (order_id, product_id),
+  CONSTRAINT fk_purchase_order_items_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_purchase_order_items_order
+    FOREIGN KEY (order_id) REFERENCES purchase_orders(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_purchase_order_items_product
+    FOREIGN KEY (product_id) REFERENCES products(id)
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  type VARCHAR(128) NOT NULL,
+  message TEXT NOT NULL,
+  meta LONGTEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sent TINYINT(1) NOT NULL DEFAULT 0,
+  KEY idx_activity_logs_business (business_id),
+  KEY idx_activity_logs_type (type),
+  KEY idx_activity_logs_created_at (business_id, created_at),
+  KEY idx_activity_logs_sent (sent),
+  CONSTRAINT fk_activity_logs_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;

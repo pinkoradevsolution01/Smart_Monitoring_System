@@ -6,6 +6,7 @@ const authRouter = require('./routes/auth');
 const businessRouter = require('./routes/business');
 const licenseRouter = require('./routes/license');
 const syncRouter = require('./routes/sync');
+const crudRouter = require('./routes/crud');
 
 const app = express();
 app.use(cors());
@@ -15,6 +16,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/business', businessRouter);
 app.use('/api/license', licenseRouter);
 app.use('/api/sync', syncRouter);
+app.use('/api', crudRouter);
 
 app.get('/api/health', (req, res) => {
   return res.json({

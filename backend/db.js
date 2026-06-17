@@ -68,6 +68,14 @@ async function query(sql, params = []) {
   return rows;
 }
 
+async function execute(sql, params = []) {
+  if (!pool) {
+    throw new Error('Database not initialized. Call initDb() before using execute().');
+  }
+
+  return await pool.execute(sql, params);
+}
+
 async function getConnection() {
   if (!pool) {
     throw new Error('Database not initialized. Call initDb() before using getConnection().');
@@ -75,4 +83,4 @@ async function getConnection() {
   return await pool.getConnection();
 }
 
-module.exports = { initDb, query, getConnection };
+module.exports = { initDb, query, execute, getConnection };

@@ -7,6 +7,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 - License activation via `POST /api/license/activate`
 - Business onboarding via `POST /api/business/init`
 - Data sync push/pull via `POST /api/sync/push` and `GET /api/sync/pull`
+- CRUD endpoints for business data via `/api/customers`, `/api/cameras`, `/api/restock-records`, and related resources
 - Basic authentication via `POST /api/auth/login`
 - Google owner registration via `POST /api/auth/google/register-owner`
 - Owner profile updates via `PATCH /api/auth/users/:id`
@@ -50,6 +51,26 @@ curl http://localhost:3000/api/health/db
 - `GET /api/license/code/:code`
 - `POST /api/sync/push`
 - `GET /api/sync/pull?businessId=<id>`
+- `GET /api/customers?businessId=<id>`
+- `POST /api/customers`
+- `PATCH /api/customers/:id`
+- `DELETE /api/customers/:id`
+- `GET /api/loyalty-ledger?businessId=<id>`
+- `GET /api/cameras?businessId=<id>`
+- `GET /api/cctv-timestamps?businessId=<id>`
+- `GET /api/attendance-entries?businessId=<id>`
+- `GET /api/attendance-leaves?businessId=<id>`
+- `GET /api/attendance-schedule?businessId=<id>`
+- `GET /api/restock-records?businessId=<id>`
+- `GET /api/purchase-order-items?businessId=<id>`
+- `GET /api/activity-logs?businessId=<id>`
+- `GET /api/products?businessId=<id>`
+- `GET /api/suppliers?businessId=<id>`
+- `GET /api/sales?businessId=<id>`
+- `GET /api/sale-items?businessId=<id>`
+- `GET /api/purchase-orders?businessId=<id>`
+- `GET /api/inventory-movements?businessId=<id>`
+- `GET /api/damage-reports?businessId=<id>`
 
 ## Notes
 
@@ -73,6 +94,7 @@ curl http://localhost:3000/api/health/db
   - `cameras`
   - `cctv_timestamps`
 - The `users` table includes `contact_number` and `auth_method` for owner profile and Google/password account tracking.
+- Business-scoped CRUD endpoints require `businessId` on reads and writes so records stay isolated per tenant.
 
 ## Migrating From Supabase
 
