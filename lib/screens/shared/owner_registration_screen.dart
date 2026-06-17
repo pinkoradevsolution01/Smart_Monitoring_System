@@ -9,7 +9,6 @@ import '../../utils/oauth_checker.dart';
 import '../../utils/policy_dialogs.dart';
 import 'package_selection_screen.dart';
 import '../../services/package_service.dart';
-import '../developer/developer_dashboard.dart';
 import '../../services/backend_api_service.dart';
 
 class OwnerRegistrationScreen extends StatefulWidget {
@@ -245,103 +244,9 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
     setState(() {
       _iconTapCount++;
     });
-
     if (_iconTapCount >= 7) {
       _iconTapCount = 0; // Reset counter
-      _showDeveloperPasswordDialog();
-    }
-  }
-
-  void _showDeveloperPasswordDialog() {
-    final passwordController = TextEditingController();
-    bool showPassword = false;
-
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.developer_mode, color: Colors.indigo),
-              const SizedBox(width: 8),
-              const Text('Developer Access'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Enter developer password:'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: !showPassword,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: const OutlineInputBorder(),
-                  prefixIcon: const Icon(Icons.lock),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      showPassword ? Icons.visibility : Icons.visibility_off,
-                    ),
-                    onPressed: () {
-                      setDialogState(() {
-                        showPassword = !showPassword;
-                      });
-                    },
-                  ),
-                ),
-                autofocus: true,
-                onSubmitted: (_) => _verifyAndNavigate(passwordController.text),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => _verifyAndNavigate(passwordController.text),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Enter'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _verifyAndNavigate(String password) async {
-    // Check against stored password in SharedPreferences.
-    final prefs = await SharedPreferences.getInstance();
-    final storedPassword = prefs.getString('dev_password') ?? '';
-
-    // If no stored password exists, allow the legacy default 'developer123'.
-    final allowed = storedPassword.isEmpty
-        ? password == 'developer123'
-        : password == storedPassword;
-
-    if (allowed) {
-      if (mounted) {
-        Navigator.of(context).pop(); // Close dialog
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const DeveloperDashboard()),
-        );
-      }
-    } else {
-      if (mounted) {
-        Navigator.of(context).pop(); // Close dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Incorrect password'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      Navigator.pushNamed(context, '/developer-auth');
     }
   }
 

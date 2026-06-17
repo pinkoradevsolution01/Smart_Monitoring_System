@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../services/backend_api_service.dart';
 
 class ActivationCodeGeneratorScreen extends StatefulWidget {
   const ActivationCodeGeneratorScreen({super.key});
@@ -33,6 +34,12 @@ class _ActivationCodeGeneratorScreenState
               icon: const Icon(Icons.file_download),
               onPressed: _exportAllToCSV,
             ),
+            if (_generatedCodes.isNotEmpty)
+              IconButton(
+                tooltip: 'Store to Backend',
+                icon: const Icon(Icons.cloud_upload),
+                onPressed: _storeCodesToBackend,
+              ),
           if (_generatedCodes.isNotEmpty)
             IconButton(
               tooltip: 'Clear All',
@@ -364,6 +371,55 @@ class _ActivationCodeGeneratorScreenState
           ),
         );
       }
+    }
+  }
+
+  Future<void> _storeCodesToBackend() async {
+    if (_generatedCodes.isEmpty) return;
+
+    setState(() => _isGenerating = true);
+    final api = ApiClient();
+
+    try {
+      // Prepare payload
+      final codesPayload = _generatedCodes
+          .map((c) => {
+                'code': c.code,
+                'package_name': c.packageName,
+                'status': c.status,
+              })
+          .toList();
+
+      final body = {'codes': codesPayload};
+
+      final resp = await api.post('license/codes', body: body);
+
+      // Expect backend to return success flag
+      if (resp['success'] == true) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Stored ${_generatedCodes.length} codes to backend'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        // Optionally clear local list after successful store
+        setState(() => _generatedCodes.clear());
+      } else {
+        throw Exception('Unexpected server response: $resp');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to store codes: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isGenerating = false);
     }
   }
 

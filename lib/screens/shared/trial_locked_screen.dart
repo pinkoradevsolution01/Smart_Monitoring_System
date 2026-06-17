@@ -4,7 +4,6 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/package_service.dart';
 import '../../services/license_service.dart';
-import '../developer/developer_dashboard.dart';
 
 class TrialLockedScreen extends StatefulWidget {
   const TrialLockedScreen({super.key});
@@ -149,90 +148,10 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
     );
   }
 
-  // Hidden developer access
-  int _tapCount = 0;
-  Future<void> _onLockIconTap() async {
-    _tapCount++;
-    if (_tapCount >= 7) {
-      _tapCount = 0;
-      _showDeveloperAccess();
-    }
-  }
-
-  Future<void> _showDeveloperAccess() async {
-    final passwordController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Row(
-          children: [
-            Icon(Icons.code, color: Colors.amber),
-            SizedBox(width: 8),
-            Text('Developer Access', style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Enter developer password to bypass lock:',
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Password',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: const OutlineInputBorder(),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Colors.grey[700]!),
-                ),
-                focusedBorder: const OutlineInputBorder(
-                  borderSide: BorderSide(color: Colors.amber),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (passwordController.text == 'dev123' ||
-                  passwordController.text == 'admin123') {
-                // Mark developer as authenticated
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('developer_authenticated', true);
-
-                Navigator.pop(context);
-                // Navigate directly to Developer Dashboard
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const DeveloperDashboard()),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Invalid password'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-            child: const Text('Access'),
-          ),
-        ],
-      ),
-    );
+  // Developer access now uses the centralized Developer Auth route.
+  void _onLockIconTap() {
+    // Navigate users to explicit auth screen instead of revealing hidden bypass.
+    Navigator.pushNamed(context, '/developer-auth');
   }
 
   @override

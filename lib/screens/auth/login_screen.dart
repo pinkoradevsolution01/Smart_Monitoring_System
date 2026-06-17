@@ -18,9 +18,6 @@ import '../delivery_receiver/delivery_receiver_dashboard.dart';
 import '../sales_promoter/sales_promoter_dashboard.dart';
 import '../shared/settings_screen.dart';
 import '../shared/loading_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../services/developer_service.dart';
-import '../developer/developer_dashboard.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -37,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final UserService _userService = GetIt.I.get<UserService>();
   final BusinessInfoService _businessInfo = GetIt.I.get<BusinessInfoService>();
-  int _devTapCount = 0;
+  // Developer access is now centralized in /developer-auth.
 
   @override
   void dispose() {
@@ -256,107 +253,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(AppLocalizations.t('forgot_password')),
                     ),
                     const SizedBox(height: 12),
-                    // Copyright footer with hidden developer access (7 taps)
+                    const SizedBox(height: 12),
                     Center(
-                      child: GestureDetector(
-                        onTap: () async {
-                          _devTapCount++;
-                          if (_devTapCount >= 7) {
-                            _devTapCount = 0;
-                            // show password dialog
-                            final passwordController = TextEditingController();
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Row(
-                                  children: [
-                                    Icon(Icons.code, color: Colors.amber),
-                                    SizedBox(width: 8),
-                                    Text('Developer Access'),
-                                  ],
-                                ),
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'Enter developer password to access Developer features',
-                                    ),
-                                    const SizedBox(height: 12),
-                                    TextField(
-                                      controller: passwordController,
-                                      obscureText: true,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Password',
-                                        border: OutlineInputBorder(),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.amber,
-                                    ),
-                                    onPressed: () async {
-                                      final pw = passwordController.text;
-                                      final devService = GetIt.I
-                                          .get<DeveloperService>();
-                                      final registeredPw = devService.password;
-                                      final hasRegisteredDev =
-                                          registeredPw.isNotEmpty;
-                                      final allowedDefaults = [
-                                        'dev123',
-                                        'admin123',
-                                      ];
-                                      final okIfRegistered = pw == registeredPw;
-                                      final okIfNoRegistered =
-                                          okIfRegistered ||
-                                          allowedDefaults.contains(pw);
-                                      final ok = hasRegisteredDev
-                                          ? okIfRegistered
-                                          : okIfNoRegistered;
-
-                                      if (ok) {
-                                        final prefs =
-                                            await SharedPreferences.getInstance();
-                                        await prefs.setBool(
-                                          'developer_authenticated',
-                                          true,
-                                        );
-                                        Navigator.pop(ctx);
-                                        Navigator.pushReplacement(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) =>
-                                                const DeveloperDashboard(),
-                                          ),
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Invalid password'),
-                                            backgroundColor: Colors.red,
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    child: const Text('Access'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                        },
-                        child: Text(
-                          '© 2026 Smart Monitoring System',
-                          style: TextStyle(color: Colors.grey[600]),
+                      child: TextButton(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/developer-auth',
                         ),
+                        child: const Text('Developer Sign In'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        '© 2026 Smart Monitoring System',
+                        style: TextStyle(color: Colors.grey[600]),
                       ),
                     ),
                   ],

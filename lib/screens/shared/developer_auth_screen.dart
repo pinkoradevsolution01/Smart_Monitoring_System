@@ -1,30 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get_it/get_it.dart';
-import '../../services/package_service.dart';
+
+import '../../services/developer_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
 import '../../utils/oauth_checker.dart';
 import '../../models/admin_account.dart';
-import 'package_selection_screen.dart';
-import 'loading_screen.dart';
-import '../developer/developer_dashboard.dart';
-import '../../services/developer_service.dart';
 
 class DeveloperAuthScreen extends StatefulWidget {
   const DeveloperAuthScreen({super.key});
 
-  // Constants for authentication
   static const String _devAuthKey = 'developer_authenticated';
 
-  // Static method to check if developer is already authenticated
   static Future<bool> isDeveloperAuthenticated() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_devAuthKey) ?? false;
   }
 
-  // Static method to clear developer authentication
   static Future<void> clearAuthentication() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_devAuthKey);
@@ -87,18 +81,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
       if (mounted) {
         setState(() => _isLoading = false);
-        // Navigate to loading screen, then package selection
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LoadingScreen(
-              destination: PackageSelectionScreen(
-                packageService: GetIt.I<PackageService>(),
-              ),
-              iconData: Icons.code,
-            ),
-          ),
-        );
+            Navigator.pushReplacementNamed(context, '/developer-dashboard');
       }
     } else {
       setState(() => _isLoading = false);
@@ -155,15 +138,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
         _showSuccess('Founder account created successfully!');
 
         // Navigate to developer dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LoadingScreen(
-              destination: const DeveloperDashboard(),
-              iconData: Icons.verified_user,
-            ),
-          ),
-        );
+        Navigator.pushReplacementNamed(context, '/developer-dashboard');
       }
     } catch (e) {
       setState(() => _isLoading = false);
@@ -236,15 +211,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
         _showSuccess('Welcome, $userName!');
 
         // Navigate to developer dashboard
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => LoadingScreen(
-              destination: const DeveloperDashboard(),
-              iconData: Icons.verified_user,
-            ),
-          ),
-        );
+        Navigator.pushReplacementNamed(context, '/developer-dashboard');
       }
     } catch (e) {
       setState(() => _isGoogleLoading = false);

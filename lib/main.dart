@@ -14,6 +14,7 @@ import 'screens/shared/splash_screen.dart';
 import 'screens/shared/package_selection_screen.dart';
 import 'screens/shared/owner_registration_screen.dart';
 import 'screens/shared/developer_auth_screen.dart';
+import 'screens/developer/developer_dashboard.dart';
 import 'screens/developer/subscribers_screen.dart';
 import 'app_router.dart';
 import 'theme.dart';
@@ -523,6 +524,14 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
                   routes: {
                     ...AppRouter.routes,
                     '/developer-auth': (context) => const DeveloperAuthScreen(),
+                    '/developer-dashboard': (context) => FutureBuilder<bool>(
+                          future: DeveloperAuthScreen.isDeveloperAuthenticated(),
+                          builder: (context, snap) {
+                            final ok = snap.data == true;
+                            if (ok) return const DeveloperDashboard();
+                            return const DeveloperAuthScreen();
+                          },
+                        ),
                     '/owner-registration': (context) =>
                         const OwnerRegistrationScreen(),
                     '/subscribers': (context) => const SubscribersScreen(),
