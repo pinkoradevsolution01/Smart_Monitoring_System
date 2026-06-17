@@ -11,7 +11,7 @@ class BackendConfig {
   static const String _envApiBaseUrl = String.fromEnvironment(
     'BACKEND_API_BASE_URL',
     defaultValue: '',
-  );
+  ); 
   static const String _defaultApiBaseUrl = 'http://192.168.1.9:3000/api';
 
   static String get apiBaseUrl {
