@@ -49,6 +49,7 @@ curl http://localhost:3000/api/health/db
 - `POST /api/business/init`
 - `POST /api/license/activate`
 - `GET /api/license/code/:code`
+- `POST /api/license/codes/import`
 - `POST /api/sync/push`
 - `GET /api/sync/pull?businessId=<id>`
 - `GET /api/customers?businessId=<id>`
@@ -94,6 +95,7 @@ curl http://localhost:3000/api/health/db
   - `cameras`
   - `cctv_timestamps`
 - The `users` table includes `contact_number` and `auth_method` for owner profile and Google/password account tracking.
+- Imported activation codes should start as `unused`; the backend flips them to `used` when a customer activates a code.
 - Business-scoped CRUD endpoints require `businessId` on reads and writes so records stay isolated per tenant.
 
 ## Migrating From Supabase

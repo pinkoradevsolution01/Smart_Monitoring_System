@@ -95,11 +95,17 @@ class ApiClient {
       try {
         return jsonDecode(response.body);
       } catch (e) {
-        throw Exception('Unexpected JSON response: ${response.body}');
+        final preview = response.body.length > 160
+            ? response.body.substring(0, 160)
+            : response.body;
+        throw Exception(
+          'Backend returned non-JSON success response (${response.request?.url}): $preview',
+        );
       }
     }
 
-    String message = 'Server responded with status $statusCode';
+    final url = response.request?.url.toString() ?? 'unknown url';
+    String message = 'Server responded with status $statusCode from $url';
     if (response.body.isNotEmpty) {
       try {
         final body = jsonDecode(response.body);
@@ -107,7 +113,10 @@ class ApiClient {
           message = body['message'].toString();
         }
       } catch (_) {
-        message = response.body;
+        final preview = response.body.length > 240
+            ? response.body.substring(0, 240)
+            : response.body;
+        message = 'Non-JSON error response from $url: $preview';
       }
     }
 

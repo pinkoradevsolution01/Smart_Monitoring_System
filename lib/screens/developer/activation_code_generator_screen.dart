@@ -36,9 +36,9 @@ class _ActivationCodeGeneratorScreenState
             ),
             if (_generatedCodes.isNotEmpty)
               IconButton(
-                tooltip: 'Store to Backend',
+                tooltip: 'Import to MySQL',
                 icon: const Icon(Icons.cloud_upload),
-                onPressed: _storeCodesToBackend,
+                onPressed: _importCodesToMySql,
               ),
           if (_generatedCodes.isNotEmpty)
             IconButton(
@@ -374,7 +374,7 @@ class _ActivationCodeGeneratorScreenState
     }
   }
 
-  Future<void> _storeCodesToBackend() async {
+  Future<void> _importCodesToMySql() async {
     if (_generatedCodes.isEmpty) return;
 
     setState(() => _isGenerating = true);
@@ -392,20 +392,26 @@ class _ActivationCodeGeneratorScreenState
 
       final body = {'codes': codesPayload};
 
-      final resp = await api.post('license/codes', body: body);
+      Map<String, dynamic> resp;
+      try {
+        resp = await api.post('license/codes/import', body: body);
+      } catch (e) {
+        // Fall back to the legacy route in case the backend process has not
+        // been restarted after adding the dedicated import endpoint.
+        resp = await api.post('license/codes', body: body);
+      }
 
       // Expect backend to return success flag
       if (resp['success'] == true) {
+        final inserted = resp['inserted'] ?? _generatedCodes.length;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ Stored ${_generatedCodes.length} codes to backend'),
+              content: Text('✅ Imported $inserted codes to MySQL'),
               backgroundColor: Colors.green,
             ),
           );
         }
-        // Optionally clear local list after successful store
-        setState(() => _generatedCodes.clear());
       } else {
         throw Exception('Unexpected server response: $resp');
       }
@@ -413,7 +419,7 @@ class _ActivationCodeGeneratorScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ Failed to store codes: $e'),
+            content: Text('❌ Failed to import codes: $e'),
             backgroundColor: Colors.red,
           ),
         );

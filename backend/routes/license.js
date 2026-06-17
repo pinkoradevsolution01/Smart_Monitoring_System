@@ -154,7 +154,7 @@ router.get('/codes/available', async (req, res) => {
 });
 
 // Bulk create activation codes (used by Developer Dashboard Code Generator)
-router.post('/codes', async (req, res) => {
+async function bulkImportActivationCodes(req, res) {
   const body = req.body || {};
   const codes = Array.isArray(body.codes) ? body.codes : [];
   if (!codes.length) {
@@ -168,23 +168,38 @@ router.post('/codes', async (req, res) => {
     conn = await getConnection();
     await conn.beginTransaction();
 
-    // Prepare bulk values: [code, package_name, status, created_at]
-    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    const values = codes.map((c) => [
-      c.code,
-      c.package_name || 'Standard',
-      c.status || 'unused',
-      now,
-    ]);
+    let inserted = 0;
+    let skipped = 0;
 
-    // Use INSERT IGNORE to skip duplicates when a code already exists
-    await conn.query(
-      'INSERT IGNORE INTO activation_codes (code, package_name, status, created_at) VALUES ?',
-      [values],
-    );
+    for (const entry of codes) {
+      const code = String(entry.code || '').trim();
+      if (!code) {
+        skipped += 1;
+        continue;
+      }
+
+      const packageName = String(entry.package_name || 'Standard').trim() || 'Standard';
+      const status = entry.status === 'used' ? 'used' : 'unused';
+
+      const [result] = await conn.execute(
+        'INSERT IGNORE INTO activation_codes (code, package_name, status, created_at) VALUES (?, ?, ?, NOW())',
+        [code, packageName, status],
+      );
+
+      if (result.affectedRows > 0) {
+        inserted += 1;
+      } else {
+        skipped += 1;
+      }
+    }
 
     await conn.commit();
-    return res.json({ success: true, inserted: values.length });
+    return res.json({
+      success: true,
+      inserted,
+      skipped,
+      requested: codes.length,
+    });
   } catch (error) {
     if (conn) {
       try {
@@ -198,7 +213,10 @@ router.post('/codes', async (req, res) => {
   } finally {
     if (conn) conn.release();
   }
-});
+}
+
+router.post('/codes', bulkImportActivationCodes);
+router.post('/codes/import', bulkImportActivationCodes);
 
 router.post('/codes/:code/assign', async (req, res) => {
   const { code } = req.params;
