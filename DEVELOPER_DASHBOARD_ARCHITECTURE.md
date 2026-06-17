@@ -1,8 +1,8 @@
-# Developer Dashboard Architecture
+# Developer Dashboard Architecture - Pinkora Nexus SaaS Platform
 
-This document defines a web-friendly system architecture for the Developer Dashboard used to manage activation requests, subscription records, activation codes, logs, and maintenance tools.
+This document defines the architecture for **Pinkora Nexus**, a SaaS multi-tenant platform built on top of the Smart Monitoring System. It provides a centralized Developer Dashboard for managing activation requests, subscription records, activation codes, and subscriber management across multiple tenant organizations.
 
-It is based on the current Smart Monitoring System flow, but organized so it can be rebuilt as a separate website with a proper server-side security model.
+**Pinkora Nexus** is a dedicated web-based platform (separate from the Flutter app) that serves as the operational control center and licensing hub. It connects to a centralized MySQL database and exposes a REST API at `http://192.168.1.9:3000/api`, which the Smart Monitoring System instances query to validate subscriptions and manage device activations.
 
 ## 1. Purpose
 
@@ -27,39 +27,90 @@ The existing Flutter app already contains the main building blocks for this dash
 
 The web version should keep the same business concepts, but move security and state management to the server.
 
-## 3. High-Level Architecture
+## 3. High-Level SaaS Multi-Tenant Architecture
 
 ```mermaid
 flowchart TD
-  U[Developer / Operator] --> W[Developer Dashboard Web App]
+  subgraph "Pinkora Nexus Platform"
+    U[Operator / Developer] --> W[SaaS Dashboard Web App]
+    W --> A[Authentication Layer]
+    A --> S[Session + Role Check + Tenant Isolation]
+    S --> D[Protected Dashboard Pages]
+    D --> O[Overview / Stats]
+    D --> R[Activation Requests]
+    D --> C[Activation Code Manager]
+    D --> SB[Subscription Browser]
+    D --> L[Activity Logs]
+    D --> M[Developer Account Settings]
+    D --> T[Diagnostics / Maintenance]
+  end
 
-  W --> A[Authentication Layer]
-  A --> S[Session + Role Check]
-  S --> D[Protected Dashboard Pages]
+  subgraph "Central Backend"
+    API["REST API (http://192.168.1.9:3000/api)"]
+    O --> API
+    R --> API
+    C --> API
+    SB --> API
+    L --> API
+    M --> API
+    T --> API
+  end
 
-  D --> O[Overview / Stats]
-  D --> R[Activation Requests]
-  D --> C[Activation Code Manager]
-  D --> SB[Subscription Browser]
-  D --> L[Activity Logs]
-  D --> M[Developer Account Settings]
-  D --> T[Diagnostics / Maintenance]
+  subgraph "Central MySQL Database"
+    API --> DB[("MySQL Central DB<br/>Multi-Tenant Schema")]
+    API --> ALog[("Audit Log Store")]
+    API --> Q["Job Queue"] 
+  end
 
-  O --> API[Backend API]
-  R --> API
-  C --> API
-  SB --> API
-  L --> API
-  M --> API
-  T --> AP
-
-  API --> DB[(Primary Database)]
-  API --> Q[Notification / Job Queue]
   Q --> E[Email Provider]
-  API --> ALog[(Audit Log Store)]
+  Q --> SYNC["Sync Service"]
+
+  subgraph "Smart Monitoring System Instances"
+    SYNC --> SMS1["SMS Instance 1<br/>Device A"]
+    SYNC --> SMS2["SMS Instance 2<br/>Device B"]
+    SYNC --> SMS3["SMS Instance N<br/>Device N"]
+  end
+
+  SMS1 -->|"Query: /api/subscriptions/validate"| API
+  SMS2 -->|"Query: /api/subscriptions/validate"| API
+  SMS3 -->|"Query: /api/subscriptions/validate"| API
 ```
 
-## 4. Layered Architecture
+## 4. SaaS Multi-Tenant Architecture
+
+### 4.1 Tenant Isolation Strategy
+
+**Pinkora Nexus** uses a **database-level multi-tenant** approach:
+
+- Each tenant organization has its own logical namespace in the shared MySQL database
+- Tenant data is separated via a `tenant_id` foreign key on all relevant tables
+- All database queries include `WHERE tenant_id = :current_tenant_id` automatically
+- Row-level security enforced at the ORM and API layer
+- Separate developer/operator accounts per tenant with role-based permissions
+
+### 4.2 Tenant Entity Types
+
+1. **Operator Tenant**: Internal admin team (Pinkora staff)
+   - Full access to all platform features
+   - Visibility into all subscriptions and device metrics
+   - Can manage other developers and reset systems
+
+2. **Business Tenant**: External customer organizations
+   - Can view only their own activation codes and subscriptions
+   - Can manage their own devices and activation requests
+   - Limited access to diagnostics and maintenance tools
+   - View their own audit logs only
+
+### 4.3 Shared Services (Tenant-Aware)
+
+- Email notifications (sends to tenant-specific email addresses)
+- Audit logging (includes `tenant_id` in all log entries)
+- Job queue (segregates background tasks by tenant)
+- Subscription sync service (processes each tenant independently)
+
+---
+
+## 5. Layered Architecture
 
 ### Presentation Layer
 
@@ -107,7 +158,7 @@ Supporting services:
 - Background jobs or queue
 - Optional cache layer
 
-## 5. Core Modules
+## 6. Core Modules
 
 ### 5.1 Authentication and Access Control
 
@@ -234,7 +285,7 @@ Important rule:
 - Keep factory reset behind strong confirmation and privileged access
 - Prefer soft-reset and archive options before hard deletion
 
-## 6. Suggested Website Pages
+## 7. Suggested Website Pages
 
 Recommended routes:
 
@@ -249,7 +300,7 @@ Recommended routes:
 - `/developer/tools`
 - `/developer/audit`
 
-## 7. Suggested API Surface
+## 8. Suggested API Surface
 
 Recommended endpoints:
 
@@ -268,62 +319,393 @@ Recommended endpoints:
 - `POST /api/developer/factory-reset`
 - `POST /api/developer/diagnostics/test-db`
 
-## 8. Data Model
+## 9. Central MySQL Database Schema
 
-### developers
+### Multi-Tenant Tables
 
-- `id`
-- `name`
-- `email`
-- `password_hash`
-- `role`
-- `created_at`
-- `last_login_at`
+All tables include `tenant_id` for tenant isolation and `created_at`, `updated_at` for audit trail.
 
-### activation_requests
+#### 9.1 Tenant Management
 
-- `id`
-- `customer_name`
-- `customer_email`
-- `package_name`
-- `package_price`
-- `status`
-- `activation_code`
-- `created_at`
-- `updated_at`
+**tenants**
+```sql
+CREATE TABLE tenants (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  organization_name VARCHAR(255) NOT NULL,
+  subdomain VARCHAR(100) UNIQUE,
+  api_key VARCHAR(255) UNIQUE,
+  subscription_tier ENUM('free', 'basic', 'professional', 'enterprise'),
+  max_devices INT DEFAULT 10,
+  status ENUM('active', 'suspended', 'archived') DEFAULT 'active',
+  contact_email VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at TIMESTAMP NULL
+);
+```
 
-### activation_codes
+#### 9.2 Developer Accounts (Tenant-Specific)
 
-- `id`
-- `code`
-- `package_name`
-- `status`
-- `device_id`
-- `device_name`
-- `used_at`
-- `revoked_at`
+**developers**
+```sql
+CREATE TABLE developers (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'manager', 'operator', 'viewer') DEFAULT 'operator',
+  is_active BOOLEAN DEFAULT TRUE,
+  last_login_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_email_per_tenant (tenant_id, email),
+  INDEX idx_tenant_id (tenant_id)
+);
+```
 
-### subscriptions
+#### 9.3 Activation Codes
 
-- `id`
-- `device_id`
-- `activation_code`
-- `package_name`
-- `status`
-- `activated_at`
-- `expires_at`
+**activation_codes**
+```sql
+CREATE TABLE activation_codes (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  package_name VARCHAR(100) NOT NULL,
+  package_price DECIMAL(10, 2),
+  status ENUM('available', 'assigned', 'used', 'revoked', 'expired') DEFAULT 'available',
+  device_id VARCHAR(255) NULL,
+  device_name VARCHAR(255) NULL,
+  assigned_at TIMESTAMP NULL,
+  used_at TIMESTAMP NULL,
+  revoked_at TIMESTAMP NULL,
+  expiration_date DATE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  INDEX idx_tenant_status (tenant_id, status),
+  INDEX idx_device_id (device_id),
+  INDEX idx_expiration (expiration_date)
+);
+```
 
-### audit_logs
+#### 9.4 Activation Requests
 
-- `id`
-- `actor_id`
-- `action`
-- `target_type`
-- `target_id`
-- `metadata`
-- `created_at`
+**activation_requests**
+```sql
+CREATE TABLE activation_requests (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  customer_name VARCHAR(255) NOT NULL,
+  customer_email VARCHAR(255) NOT NULL,
+  customer_phone VARCHAR(20),
+  package_name VARCHAR(100) NOT NULL,
+  package_price DECIMAL(10, 2),
+  status ENUM('pending', 'assigned', 'fulfilled', 'cancelled') DEFAULT 'pending',
+  activation_code_id INT NULL,
+  notes TEXT,
+  priority ENUM('low', 'medium', 'high') DEFAULT 'medium',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  fulfilled_at TIMESTAMP NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (activation_code_id) REFERENCES activation_codes(id) ON DELETE SET NULL,
+  INDEX idx_tenant_status (tenant_id, status),
+  INDEX idx_created_at (created_at)
+);
+```
 
-## 9. Security Model
+#### 9.5 Subscriptions (Linked to Smart Monitoring System)
+
+**subscriptions**
+```sql
+CREATE TABLE subscriptions (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  device_id VARCHAR(255) NOT NULL,
+  device_name VARCHAR(255),
+  activation_code_id INT NOT NULL,
+  activation_code VARCHAR(50),
+  package_name VARCHAR(100) NOT NULL,
+  package_price DECIMAL(10, 2),
+  status ENUM('active', 'inactive', 'expired', 'cancelled') DEFAULT 'active',
+  activated_at TIMESTAMP NULL,
+  expires_at TIMESTAMP NOT NULL,
+  last_sync_at TIMESTAMP NULL,
+  last_heartbeat TIMESTAMP NULL,
+  app_version VARCHAR(20),
+  platform ENUM('android', 'ios', 'windows', 'linux', 'web'),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (activation_code_id) REFERENCES activation_codes(id) ON DELETE RESTRICT,
+  UNIQUE KEY unique_device_subscription (tenant_id, device_id),
+  INDEX idx_status_expires (status, expires_at),
+  INDEX idx_last_heartbeat (last_heartbeat)
+);
+```
+
+#### 9.6 Device Registry
+
+**devices**
+```sql
+CREATE TABLE devices (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  device_id VARCHAR(255) NOT NULL,
+  device_name VARCHAR(255),
+  device_model VARCHAR(100),
+  os_type ENUM('android', 'ios', 'windows', 'linux', 'web'),
+  os_version VARCHAR(20),
+  app_version VARCHAR(20),
+  device_owner VARCHAR(255),
+  location VARCHAR(255),
+  registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_active TIMESTAMP NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_device_per_tenant (tenant_id, device_id),
+  INDEX idx_last_active (last_active),
+  INDEX idx_is_active (is_active)
+);
+```
+
+#### 9.7 Audit Logs
+
+**audit_logs**
+```sql
+CREATE TABLE audit_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  actor_id INT,
+  actor_name VARCHAR(255),
+  action VARCHAR(100) NOT NULL,
+  target_type VARCHAR(50),
+  target_id INT,
+  old_values JSON,
+  new_values JSON,
+  ip_address VARCHAR(45),
+  user_agent VARCHAR(500),
+  status ENUM('success', 'failure') DEFAULT 'success',
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  INDEX idx_tenant_created (tenant_id, created_at),
+  INDEX idx_action (action),
+  INDEX idx_actor_id (actor_id)
+);
+```
+
+#### 9.8 System Events & Notifications
+
+**system_events**
+```sql
+CREATE TABLE system_events (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  severity ENUM('info', 'warning', 'error', 'critical') DEFAULT 'info',
+  title VARCHAR(255),
+  description TEXT,
+  related_entity_type VARCHAR(50),
+  related_entity_id INT,
+  processed BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processed_at TIMESTAMP NULL,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  INDEX idx_tenant_processed (tenant_id, processed),
+  INDEX idx_severity (severity)
+);
+```
+
+#### 9.9 Subscription Sync History
+
+**subscription_sync_history**
+```sql
+CREATE TABLE subscription_sync_history (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  device_id VARCHAR(255),
+  subscription_id INT,
+  sync_type ENUM('heartbeat', 'validation', 'renewal', 'full_sync'),
+  status ENUM('success', 'failed', 'partial') DEFAULT 'success',
+  status_code INT,
+  response_time_ms INT,
+  error_message TEXT,
+  sync_data JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (subscription_id) REFERENCES subscriptions(id) ON DELETE SET NULL,
+  INDEX idx_tenant_device (tenant_id, device_id),
+  INDEX idx_created_at (created_at)
+);
+```
+
+#### 9.10 Email Templates & Notifications
+
+**email_templates**
+```sql
+CREATE TABLE email_templates (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  name VARCHAR(100),
+  template_key VARCHAR(100) UNIQUE,
+  subject VARCHAR(255),
+  body_html LONGTEXT,
+  body_text LONGTEXT,
+  variables JSON,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+
+CREATE TABLE email_queue (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id INT NOT NULL,
+  recipient_email VARCHAR(255),
+  template_id INT,
+  variables JSON,
+  status ENUM('pending', 'sent', 'failed') DEFAULT 'pending',
+  retry_count INT DEFAULT 0,
+  max_retries INT DEFAULT 3,
+  sent_at TIMESTAMP NULL,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+  FOREIGN KEY (template_id) REFERENCES email_templates(id) ON DELETE SET NULL,
+  INDEX idx_status (status),
+  INDEX idx_created_at (created_at)
+);
+```
+
+## 10. Central Database Connection & API Integration
+
+### 10.1 Central API (`http://192.168.1.9:3000/api`)
+
+The Pinkora Nexus backend exposes a centralized REST API that serves two consumer groups:
+
+**1. Dashboard Web App (Internal)**
+- Developer authentication and dashboard operations
+- Tenant-specific data queries
+- Admin management functions
+- Audit and diagnostics
+
+**2. Smart Monitoring System Instances (External)**
+- Subscription validation queries
+- Device activation lookups
+- Package information retrieval
+- Sync heartbeat and renewal calls
+
+### 10.2 Smart Monitoring System Integration
+
+Each Smart Monitoring System instance running on devices makes periodic API calls to validate licenses and subscriptions:
+
+```
+Smart Monitoring System (running on device)
+  ↓
+  POST http://192.168.1.9:3000/api/subscriptions/validate
+  {
+    "device_id": "device_uuid",
+    "activation_code": "XYZABC-12345",
+    "app_version": "2.0.1",
+    "platform": "android"
+  }
+  ↓
+Pinkora Nexus Backend (Node.js/Express)
+  ↓
+  Query MySQL: SELECT * FROM subscriptions WHERE device_id = ? AND activation_code = ?
+  ↓
+  Response:
+  {
+    "status": "active",
+    "package_name": "Professional",
+    "expires_at": "2026-12-31T23:59:59Z",
+    "sync_allowed": true,
+    "features_enabled": ["inventory", "sales", "cctv", "reports"]
+  }
+```
+
+### 10.3 Database Connection Pool
+
+The Pinkora Nexus backend maintains a MySQL connection pool:
+
+```javascript
+// backend/.env or config
+DB_HOST=192.168.1.9
+DB_PORT=3306
+DB_NAME=pinkora_nexus
+DB_USER=app_user
+DB_PASSWORD=secure_password
+DB_POOL_SIZE=20
+DB_POOL_MAX_IDLE_TIME=600000
+```
+
+### 10.4 Query Examples
+
+**Validate Device Subscription**
+```sql
+SELECT 
+  s.id,
+  s.status,
+  s.expires_at,
+  s.package_name,
+  ac.code,
+  t.api_key
+FROM subscriptions s
+JOIN activation_codes ac ON s.activation_code_id = ac.id
+JOIN tenants t ON s.tenant_id = t.id
+WHERE s.device_id = ? 
+  AND ac.code = ?
+  AND s.status IN ('active', 'grace_period')
+  AND s.expires_at > NOW()
+LIMIT 1;
+```
+
+**Get Active Subscriptions by Tenant**
+```sql
+SELECT 
+  s.device_id,
+  s.device_name,
+  s.package_name,
+  s.status,
+  s.activated_at,
+  s.expires_at,
+  d.last_active,
+  d.platform
+FROM subscriptions s
+JOIN devices d ON s.device_id = d.device_id AND s.tenant_id = d.tenant_id
+WHERE s.tenant_id = ? 
+  AND s.status = 'active'
+ORDER BY s.activated_at DESC;
+```
+
+**Check Expiring Subscriptions (For Renewal Notifications)**
+```sql
+SELECT 
+  s.id,
+  s.device_id,
+  s.expires_at,
+  t.contact_email
+FROM subscriptions s
+JOIN tenants t ON s.tenant_id = t.id
+WHERE s.status = 'active'
+  AND s.expires_at BETWEEN NOW() AND DATE_ADD(NOW(), INTERVAL 7 DAY)
+  AND NOT EXISTS (
+    SELECT 1 FROM system_events 
+    WHERE tenant_id = s.tenant_id 
+      AND event_type = 'subscription_expiry_notice'
+      AND related_entity_id = s.id
+      AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+  );
+```
+
+---
+
+## 11. Security Model
 
 This is the most important difference between the current app and the web version.
 
@@ -340,7 +722,7 @@ Recommended controls:
 
 Do not use client-side storage as the source of truth for privileged access.
 
-## 10. Module-to-Code Mapping
+## 12. Module-to-Code Mapping
 
 The current app maps cleanly to a web dashboard like this:
 
@@ -350,19 +732,51 @@ The current app maps cleanly to a web dashboard like this:
 - Subscription stats in [`lib/services/cloud_subscription_service.dart`](./lib/services/cloud_subscription_service.dart) become a stats endpoint
 - Activation and license flows in [`backend/README.md`](./backend/README.md) become the API foundation for the website
 
-## 11. Recommended Technology Stack
+## 13. Recommended Technology Stack - Pinkora Nexus
 
-Suggested stack for the separate website:
+Pinkora Nexus Platform Stack:
 
-- Frontend: Next.js or React
-- UI: Tailwind CSS or a dashboard component system
-- Backend: Node.js with Express
-- Database: MySQL
-- Auth: Secure cookie sessions or JWT
-- Email: SMTP or transactional email provider
-- Logging: Database audit table plus optional external logging
+**Frontend (Dashboard Web App)**
+- Framework: Next.js 14+ or React 18+
+- UI Components: Tailwind CSS + shadcn/ui
+- State Management: Redux Toolkit or Zustand
+- HTTP Client: Axios or TanStack Query
+- Auth: NextAuth.js or Auth0
+- Deployment: Vercel or AWS Amplify
 
-## 12. Implementation Notes
+**Backend (Central API)**
+- Runtime: Node.js 18+
+- Framework: Express.js or Fastify
+- ORM: Sequelize, Typeorm, or Prisma
+- Validation: Joi, Yup, or Zod
+- Auth: JWT + Refresh Token Pattern
+- Rate Limiting: Express-rate-limit
+- CORS: Secure tenant-aware CORS
+
+**Database**
+- DBMS: MySQL 8.0+
+- Hosting: Self-managed or AWS RDS
+- Connection Pool: mysql2/promise with pooling
+- Backup: Automated daily backups with point-in-time recovery
+- Monitoring: MySQL Enterprise Monitor or Percona Monitoring and Management
+
+**Infrastructure**
+- API Server: EC2 or DigitalOcean
+- Database Server: Dedicated MySQL instance (192.168.1.9:3306)
+- Load Balancer: Nginx reverse proxy
+- Caching: Redis for session store and rate limiting
+- Email: SendGrid, Postmark, or AWS SES
+- Logging & Monitoring: CloudWatch or ELK Stack
+- CDN: Cloudflare or AWS CloudFront
+
+**DevOps & Deployment**
+- IaC: Terraform or AWS CloudFormation
+- CI/CD: GitHub Actions or Jenkins
+- Container: Docker for reproducible environments
+- Orchestration: Kubernetes or Docker Swarm (optional)
+- Version Control: Git (GitHub, GitLab, or Gitea)
+
+## 14. Implementation Notes
 
 1. Keep the dashboard modular.
 2. Separate viewing pages from mutation actions.
@@ -372,7 +786,7 @@ Suggested stack for the separate website:
 6. Avoid hardcoding credentials in the client.
 7. Add environment-based configuration for keys and secrets.
 
-## 13. Suggested Build Order
+## 15. Suggested Build Order for Pinkora Nexus
 
 If you are creating the website next, build it in this order:
 
@@ -386,7 +800,99 @@ If you are creating the website next, build it in this order:
 8. Diagnostics tools
 9. Factory reset and admin safety checks
 
-## 14. Short Summary
+## 16. Smart Monitoring System Integration Points
+
+The Smart Monitoring System (Flutter app) integrates with Pinkora Nexus in the following ways:
+
+### 16.1 Application Startup (On App Launch)
+
+```dart
+// In main.dart or app initialization
+final cloudService = CloudSubscriptionService();
+await cloudService.validateSubscription(
+  deviceId: Settings.deviceId,
+  activationCode: Settings.activationCode,
+);
+
+if (cloudService.isSubscriptionValid) {
+  // Load app normally with all features
+  runApp(const SmartMonitoringApp());
+} else {
+  // Show subscription expired or offline message
+  showExpiredSubscriptionUI();
+}
+```
+
+### 16.2 Periodic Sync (Background Task)
+
+```dart
+// Background service - runs every 24 hours or on user logout
+void syncSubscriptionStatus() async {
+  final response = await http.post(
+    Uri.parse('http://192.168.1.9:3000/api/subscriptions/validate'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({
+      'device_id': Settings.deviceId,
+      'activation_code': Settings.activationCode,
+      'app_version': appVersion,
+      'platform': 'android', // or 'ios', 'windows', etc.
+    }),
+  );
+  
+  if (response.statusCode == 200) {
+    final subscription = SubscriptionData.fromJson(jsonDecode(response.body));
+    await Settings.saveSubscription(subscription);
+  }
+}
+```
+
+### 16.3 API Endpoints Used by Smart Monitoring System
+
+| Endpoint | Method | Purpose | Frequency |
+|----------|--------|---------|----------|
+| `/api/subscriptions/validate` | POST | Validate device activation | App startup, periodic |
+| `/api/subscriptions/:id/renew` | POST | Request subscription renewal | Manual user action |
+| `/api/devices/register` | POST | Register new device | First launch |
+| `/api/devices/:id/heartbeat` | POST | Send device heartbeat | Every 6 hours |
+| `/api/packages` | GET | Fetch available packages | On-demand |
+| `/api/feature-flags` | GET | Get tenant-specific features | App startup |
+
+### 16.4 Error Handling & Fallback Behavior
+
+**If API is unreachable:**
+- Use cached subscription status (valid for 7 days offline)
+- Log sync failure to local database
+- Retry on next connection
+- Show warning but allow app to function
+
+**If subscription is invalid:**
+- Disable premium features
+- Show graceful expiration message
+- Offer in-app renewal via activation code entry
+- Redirect to activation code input screen
+
+### 16.5 Local Storage (Smart Monitoring System)
+
+The Smart Monitoring System stores subscription state locally in SQLite:
+
+```sql
+CREATE TABLE subscription_cache (
+  id INTEGER PRIMARY KEY,
+  device_id TEXT UNIQUE,
+  activation_code TEXT,
+  status TEXT,
+  package_name TEXT,
+  expires_at TEXT,
+  features_enabled TEXT, -- JSON array
+  last_sync_at TEXT,
+  cache_expires_at TEXT,
+  created_at TEXT
+);
+```
+
+---
+
+## 17. Short Summary
 
 The Developer Dashboard should be a protected internal admin system with:
 
