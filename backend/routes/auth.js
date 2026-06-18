@@ -10,6 +10,12 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_DEFAULT_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
 
+function normalizeRedirectUri(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[\\]+$/g, '');
+}
+
 async function verifyGoogleIdToken(idToken) {
   const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
   const response = await fetch(url);
@@ -59,7 +65,7 @@ async function exchangeGoogleCode(code, redirectUri) {
     code,
     client_id: GOOGLE_CLIENT_ID,
     client_secret: GOOGLE_CLIENT_SECRET,
-    redirect_uri: redirectUri,
+    redirect_uri: normalizeRedirectUri(redirectUri),
     grant_type: 'authorization_code',
   });
 
@@ -369,7 +375,9 @@ router.post('/google', async (req, res) => {
 router.get('/google/url', async (req, res) => {
   const { redirectUri, state } = req.query;
   try {
-    const resolvedRedirectUri = redirectUri || GOOGLE_DEFAULT_REDIRECT_URI;
+    const resolvedRedirectUri = normalizeRedirectUri(
+      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI,
+    );
     if (!resolvedRedirectUri) {
       return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
     }
@@ -381,7 +389,10 @@ router.get('/google/url', async (req, res) => {
     });
   } catch (error) {
     console.error('Auth /google/url error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to build Google auth URL.' });
+    return res.status(500).json({
+      success: false,
+      message: `Failed to build Google auth URL: ${error.message}`,
+    });
   }
 });
 
@@ -392,7 +403,9 @@ router.post('/google/exchange', async (req, res) => {
   }
 
   try {
-    const resolvedRedirectUri = redirectUri || GOOGLE_DEFAULT_REDIRECT_URI;
+    const resolvedRedirectUri = normalizeRedirectUri(
+      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI,
+    );
     if (!resolvedRedirectUri) {
       return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
     }
@@ -407,7 +420,10 @@ router.post('/google/exchange', async (req, res) => {
     return res.json(issueAppSession(profile));
   } catch (error) {
     console.error('Auth /google/exchange error:', error);
-    return res.status(401).json({ success: false, message: 'Google code exchange failed.' });
+    return res.status(401).json({
+      success: false,
+      message: `Google code exchange failed: ${error.message}`,
+    });
   }
 });
 
