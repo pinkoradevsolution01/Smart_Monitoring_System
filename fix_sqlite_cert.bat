@@ -30,7 +30,8 @@ for %%A in ("%BIN_FILE%") do echo %%~zA bytes
 
 echo.
 echo Now attempting Flutter build...
-cd /d "C:\2026 Projects\Smart_Monitoring_System"
+cd /d "%~dp0"
 call flutter build apk --debug
 
 endlocal
+
