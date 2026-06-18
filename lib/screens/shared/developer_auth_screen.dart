@@ -4,10 +4,12 @@ import 'package:get_it/get_it.dart';
 
 import '../../services/developer_service.dart';
 import '../../services/admin_service.dart';
+import '../../services/user_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
 import '../../utils/oauth_checker.dart';
 import '../../models/admin_account.dart';
+import '../../models/user.dart' show UserRole;
 
 class DeveloperAuthScreen extends StatefulWidget {
   const DeveloperAuthScreen({super.key});
@@ -64,6 +66,18 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
     // Check credentials
     final devService = GetIt.I.get<DeveloperService>();
+    final userService = GetIt.I.get<UserService>();
+    final ownerEmails = userService
+        .getUsersByRoleIncludingInactive(UserRole.owner)
+        .map((u) => u.email.toLowerCase())
+        .toSet();
+    if (ownerEmails.contains(username.toLowerCase())) {
+      setState(() => _isLoading = false);
+      _showError(
+        'That email belongs to an Owner account. Use a separate Developer account.',
+      );
+      return;
+    }
     final storedPw = devService.password;
     final hasRegisteredDev = storedPw.isNotEmpty;
     final storedOk = devService.authenticate(username, password);
@@ -188,13 +202,18 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
       debugPrint('OK: Gmail sign-in successful: $userEmail');
 
-      // Prevent using the Owner/Admin account as the Developer account.
-      final adminService = GetIt.I.get<AdminService>();
-      final isOwnerEmail = adminService.hasAdminAccount && adminService.isAdmin(userEmail);
-      if (isOwnerEmail) {
+      // Prevent using the Owner account as the Developer account.
+      final userService = GetIt.I.get<UserService>();
+      final ownerEmails = userService
+          .getUsersByRoleIncludingInactive(UserRole.owner)
+          .map((u) => u.email.toLowerCase())
+          .toSet();
+      if (ownerEmails.contains(userEmail.toLowerCase())) {
         await _googleAuth.signOut();
         setState(() => _isGoogleLoading = false);
-        _showError('This Google account is registered as Owner; please use a different Google account for Developer sign-in.');
+        _showError(
+          'This Google account is registered as Owner. Please use a different Google account for Developer sign-in.',
+        );
         return;
       }
 
@@ -229,10 +248,13 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
     try {
       // Store developer identity separately so owner/admin account isn't overwritten
       final devService = GetIt.I<DeveloperService>();
+      final prefs = await SharedPreferences.getInstance();
 
       // Use email as username and store the oauth userId as a non-empty password
       // (DeveloperService requires a password field for legacy flows).
       await devService.updateDeveloperAccount(username: email, password: userId);
+      await prefs.setString('dev_email', email);
+      await prefs.setString('dev_name', name);
       debugPrint('OK: Developer account saved: $email');
     } catch (e) {
       debugPrint('Error saving developer account: $e');

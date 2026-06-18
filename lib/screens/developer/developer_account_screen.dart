@@ -248,6 +248,7 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
 
       // Save basic info (email is read-only from authentication)
       await prefs.setString('dev_name', _nameController.text);
+      await prefs.setString('dev_email', _authenticatedEmail);
       // Sync to DeveloperService
       try {
         final devService = GetIt.I.get<DeveloperService>();

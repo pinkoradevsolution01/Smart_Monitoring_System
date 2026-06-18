@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../models/user.dart' as user_model;
+import '../../services/developer_service.dart';
 import '../../services/user_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../utils/oauth_checker.dart';
@@ -111,6 +112,25 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                     onPressed: () => OAuthChecker.showSetupDialog(context),
                   )
                 : null,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final devService = GetIt.I<DeveloperService>();
+      final prefs = await SharedPreferences.getInstance();
+      final developerEmail = prefs.getString('dev_email') ?? devService.username;
+      if (developerEmail.isNotEmpty &&
+          (googleUser['email'] as String).toLowerCase() ==
+              developerEmail.toLowerCase()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This Google account is already reserved for the Developer dashboard. Use a different account for Owner setup.',
+            ),
+            backgroundColor: Colors.orange,
           ),
         );
         setState(() => _isLoading = false);

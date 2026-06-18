@@ -17,6 +17,15 @@ class DeveloperService extends ChangeNotifier {
 
   String get username => _username;
   String get password => _password;
+  bool get hasDeveloperAccount => _username.isNotEmpty && _password.isNotEmpty;
+
+  /// Returns true when the given email matches the currently registered
+  /// developer identity. This is used to keep owner and developer accounts
+  /// from sharing the same Google account.
+  bool isDeveloperEmail(String email) {
+    if (_username.isEmpty || email.isEmpty) return false;
+    return _username.toLowerCase() == email.toLowerCase();
+  }
 
   Future<void> _initialize() async {
     try {

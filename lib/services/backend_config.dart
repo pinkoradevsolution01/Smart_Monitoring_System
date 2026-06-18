@@ -10,8 +10,8 @@ class BackendConfig {
   ///
   /// Common values:
   /// - Windows/macOS/Linux desktop: `http://localhost:3000/api`
-  /// - Android emulator: `http://10.0.2.2:3000/api`
-  /// - Physical device on same LAN: `http://<your-pc-lan-ip>:3000/api`
+  /// - Android emulator / physical device on the same LAN:
+  ///   `http://192.168.1.5:3000/api`
   static const String _envApiBaseUrl = String.fromEnvironment(
     'BACKEND_API_BASE_URL',
     defaultValue: '',
@@ -24,9 +24,9 @@ class BackendConfig {
         case TargetPlatform.linux:
           return 'http://localhost:3000/api';
         case TargetPlatform.android:
-          return 'http://10.0.2.2:3000/api';
+          return 'http://192.168.1.5:3000/api';
         case TargetPlatform.iOS:
-          return 'http://localhost:3000/api';
+          return 'http://192.168.1.5:3000/api';
         case TargetPlatform.fuchsia:
           break;
       }
