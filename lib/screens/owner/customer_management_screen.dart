@@ -408,7 +408,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       );
 
       // Select folder
-      final selectedDirectory = await FilePicker.platform.getDirectoryPath(
+      final selectedDirectory = await FilePicker.getDirectoryPath(
         dialogTitle: 'Select folder to save PDF',
       );
 

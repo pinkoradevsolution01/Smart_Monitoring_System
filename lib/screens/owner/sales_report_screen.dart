@@ -9,6 +9,7 @@ import 'package:printing/printing.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
 import 'dart:convert';
+// 'dart:typed_data' not needed; types provided by flutter/services.dart
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../models/sale.dart';
@@ -322,6 +323,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     buffer.writeln('Profit Margin,${_profitMargin.toStringAsFixed(2)}%');
 
     final csv = buffer.toString();
+    final csvBytes = Uint8List.fromList(utf8.encode(csv));
 
     await showDialog(
       context: context,
@@ -342,12 +344,13 @@ class _SalesReportScreenState extends State<SalesReportScreen>
               final navigator = Navigator.of(dialogContext);
               final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-              final path = await FilePicker.platform.saveFile(
+              final path = await FilePicker.saveFile(
                 dialogTitle: 'Save Financial Report',
                 fileName:
                     'financial_${_financialDay.toIso8601String().substring(0, 10)}.csv',
                 type: FileType.custom,
                 allowedExtensions: ['csv'],
+                bytes: csvBytes,
               );
               if (path != null) {
                 final file = File(path);
@@ -551,6 +554,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
       buffer.writeln(row);
     }
     final csv = buffer.toString();
+    final csvBytes = Uint8List.fromList(utf8.encode(csv));
     await showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -571,12 +575,13 @@ class _SalesReportScreenState extends State<SalesReportScreen>
               final navigator = Navigator.of(dialogContext);
               final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-              final path = await FilePicker.platform.saveFile(
+              final path = await FilePicker.saveFile(
                 dialogTitle: 'Save CSV',
                 fileName:
                     'sales_${_selectedDay.toIso8601String().substring(0, 10)}.csv',
                 type: FileType.custom,
                 allowedExtensions: ['csv'],
+                bytes: csvBytes,
               );
               if (path != null) {
                 final file = File(path);
@@ -1239,6 +1244,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
       'Net Total,$completedCount,${completedTotal.toStringAsFixed(2)}',
     );
     final csv = buffer.toString();
+    final csvBytes = Uint8List.fromList(utf8.encode(csv));
 
     await showDialog(
       context: context,
@@ -1260,11 +1266,12 @@ class _SalesReportScreenState extends State<SalesReportScreen>
               final scaffoldMessenger = ScaffoldMessenger.of(context);
               final fileName =
                   'sales_${range.start.toIso8601String().substring(0, 10)}_${range.end.toIso8601String().substring(0, 10)}.csv';
-              final path = await FilePicker.platform.saveFile(
+              final path = await FilePicker.saveFile(
                 dialogTitle: 'Save CSV',
                 fileName: fileName,
                 type: FileType.custom,
                 allowedExtensions: ['csv'],
+                bytes: csvBytes,
               );
               if (path != null) {
                 final file = File(path);

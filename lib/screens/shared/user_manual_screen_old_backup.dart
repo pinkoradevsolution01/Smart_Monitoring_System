@@ -245,10 +245,11 @@ class _UserManualScreenState extends State<UserManualScreen> {
       final bytes = await pdf.save();
 
       // Let user choose where to save the file
-      String? outputPath = await FilePicker.platform.saveFile(
+      String? outputPath = await FilePicker.saveFile(
         dialogTitle: 'Save PDF Manual',
         fileName: 'Smart_Store_User_Manual.pdf',
         allowedExtensions: ['pdf'],
+        bytes: bytes,
       );
 
       if (outputPath == null) {

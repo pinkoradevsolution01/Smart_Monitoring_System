@@ -313,14 +313,13 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
 
   Future<void> _pickImageFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.image,
-        allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (file?.path != null) {
         setState(() {
-          _capturedImagePath = result.files.single.path;
+          _capturedImagePath = file!.path;
         });
       }
     } catch (e) {

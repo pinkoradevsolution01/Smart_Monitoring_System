@@ -466,14 +466,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Future<void> _pickImage() async {
-    final result = await FilePicker.platform.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.image,
-      allowMultiple: false,
     );
 
-    if (result != null && result.files.isNotEmpty) {
+    if (file?.path != null) {
       setState(() {
-        _imagePath = result.files.first.path;
+        _imagePath = file!.path;
       });
     }
   }

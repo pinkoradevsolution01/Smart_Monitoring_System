@@ -610,11 +610,13 @@ class _ActivationCodeGeneratorScreenState
         await file.writeAsString(csvContent);
 
         // Share file
-        await Share.shareXFiles(
-          [XFile(filePath)],
-          subject: 'Activation Codes Export',
-          text:
-              'Generated ${_generatedCodes.length} activation codes for Smart Monitoring System',
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(filePath)],
+            subject: 'Activation Codes Export',
+            text:
+                'Generated ${_generatedCodes.length} activation codes for Smart Monitoring System',
+          ),
         );
 
         if (mounted) {

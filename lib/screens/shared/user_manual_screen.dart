@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
+// 'dart:typed_data' not required; provided by other imports
 import '../../utils/app_localizations.dart';
 
 class UserManualScreen extends StatefulWidget {
@@ -308,12 +309,13 @@ class _UserManualScreenState extends State<UserManualScreen> {
         }
       } else {
         // Desktop: Use file picker
-        final result = await FilePicker.platform.saveFile(
+        final result = await FilePicker.saveFile(
           dialogTitle: 'Save User Manual PDF',
           fileName:
               'smart_store_user_manual_${DateTime.now().millisecondsSinceEpoch}.pdf',
           type: FileType.custom,
           allowedExtensions: ['pdf'],
+          bytes: Uint8List.fromList(await pdf.save()),
         );
 
         if (result != null) {

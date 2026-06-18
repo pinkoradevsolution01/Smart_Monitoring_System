@@ -151,11 +151,11 @@ class _ProductCameraScreenState extends State<ProductCameraScreen> {
     try {
       // On Windows (image_picker limited), use file_picker as fallback
       if (!kIsWeb && Platform.isWindows) {
-        final result = await FilePicker.platform.pickFiles(
+        final file = await FilePicker.pickFile(
           type: FileType.image,
         );
-        if (result != null && result.files.single.path != null) {
-          final saved = await _persistImage(File(result.files.single.path!));
+        if (file?.path != null) {
+          final saved = await _persistImage(File(file!.path!));
           if (mounted) Navigator.pop(context, saved);
         }
         return;

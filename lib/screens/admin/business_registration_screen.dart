@@ -65,14 +65,13 @@ class _BusinessRegistrationScreenState
 
   Future<void> _pickLogo() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.image,
-        allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (file?.path != null) {
         setState(() {
-          _logoPath = result.files.single.path;
+          _logoPath = file!.path;
         });
       }
     } catch (e) {

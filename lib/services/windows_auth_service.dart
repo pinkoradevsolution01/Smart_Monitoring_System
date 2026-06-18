@@ -1,34 +1,38 @@
 import 'dart:ffi';
 import 'package:ffi/ffi.dart';
-import 'package:win32/win32.dart';
+import 'package:win32/win32.dart' as win32;
 import 'dart:io' show Platform;
+
+typedef _LogonUserNative = Int32 Function(
+  Pointer<Utf16> lpszUsername,
+  Pointer<Utf16> lpszDomain,
+  Pointer<Utf16> lpszPassword,
+  Uint32 dwLogonType,
+  Uint32 dwLogonProvider,
+  Pointer<IntPtr> phToken,
+);
+
+typedef _LogonUserDart = int Function(
+  Pointer<Utf16> lpszUsername,
+  Pointer<Utf16> lpszDomain,
+  Pointer<Utf16> lpszPassword,
+  int dwLogonType,
+  int dwLogonProvider,
+  Pointer<IntPtr> phToken,
+);
+
+_LogonUserDart? _logonUser;
+
+_LogonUserDart get _logonUserFn {
+  return _logonUser ??= DynamicLibrary.open('advapi32.dll').lookupFunction<
+    _LogonUserNative,
+    _LogonUserDart
+  >('LogonUserW');
+}
 
 // Constants for LogonUser
 const int logon32LogonInteractive = 2;
 const int logon32ProviderDefault = 0;
-
-// Define LogonUser function from advapi32.dll
-final _advapi32 = DynamicLibrary.open('advapi32.dll');
-
-final logonUser = _advapi32
-    .lookupFunction<
-      Int32 Function(
-        Pointer<Utf16> lpszUsername,
-        Pointer<Utf16> lpszDomain,
-        Pointer<Utf16> lpszPassword,
-        Uint32 dwLogonType,
-        Uint32 dwLogonProvider,
-        Pointer<HANDLE> phToken,
-      ),
-      int Function(
-        Pointer<Utf16> lpszUsername,
-        Pointer<Utf16> lpszDomain,
-        Pointer<Utf16> lpszPassword,
-        int dwLogonType,
-        int dwLogonProvider,
-        Pointer<HANDLE> phToken,
-      )
-    >('LogonUserW');
 
 /// Service for authenticating Windows user credentials
 class WindowsAuthService {
@@ -70,13 +74,13 @@ class WindowsAuthService {
 
     try {
       // Create a pointer to receive the token handle
-      final tokenHandle = calloc<HANDLE>();
+      final tokenHandle = calloc<IntPtr>();
 
       try {
         // Call LogonUser API
         // logon32LogonInteractive = 2
         // logon32ProviderDefault = 0
-        final result = logonUser(
+        final result = _logonUserFn(
           usernamePtr,
           domainPtr,
           passwordPtr,
@@ -89,16 +93,16 @@ class WindowsAuthService {
         if (result != 0) {
           final handle = tokenHandle.value;
           if (handle != 0) {
-            CloseHandle(handle);
+            win32.CloseHandle(handle as win32.HANDLE);
           }
           return true;
         }
 
         // Get the error code for debugging
-        final errorCode = GetLastError();
+        final errorCode = win32.GetLastError();
 
         // ERROR_LOGON_FAILURE = 1326 means invalid credentials
-        if (errorCode == ERROR_LOGON_FAILURE) {
+        if (errorCode == win32.ERROR_LOGON_FAILURE) {
           return false;
         }
 
@@ -123,14 +127,22 @@ class WindowsAuthService {
           'Unknown';
     }
 
-    final length = calloc<DWORD>();
+    final length = calloc<win32.DWORD>();
     length.value = 256;
-    final buffer = wsalloc(256);
+    final buffer = win32.wsalloc(256);
 
     try {
-      final result = GetUserName(buffer, length);
-      if (result != 0) {
-        return buffer.toDartString();
+      final dynamic result = win32.GetUserName(buffer, length);
+      try {
+        if (result is int) {
+          if (result != 0) return buffer.toDartString();
+        } else if (result is bool) {
+          if (result) return buffer.toDartString();
+        } else if (result != null && result.toString() == '1') {
+          return buffer.toDartString();
+        }
+      } catch (_) {
+        // ignore and fallback to env variable
       }
 
       // Fallback to environment variable

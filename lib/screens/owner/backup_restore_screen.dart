@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+// 'dart:typed_data' not required; provided by flutter/services.dart when needed
 import 'package:get_it/get_it.dart';
 import '../../services/database_service.dart';
 import '../../services/pos_service.dart';
@@ -268,7 +269,7 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
         final bytes = await _databaseService.getDatabaseBytes();
         final uint8Bytes = Uint8List.fromList(bytes);
 
-        final result = await FilePicker.platform.saveFile(
+        final result = await FilePicker.saveFile(
           dialogTitle: 'Export Database Backup',
           fileName:
               'pos_system_export_${DateFormat('yyyy-MM-dd_HHmmss').format(DateTime.now())}.db',
@@ -286,10 +287,11 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
         );
       } else {
         // On Windows/Linux/macOS, use the standard file path approach
-        final String? outputPath = await FilePicker.platform.saveFile(
+        final String? outputPath = await FilePicker.saveFile(
           dialogTitle: 'Export Database Backup',
           fileName:
               'pos_system_export_${DateFormat('yyyy-MM-dd_HHmmss').format(DateTime.now())}.db',
+          bytes: Uint8List.fromList(await _databaseService.getDatabaseBytes()),
         );
 
         if (outputPath == null) return;
@@ -417,15 +419,15 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
 
   Future<void> _restoreFromFile() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final file = await FilePicker.pickFile(
         type: FileType.custom,
         allowedExtensions: ['db'],
         dialogTitle: 'Select backup file to restore',
       );
 
-      if (result == null || result.files.isEmpty) return;
+      if (file?.path == null) return;
 
-      final filePath = result.files.first.path;
+      final filePath = file!.path;
       if (filePath == null) return;
 
       await _restoreBackup(filePath);

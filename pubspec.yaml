@@ -49,7 +49,7 @@ dependencies:
   fl_chart: ^1.1.1
   
   # Barcode scanning
-  mobile_scanner: ^7.1.3
+  mobile_scanner: ^7.2.0
   
   # Permissions
   permission_handler: ^11.0.1
@@ -61,13 +61,13 @@ dependencies:
   # CCTV and video streaming
   camera: ^0.10.0+1
   video_player: ^2.8.1
-  flutter_vlc_player: ^7.4.2
+  flutter_vlc_player: ^7.4.4
   http: ^1.1.0
   connectivity_plus: ^6.1.2
   path_provider: ^2.1.5
   image_picker: ^1.0.5
-  file_picker: ^8.1.6
-  share_plus: ^10.1.4
+  file_picker: ^12.0.0-beta.7
+  share_plus: ^13.1.0
   barcode_widget: ^2.0.4
   
   # Desktop sqlite ffi for running sqflite on Windows/Linux/macOS
@@ -79,7 +79,7 @@ dependencies:
   app_links: ^3.4.0
   
   # Device fingerprinting for multi-device tracking
-  device_info_plus: ^10.1.2
+  device_info_plus: ^13.1.0
   crypto: ^3.0.3
   
   # UUID generation for cloud sync
@@ -90,7 +90,7 @@ dependencies:
 
   # Windows API integration
   ffi: ^2.1.0
-  win32: ^5.5.0
+  win32: ^6.3.0
 
   # Device authentication (Android/iOS biometric/PIN)
   local_auth: ^2.3.0
