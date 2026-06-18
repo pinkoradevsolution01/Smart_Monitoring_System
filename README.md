@@ -35,6 +35,16 @@ remove_backend_autostart.bat
 This creates a shortcut in your Windows Startup folder, so the backend launches without opening VS Code first.
 If your backend depends on XAMPP MySQL, make sure MySQL is also started automatically or is already running before the backend starts.
 
+## Android Build Notes
+
+If Android builds fail with a Java home error like:
+
+```text
+Value '.../Android Studio/jbr' given for org.gradle.java.home Gradle property is invalid
+```
+
+check `android/gradle.properties` and make sure `org.gradle.java.home` is not hardcoded to a machine-specific path. This repo leaves that setting unset so Gradle can use the JDK configured on each PC or laptop.
+
 ## Boot-Time Startup
 
 If you want the backend to start at Windows boot before you sign in, run this once from the repo root:

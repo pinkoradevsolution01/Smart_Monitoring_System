@@ -56,8 +56,19 @@ class GoogleAuthService {
       }
       return await _signInWithGoogleSignIn();
     } on PlatformException catch (e) {
+      final message = '${e.code} ${e.message ?? ''} ${e.details ?? ''}';
+      if (message.contains('ApiException: 10')) {
+        debugPrint(
+          'ERROR: Google Sign-In rejected the Android OAuth configuration. '
+          'Verify that Google Cloud/Firebase has an Android OAuth client for '
+          'package com.pinkoradev.smart_monitoring_system and that the debug '
+          'SHA-1 fingerprint is registered for the app you installed. '
+          'For this machine, the current debug SHA-1 is '
+          '1A:F2:91:5E:B7:5C:D2:B6:D8:BC:A8:0A:9E:42:B9:82:17:55:15:57.',
+        );
+      }
       debugPrint(
-        'ERROR: Google sign in platform error: ${e.code} ${e.message ?? ''} ${e.details ?? ''}',
+        'ERROR: Google sign in platform error: $message',
       );
       return null;
     } catch (e) {
