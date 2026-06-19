@@ -1,0 +1,80 @@
+SMART MONITORING SYSTEM
+BACKEND LAPTOP SETUP
+
+Use this laptop as the backend host for the app.
+
+TECH STACK / DOWNLOADS REQUIRED
+
+1. Node.js LTS
+   - Needed to run the backend server.
+   - Includes npm, which installs backend packages.
+
+2. MySQL Server 8.x
+   - Needed for the backend database.
+   - You can install MySQL Community Server directly, or use XAMPP if you prefer.
+
+3. Git
+   - Needed only if you want to clone or update the repository.
+
+4. Optional tools
+   - Windows Terminal or PowerShell
+   - MySQL Workbench or phpMyAdmin for database management
+   - VS Code for editing backend files
+
+BACKEND FILES ALREADY IN THIS PROJECT
+
+- backend/app.js
+- backend/db.js
+- backend/routes/*
+- backend/schema.sql
+- backend/.env
+
+BACKEND START STEPS
+
+1. Install Node.js LTS on the laptop.
+2. Install MySQL Server 8.x.
+3. Create a database named:
+   - smart_monitoring
+4. Open the backend folder:
+   - cd backend
+5. Install backend dependencies:
+   - npm install
+6. Create or edit backend/.env with values like:
+   - PORT=3000
+   - MYSQL_HOST=localhost
+   - MYSQL_PORT=3306
+   - MYSQL_USER=root
+   - MYSQL_PASSWORD=your_mysql_password
+   - MYSQL_DATABASE=smart_monitoring
+   - JWT_SECRET=your_secret_value
+   - GOOGLE_CLIENT_ID=your_google_oauth_client_id
+   - GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+   - GOOGLE_REDIRECT_URI=https://olrrbyrzrotojsjkqcxr.supabase.co/auth/v1/callback
+7. Import the database schema:
+   - mysql -u root -p < backend/schema.sql
+8. Start the backend:
+   - npm start
+9. Verify it is running:
+   - http://localhost:3000/api/health
+   - http://localhost:3000/api/health/db
+
+IF THIS LAPTOP IS THE BACKEND FOR YOUR PHONE
+
+- Use the laptop LAN IP in the Flutter app:
+  - http://<laptop-ip>:3000/api
+- Allow port 3000 through Windows Firewall.
+- Make sure the laptop stays on the same network.
+
+IF THIS LAPTOP IS THE BACKEND FOR THE ANDROID EMULATOR
+
+- The emulator should use:
+  - http://10.0.2.2:3000/api
+
+NOTES
+
+- The backend is a Node.js + Express API.
+- The database is MySQL.
+- The app also uses Google OAuth credentials from Google Cloud Console.
+- If Google sign-in fails, confirm the backend .env has the correct Google client ID and secret.
+
+END OF FILE
