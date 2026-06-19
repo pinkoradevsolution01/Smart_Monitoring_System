@@ -662,6 +662,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
 
   Future<void> _activateWithCode(PricingPackage package) async {
     final activationCodeController = TextEditingController();
+    bool controllerDisposed = false;
 
     // Step 1: Show activation code input dialog
     final code = await showDialog<String>(
@@ -672,65 +673,75 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           children: [
             Icon(Icons.vpn_key, color: Colors.blue.shade700),
             const SizedBox(width: 12),
-            Text('Activate ${package.name}'),
+            Expanded(child: Text('Activate ${package.name}')),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade300),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        content: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.payment, color: Colors.orange.shade700),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Payment Settlement Required',
+                      Row(
+                        children: [
+                          Icon(Icons.payment, color: Colors.orange.shade700),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Payment Settlement Required',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Monthly Rental System:\n'
+                        '1. Complete payment for this month\n'
+                        '2. Developer will send activation code\n'
+                        '3. Enter code below (valid 1 month)\n'
+                        '4. Renew monthly with new code',
                         style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Monthly Rental System:\n'
-                    '1. Complete payment for this month\n'
-                    '2. Developer will send activation code\n'
-                    '3. Enter code below (valid 1 month)\n'
-                    '4. Renew monthly with new code',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: activationCodeController,
+                  decoration: InputDecoration(
+                    labelText: 'Monthly Activation Code',
+                    hintText: 'Enter code from developer',
+                    prefixIcon: const Icon(Icons.vpn_key),
+                    border: const OutlineInputBorder(),
+                    helperText: 'Contact jaybe.gubot01@gmail.com for code',
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: activationCodeController,
-              decoration: InputDecoration(
-                labelText: 'Monthly Activation Code',
-                hintText: 'Enter code from developer',
-                prefixIcon: const Icon(Icons.vpn_key),
-                border: const OutlineInputBorder(),
-                helperText: 'Contact jaybe.gubot01@gmail.com for code',
-              ),
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Z0-9-]')),
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[A-Z0-9-]')),
+                  ],
+                  autofocus: true,
+                ),
               ],
-              autofocus: true,
             ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
@@ -771,7 +782,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
     );
 
     // Dispose controller after dialog is completely closed
-    activationCodeController.dispose();
+    if (!controllerDisposed) {
+      activationCodeController.dispose();
+      controllerDisposed = true;
+    }
 
     // User cancelled
     if (code == null || !mounted) return;
@@ -1306,111 +1320,116 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           children: [
             Icon(Icons.mail_outline, color: Colors.blue.shade700),
             const SizedBox(width: 12),
-            const Text('Request Activation Code'),
+            const Expanded(child: Text('Request Activation Code')),
           ],
         ),
         content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade300),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Colors.blue.shade700,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Request Process',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.blue.shade700,
+                            size: 20,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '1. Fill in your business details below\n'
-                      '2. Developer will review your request\n'
-                      '3. Receive activation code via email\n'
-                      '4. Enter code to activate your plan',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Request Process',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      Text(
+                        '1. Fill in your business details below\n'
+                        '2. Developer will review your request\n'
+                        '3. Receive activation code via email\n'
+                        '4. Enter code to activate your plan',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'Package: ${package.name}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                const SizedBox(height: 20),
+                Text(
+                  'Package: ${package.name}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-              Text(
-                'Price: ${package.price}/month',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: businessNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Business Name *',
-                  hintText: 'Enter your business name',
-                  prefixIcon: Icon(Icons.business),
-                  border: OutlineInputBorder(),
+                Text(
+                  'Price: ${package.price}/month',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: contactEmailController,
-                decoration: const InputDecoration(
-                  labelText: 'Contact Email *',
-                  hintText: 'your@email.com',
-                  prefixIcon: Icon(Icons.email),
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: businessNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Business Name *',
+                    hintText: 'Enter your business name',
+                    prefixIcon: Icon(Icons.business),
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: contactPhoneController,
-                decoration: const InputDecoration(
-                  labelText: 'Contact Phone *',
-                  hintText: '+63 XXX XXX XXXX',
-                  prefixIcon: Icon(Icons.phone),
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: contactEmailController,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact Email *',
+                    hintText: 'your@email.com',
+                    prefixIcon: Icon(Icons.email),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
                 ),
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: notesController,
-                decoration: const InputDecoration(
-                  labelText: 'Additional Notes (Optional)',
-                  hintText: 'Any special requirements or questions',
-                  prefixIcon: Icon(Icons.note),
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: contactPhoneController,
+                  decoration: const InputDecoration(
+                    labelText: 'Contact Phone *',
+                    hintText: '+63 XXX XXX XXXX',
+                    prefixIcon: Icon(Icons.phone),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.phone,
                 ),
-                maxLines: 3,
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(
+                    labelText: 'Additional Notes (Optional)',
+                    hintText: 'Any special requirements or questions',
+                    prefixIcon: Icon(Icons.note),
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -1461,6 +1480,11 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         ],
       ),
     );
+
+    businessNameController.dispose();
+    contactEmailController.dispose();
+    contactPhoneController.dispose();
+    notesController.dispose();
 
     if (submitted == true && mounted) {
       // Show loading

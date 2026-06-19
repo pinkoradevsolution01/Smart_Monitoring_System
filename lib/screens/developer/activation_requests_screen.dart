@@ -25,7 +25,7 @@ class _ActivationRequestsScreenState extends State<ActivationRequestsScreen> {
   Future<void> _loadRequests() async {
     setState(() => _isLoading = true);
     try {
-      final requests = await _requestService.getPendingRequests();
+      final requests = await _requestService.getRequests();
       setState(() {
         _requests = requests;
         _isLoading = false;
@@ -38,7 +38,9 @@ class _ActivationRequestsScreenState extends State<ActivationRequestsScreen> {
 
   List<Map<String, dynamic>> get _filteredRequests {
     if (_filter == 'all') return _requests;
-    return _requests.where((r) => r['status'] == _filter).toList();
+    return _requests
+        .where((r) => (r['status']?.toString() ?? '') == _filter)
+        .toList();
   }
 
   @override
