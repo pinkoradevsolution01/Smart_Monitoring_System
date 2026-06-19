@@ -180,7 +180,9 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       await _googleAuth.clearSession();
 
       // Use GoogleAuthService for sign in
-      final googleUser = await _googleAuth.signInWithGoogle();
+      final googleUser = await _googleAuth.signInWithGoogle(
+        profile: GoogleAuthProfile.developer,
+      );
 
       if (googleUser == null) {
         final setupStatus = await OAuthChecker.checkSetup();

@@ -89,7 +89,14 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
       }
 
       // Sign in with Google
-      final googleUser = await _googleAuth.signInWithGoogle();
+      // Clear any cached Google account so the chooser appears instead of
+      // silently reusing the last developer session on this device.
+      await _googleAuth.signOut();
+      await _googleAuth.clearSession();
+
+      final googleUser = await _googleAuth.signInWithGoogle(
+        profile: GoogleAuthProfile.owner,
+      );
 
       if (googleUser == null) {
         if (!mounted) return;

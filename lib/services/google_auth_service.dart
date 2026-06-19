@@ -10,6 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
 
+enum GoogleAuthProfile {
+  owner,
+  developer,
+}
+
 /// Google authentication helper backed by the Node/MySQL backend.
 ///
 /// Desktop platforms use a browser-based OAuth code flow so Windows/Linux/macOS
@@ -25,7 +30,13 @@ class GoogleAuthService {
   static const String _sessionUserKey = 'backend_user';
 
   final ApiClient _api = ApiClient();
-  late final GoogleSignIn _googleSignIn = GoogleSignIn(
+  late final GoogleSignIn _ownerGoogleSignIn = GoogleSignIn(
+    scopes: const ['email', 'profile'],
+    serverClientId: BackendConfig.googleWebClientId.isEmpty
+        ? null
+        : BackendConfig.googleWebClientId,
+  );
+  late final GoogleSignIn _developerGoogleSignIn = GoogleSignIn(
     scopes: const ['email', 'profile'],
     serverClientId: BackendConfig.googleWebClientId.isEmpty
         ? null
@@ -43,7 +54,9 @@ class GoogleAuthService {
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isSignedIn => _accessToken != null && _currentUser != null;
 
-  Future<Map<String, dynamic>?> signInWithGoogle() async {
+  Future<Map<String, dynamic>?> signInWithGoogle({
+    GoogleAuthProfile profile = GoogleAuthProfile.developer,
+  }) async {
     try {
       if (!_isDesktop && BackendConfig.googleWebClientId.isEmpty) {
         debugPrint(
@@ -54,7 +67,7 @@ class GoogleAuthService {
       if (_isDesktop) {
         return await _signInWithDesktopBrowserFlow();
       }
-      return await _signInWithGoogleSignIn();
+      return await _signInWithGoogleSignIn(profile: profile);
     } on PlatformException catch (e) {
       final message = '${e.code} ${e.message ?? ''} ${e.details ?? ''}';
       if (message.contains('ApiException: 10')) {
@@ -77,8 +90,17 @@ class GoogleAuthService {
     }
   }
 
-  Future<Map<String, dynamic>?> _signInWithGoogleSignIn() async {
-    final account = await _googleSignIn.signIn();
+  GoogleSignIn _googleSignInFor(GoogleAuthProfile profile) {
+    return switch (profile) {
+      GoogleAuthProfile.owner => _ownerGoogleSignIn,
+      GoogleAuthProfile.developer => _developerGoogleSignIn,
+    };
+  }
+
+  Future<Map<String, dynamic>?> _signInWithGoogleSignIn({
+    required GoogleAuthProfile profile,
+  }) async {
+    final account = await _googleSignInFor(profile).signIn();
     if (account == null) {
       debugPrint(
         'ERROR: Google sign in returned null. On Android/iOS this usually means the OAuth client is not configured correctly, the user cancelled the account chooser, or Google Play Services rejected the app configuration.',
@@ -206,7 +228,8 @@ class GoogleAuthService {
   Future<void> signOut() async {
     try {
       if (!_isDesktop) {
-        await _googleSignIn.signOut();
+        await _ownerGoogleSignIn.signOut();
+        await _developerGoogleSignIn.signOut();
       }
       await clearSession();
       debugPrint('OK: Signed out successfully');
