@@ -3,19 +3,62 @@ import 'package:flutter/foundation.dart'
 
 /// Backend REST API configuration for MySQL-based sync and license services.
 class BackendConfig {
+  static String? _resolvedApiBaseUrl;
+
   /// Set this to your Node.js backend URL, including `/api` if desired.
   ///
   /// Override it at build time with:
-  /// `--dart-define=BACKEND_API_BASE_URL=http://<your-pc-ip>:3000/api`
+  /// `--dart-define=BACKEND_API_BASE_URL=http://192.168.1.9:3000/api`
+  /// For auto-detect across multiple LAN servers, use:
+  /// `--dart-define=BACKEND_API_BASE_URLS=http://192.168.1.5:3000/api,http://192.168.1.9:3000/api`
   ///
   /// Common values:
   /// - Windows/macOS/Linux desktop: `http://localhost:3000/api`
-  /// - Android emulator / physical device on the same LAN:
-  ///   `http://192.168.1.5:3000/api`
+  /// - Android emulator: `http://10.0.2.2:3000/api`
+  /// - Physical phone on the same LAN: `http://192.168.1.9:3000/api`
+  ///
+  /// If you are testing on a physical iPhone/iPad, pass the laptop IP
+  /// explicitly with `--dart-define` because `localhost` points to the device
+  /// itself instead of the development laptop.
   static const String _envApiBaseUrl = String.fromEnvironment(
     'BACKEND_API_BASE_URL',
     defaultValue: '',
   );
+  static const String _envApiBaseUrls = String.fromEnvironment(
+    'BACKEND_API_BASE_URLS',
+    defaultValue: '',
+  );
+
+  static void setResolvedApiBaseUrl(String baseUrl) {
+    _resolvedApiBaseUrl = _normalizeBaseUrl(baseUrl);
+  }
+
+  static String? get resolvedApiBaseUrl => _resolvedApiBaseUrl;
+
+  static String _normalizeBaseUrl(String baseUrl) {
+    return baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+  }
+
+  static List<String> _splitBaseUrls(String rawBaseUrls) {
+    return rawBaseUrls
+        .split(RegExp(r'[,\n; ]+'))
+        .map(_normalizeBaseUrl)
+        .where((url) => url.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static List<String> get configuredApiBaseUrls {
+    if (_envApiBaseUrls.trim().isNotEmpty) {
+      return _splitBaseUrls(_envApiBaseUrls);
+    }
+
+    if (_envApiBaseUrl.trim().isNotEmpty) {
+      return [_normalizeBaseUrl(_envApiBaseUrl)];
+    }
+
+    return [_normalizeBaseUrl(_defaultApiBaseUrl)];
+  }
+
   static String get _defaultApiBaseUrl {
     if (!kIsWeb) {
       switch (defaultTargetPlatform) {
@@ -24,9 +67,12 @@ class BackendConfig {
         case TargetPlatform.linux:
           return 'http://localhost:3000/api';
         case TargetPlatform.android:
-          return 'http://192.168.1.5:3000/api';
+          // Physical Android devices should use the laptop LAN IP.
+          // Override with BACKEND_API_BASE_URL if you are using an emulator
+          // or a different backend host.
+          return 'http://192.168.1.9:3000/api';
         case TargetPlatform.iOS:
-          return 'http://192.168.1.5:3000/api';
+          return 'http://localhost:3000/api';
         case TargetPlatform.fuchsia:
           break;
       }
@@ -36,8 +82,17 @@ class BackendConfig {
   }
 
   static String get apiBaseUrl {
+    if (_resolvedApiBaseUrl != null && _resolvedApiBaseUrl!.isNotEmpty) {
+      return _resolvedApiBaseUrl!;
+    }
+    if (_envApiBaseUrls.trim().isNotEmpty) {
+      final configuredUrls = _splitBaseUrls(_envApiBaseUrls);
+      if (configuredUrls.isNotEmpty) {
+        return configuredUrls.first;
+      }
+    }
     if (_envApiBaseUrl.isNotEmpty) {
-      return _envApiBaseUrl;
+      return _normalizeBaseUrl(_envApiBaseUrl);
     }
     return _defaultApiBaseUrl;
   }

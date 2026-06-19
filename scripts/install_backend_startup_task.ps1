@@ -25,4 +25,4 @@ Write-Host "Created startup task:"
 Write-Host "  $taskName"
 Write-Host ''
 Write-Host 'The backend will now start at Windows boot before you sign in.'
-Write-Host 'If XAMPP MySQL is not already available at boot, start MySQL automatically too.'
+Write-Host 'If MySQL is part of your setup, make sure the database server is available at boot too.'

@@ -101,24 +101,13 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
       if (googleUser == null) {
         if (!mounted) return;
 
-        // Check if it's a configuration issue
-        final setupStatus = await OAuthChecker.checkSetup();
-        final errorMessage = setupStatus['google_provider_configured'] == true
-            ? 'Google sign in cancelled'
-            : 'Google OAuth not configured. Tap "Check OAuth Setup Status" for details.';
-
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
+            content: const Text(
+              'Google sign-in was cancelled or the browser flow could not complete.',
+            ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
-            action: setupStatus['google_provider_configured'] != true
-                ? SnackBarAction(
-                    label: 'Details',
-                    textColor: Colors.white,
-                    onPressed: () => OAuthChecker.showSetupDialog(context),
-                  )
-                : null,
           ),
         );
         setState(() => _isLoading = false);

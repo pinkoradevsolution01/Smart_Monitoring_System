@@ -10,7 +10,7 @@ To start the Node.js backend from the repo root:
 start_backend.bat
 ```
 
-That script changes into `backend/` and runs `npm start` with the current `.env`.
+That script starts local XAMPP MySQL if needed, then changes into `backend/` and runs `npm start` with the current `.env`.
 
 If you are using Bash:
 
@@ -33,7 +33,7 @@ remove_backend_autostart.bat
 ```
 
 This creates a shortcut in your Windows Startup folder, so the backend launches without opening VS Code first.
-If your backend depends on XAMPP MySQL, make sure MySQL is also started automatically or is already running before the backend starts.
+If your backend depends on MySQL, make sure the database server is already running before the backend starts.
 
 ## Android Build Notes
 
@@ -63,6 +63,7 @@ remove_backend_startup_task.bat
 
 This registers a scheduled task named `Smart Monitoring System Backend` that runs `start_backend.bat --no-pause` as `SYSTEM` at startup.
 That is the closest built-in Windows option to a service without installing a third-party wrapper like NSSM.
+If MySQL is part of your backend setup, confirm the database service is available at boot too.
 
 ## Getting Started
 

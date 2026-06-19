@@ -22,4 +22,4 @@ Write-Host "Created startup shortcut:"
 Write-Host "  $shortcutPath"
 Write-Host ''
 Write-Host 'The backend will now start automatically when you sign in to Windows.'
-Write-Host 'If MySQL is also handled by XAMPP, make sure XAMPP/MySQL starts first or is set to auto-start too.'
+Write-Host 'If MySQL is part of your setup, make sure the database server starts before the backend.'

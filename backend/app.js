@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const os = require('os');
 const { initDb, query } = require('./db');
 const authRouter = require('./routes/auth');
 const businessRouter = require('./routes/business');
@@ -47,6 +48,21 @@ app.get('/api/health/db', async (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
+function getLanIps() {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries || []) {
+      if (entry && entry.family === 'IPv4' && !entry.internal) {
+        ips.push(entry.address);
+      }
+    }
+  }
+
+  return [...new Set(ips)];
+}
+
 if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
   console.warn(
     '⚠️ Google OAuth is not fully configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in backend/.env for Developer Dashboard Google sign-in.',
@@ -63,6 +79,20 @@ initDb()
   .then(() => {
     app.listen(port, () => {
       console.log(`Smart Monitoring backend listening on port ${port}`);
+      console.log(`Local health check: http://localhost:${port}/api/health`);
+      console.log(`Android emulator: http://10.0.2.2:${port}/api`);
+
+      const lanIps = getLanIps();
+      if (lanIps.length > 0) {
+        console.log('LAN API URLs:');
+        for (const ip of lanIps) {
+          console.log(`  http://${ip}:${port}/api`);
+        }
+      } else {
+        console.log(
+          'No LAN IP detected. If you are using a physical phone, set BACKEND_API_BASE_URL to your laptop IP.',
+        );
+      }
     });
   })
   .catch((error) => {

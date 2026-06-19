@@ -33,6 +33,8 @@ import 'services/package_service.dart';
 import 'services/subscriber_service.dart';
 import 'services/shared_api_service.dart';
 import 'services/license_service.dart';
+import 'services/backend_config.dart';
+import 'services/backend_server_resolver.dart';
 import 'services/supabase_sync_service.dart';
 import 'screens/shared/trial_locked_screen.dart';
 
@@ -40,6 +42,14 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   debugPrint('✅ Backend auth and sync initialized via REST API');
+  if (BackendConfig.googleWebClientId.isEmpty) {
+    debugPrint(
+      '⚠️ GOOGLE_WEB_CLIENT_ID is not set. Pass --dart-define=GOOGLE_WEB_CLIENT_ID=... when launching Flutter.',
+    );
+  } else {
+    debugPrint('✅ GOOGLE_WEB_CLIENT_ID configured: ${BackendConfig.googleWebClientId}');
+  }
+  debugPrint('✅ Backend API base URL: ${BackendConfig.apiBaseUrl}');
 
   // Firebase disabled for Windows builds - app runs fully offline
   debugPrint('ℹ️ Running in offline mode (Firebase disabled)');
@@ -58,6 +68,9 @@ Future<void> main() async {
   // Initialize persisted theme selection
   await ThemeController.init();
   await MotionController.init();
+
+  final selectedBackend = await BackendServerResolver.initialize();
+  debugPrint('✅ Active backend selected: $selectedBackend');
 
   // Initialize Business Info Service
   final businessInfoService = BusinessInfoService();
@@ -525,13 +538,13 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
                     ...AppRouter.routes,
                     '/developer-auth': (context) => const DeveloperAuthScreen(),
                     '/developer-dashboard': (context) => FutureBuilder<bool>(
-                          future: DeveloperAuthScreen.isDeveloperAuthenticated(),
-                          builder: (context, snap) {
-                            final ok = snap.data == true;
-                            if (ok) return const DeveloperDashboard();
-                            return const DeveloperAuthScreen();
-                          },
-                        ),
+                      future: DeveloperAuthScreen.isDeveloperAuthenticated(),
+                      builder: (context, snap) {
+                        final ok = snap.data == true;
+                        if (ok) return const DeveloperDashboard();
+                        return const DeveloperAuthScreen();
+                      },
+                    ),
                     '/owner-registration': (context) =>
                         const OwnerRegistrationScreen(),
                     '/subscribers': (context) => const SubscribersScreen(),

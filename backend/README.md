@@ -18,17 +18,23 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
  
 1. Copy `.env.example` to `.env`.
 2. Configure MySQL credentials and JWT secret in `backend/.env`.
+   - If MySQL is already installed on this laptop, you can skip any install step and just point the backend at the existing server.
+   - For a local XAMPP setup on this laptop, set `MYSQL_HOST=localhost`.
 3. Create the database and tables:
    - `mysql -u root -p < backend/schema.sql`
 4. Install dependencies:
    - `cd backend && npm install`
 5. Start the server:
    - `cd backend && npm start`
+   - Or run `start_backend.bat` from the repo root to start local XAMPP MySQL first, then launch the backend.
 
 ## Verify
 
 - `GET /api/health` checks whether the backend is running.
 - `GET /api/health/db` checks whether the backend can query MySQL.
+- For a phone on the same network, set the Flutter app's base URL to
+  `http://192.168.1.9:3000/api`.
+- For the Android emulator, use `http://10.0.2.2:3000/api`.
 
 Example:
 

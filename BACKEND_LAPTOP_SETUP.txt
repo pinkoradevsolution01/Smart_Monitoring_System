@@ -11,7 +11,8 @@ TECH STACK / DOWNLOADS REQUIRED
 
 2. MySQL Server 8.x
    - Needed for the backend database.
-   - You can install MySQL Community Server directly, or use XAMPP if you prefer.
+   - Skip this if MySQL is already installed or still downloading on your laptop.
+   - Use the MySQL server you already have or are downloading on this laptop.
 
 3. Git
    - Needed only if you want to clone or update the repository.
@@ -32,7 +33,7 @@ BACKEND FILES ALREADY IN THIS PROJECT
 BACKEND START STEPS
 
 1. Install Node.js LTS on the laptop.
-2. Install MySQL Server 8.x.
+2. Install or confirm MySQL Server 8.x is available.
 3. Create a database named:
    - smart_monitoring
 4. Open the backend folder:
@@ -53,7 +54,7 @@ BACKEND START STEPS
 7. Import the database schema:
    - mysql -u root -p < backend/schema.sql
 8. Start the backend:
-   - npm start
+   - start_backend.bat
 9. Verify it is running:
    - http://localhost:3000/api/health
    - http://localhost:3000/api/health/db
@@ -61,9 +62,13 @@ BACKEND START STEPS
 IF THIS LAPTOP IS THE BACKEND FOR YOUR PHONE
 
 - Use the laptop LAN IP in the Flutter app:
-  - http://<laptop-ip>:3000/api
+  - http://192.168.1.9:3000/api
 - Allow port 3000 through Windows Firewall.
 - Make sure the laptop stays on the same network.
+- The backend and MySQL should both be running on this laptop.
+- `start_backend.bat` will start XAMPP MySQL automatically if port 3306 is not already in use.
+- For the app, use the laptop IP:
+  - `--dart-define=BACKEND_API_BASE_URL=http://192.168.1.9:3000/api`
 
 IF THIS LAPTOP IS THE BACKEND FOR THE ANDROID EMULATOR
 

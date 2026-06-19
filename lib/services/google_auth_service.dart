@@ -4,8 +4,9 @@ import 'dart:io' show HttpRequest, HttpServer, Platform, Process;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'backend_api_service.dart';
 import 'backend_config.dart';
@@ -17,9 +18,9 @@ enum GoogleAuthProfile {
 
 /// Google authentication helper backed by the Node/MySQL backend.
 ///
-/// Desktop platforms use a browser-based OAuth code flow so Windows/Linux/macOS
-/// can keep their current UX. Mobile platforms use the Google Sign-In plugin and
-/// then exchange the Google ID token with the backend for an app session.
+/// All platforms use the backend-backed browser OAuth flow so we avoid Android
+/// Google Sign-In client/SHA-1 configuration issues and keep the backend as the
+/// source of truth for sessions.
 class GoogleAuthService {
   static final GoogleAuthService _instance = GoogleAuthService._internal();
   factory GoogleAuthService() => _instance;
@@ -30,18 +31,6 @@ class GoogleAuthService {
   static const String _sessionUserKey = 'backend_user';
 
   final ApiClient _api = ApiClient();
-  late final GoogleSignIn _ownerGoogleSignIn = GoogleSignIn(
-    scopes: const ['email', 'profile'],
-    serverClientId: BackendConfig.googleWebClientId.isEmpty
-        ? null
-        : BackendConfig.googleWebClientId,
-  );
-  late final GoogleSignIn _developerGoogleSignIn = GoogleSignIn(
-    scopes: const ['email', 'profile'],
-    serverClientId: BackendConfig.googleWebClientId.isEmpty
-        ? null
-        : BackendConfig.googleWebClientId,
-  );
 
   Map<String, dynamic>? _currentUser;
   String? _accessToken;
@@ -58,26 +47,28 @@ class GoogleAuthService {
     GoogleAuthProfile profile = GoogleAuthProfile.developer,
   }) async {
     try {
-      if (!_isDesktop && BackendConfig.googleWebClientId.isEmpty) {
+      if (BackendConfig.googleWebClientId.isEmpty) {
         debugPrint(
-          'WARNING: GOOGLE_WEB_CLIENT_ID is not configured. Android/iOS Google Sign-In may return null until a web client ID is supplied.',
+          'WARNING: GOOGLE_WEB_CLIENT_ID is not configured. Backend-backed Google Sign-In may fail until a web client ID is supplied.',
         );
       }
 
-      if (_isDesktop) {
-        return await _signInWithDesktopBrowserFlow();
-      }
-      return await _signInWithGoogleSignIn(profile: profile);
+      return await _signInWithBackendBrowserFlow(profile: profile);
+    } on http.ClientException catch (e) {
+      debugPrint(
+        'ERROR: Backend connection failed while signing in: $e\n'
+        'Check that the laptop backend is running and reachable from the phone at '
+        '${BackendConfig.apiBaseUrl}. If needed, allow TCP port 3000 through Windows Firewall.',
+      );
+      return null;
     } on PlatformException catch (e) {
       final message = '${e.code} ${e.message ?? ''} ${e.details ?? ''}';
       if (message.contains('ApiException: 10')) {
         debugPrint(
-          'ERROR: Google Sign-In rejected the Android OAuth configuration. '
-          'Verify that Google Cloud/Firebase has an Android OAuth client for '
-          'package com.pinkoradev.smart_monitoring_system and that the debug '
-          'SHA-1 fingerprint is registered for the app you installed. '
-          'For this machine, the current debug SHA-1 is '
-          '1A:F2:91:5E:B7:5C:D2:B6:D8:BC:A8:0A:9E:42:B9:82:17:55:15:57.',
+          'ERROR: Google Sign-In rejected the app configuration. '
+          'The app is now expected to use the backend browser OAuth flow, '
+          'so this error usually means the old native Google Sign-In path is '
+          'still running from a stale build. Rebuild the app after flutter pub get.',
         );
       }
       debugPrint(
@@ -90,44 +81,14 @@ class GoogleAuthService {
     }
   }
 
-  GoogleSignIn _googleSignInFor(GoogleAuthProfile profile) {
-    return switch (profile) {
-      GoogleAuthProfile.owner => _ownerGoogleSignIn,
-      GoogleAuthProfile.developer => _developerGoogleSignIn,
-    };
-  }
-
-  Future<Map<String, dynamic>?> _signInWithGoogleSignIn({
+  Future<Map<String, dynamic>?> _signInWithBackendBrowserFlow({
     required GoogleAuthProfile profile,
   }) async {
-    final account = await _googleSignInFor(profile).signIn();
-    if (account == null) {
-      debugPrint(
-        'ERROR: Google sign in returned null. On Android/iOS this usually means the OAuth client is not configured correctly, the user cancelled the account chooser, or Google Play Services rejected the app configuration.',
-      );
-      return null;
-    }
-
-    final auth = await account.authentication;
-    if (auth.idToken == null) {
-      debugPrint(
-        'ERROR: Google Sign-In did not return an ID token. Set a web client ID with --dart-define=GOOGLE_WEB_CLIENT_ID=... and make sure it matches the backend Google OAuth client.',
-      );
-      return null;
-    }
-
-    final response = await _api.postJson(
-      'auth/google',
-      body: {'idToken': auth.idToken},
-    );
-    return _storeBackendSession(response);
-  }
-
-  Future<Map<String, dynamic>?> _signInWithDesktopBrowserFlow() async {
     HttpServer? callbackServer;
     final completer = Completer<String>();
 
     try {
+      await _api.getJson('health');
       callbackServer = await HttpServer.bind('localhost', _callbackPort);
       debugPrint('OK: Local callback server started on port $_callbackPort');
 
@@ -185,6 +146,13 @@ class GoogleAuthService {
       );
 
       return _storeBackendSession(exchangeResponse);
+    } on http.ClientException catch (e) {
+      debugPrint(
+        'ERROR: Failed to contact backend during Google code exchange: $e\n'
+        'This usually means the phone cannot reach the laptop backend at '
+        '${BackendConfig.apiBaseUrl}.',
+      );
+      return null;
     } finally {
       await callbackServer?.close(force: true);
     }
@@ -227,10 +195,6 @@ class GoogleAuthService {
 
   Future<void> signOut() async {
     try {
-      if (!_isDesktop) {
-        await _ownerGoogleSignIn.signOut();
-        await _developerGoogleSignIn.signOut();
-      }
       await clearSession();
       debugPrint('OK: Signed out successfully');
     } catch (e) {
@@ -287,14 +251,24 @@ class GoogleAuthService {
   }
 
   Future<void> _openUrlInBrowser(String url) async {
-    if (!_isDesktop) return;
+    if (_isDesktop) {
+      if (Platform.isWindows) {
+        await Process.start('cmd', ['/c', 'start', '', url], runInShell: true);
+      } else if (Platform.isMacOS) {
+        await Process.start('open', [url]);
+      } else if (Platform.isLinux) {
+        await Process.start('xdg-open', [url]);
+      }
+      return;
+    }
 
-    if (Platform.isWindows) {
-      await Process.start('cmd', ['/c', 'start', '', url], runInShell: true);
-    } else if (Platform.isMacOS) {
-      await Process.start('open', [url]);
-    } else if (Platform.isLinux) {
-      await Process.start('xdg-open', [url]);
+    final uri = Uri.parse(url);
+    final launched = await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched) {
+      throw Exception('Failed to launch browser for Google sign-in');
     }
   }
 }

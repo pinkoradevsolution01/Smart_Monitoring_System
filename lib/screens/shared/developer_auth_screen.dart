@@ -7,7 +7,6 @@ import '../../services/admin_service.dart';
 import '../../services/user_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
-import '../../utils/oauth_checker.dart';
 import '../../models/admin_account.dart';
 import '../../models/user.dart' show UserRole;
 
@@ -185,15 +184,8 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       );
 
       if (googleUser == null) {
-        final setupStatus = await OAuthChecker.checkSetup();
-        final missingClientId =
-            setupStatus['google_web_client_id_configured'] != true;
         setState(() => _isGoogleLoading = false);
-        _showError(
-          missingClientId
-              ? 'Google sign-in is not fully configured yet. Build the app with --dart-define=GOOGLE_WEB_CLIENT_ID=xxxxx.apps.googleusercontent.com.'
-              : 'Google sign-in cancelled or failed',
-        );
+        _showError('Google sign-in was cancelled or the browser flow could not complete.');
         return;
       }
 
