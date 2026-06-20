@@ -3,9 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:smart_monitoring_system/screens/auth/login_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/cctv_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/manage_owner_account_screen.dart';
-import 'package:smart_monitoring_system/screens/owner/manage_admin_account_screen.dart';
 import 'package:smart_monitoring_system/screens/admin/admin_dashboard.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_monitoring_system/screens/owner/sales_report_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/backup_restore_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/supplier_management_screen.dart';
@@ -160,13 +158,12 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                         _DashboardSquareTile(
                           icon: Icons.admin_panel_settings,
                           color: Colors.indigo,
-                          title: 'Manage Admin Account',
+                          title: AppLocalizations.t('admin_dashboard'),
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    const ManageAdminAccountScreen(),
+                                builder: (_) => const AdminDashboard(),
                               ),
                             );
                           },
@@ -429,33 +426,6 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                                   ),
                                 ),
                               ),
-                      );
-
-                      // Admin Mode tile (visible when owner admin mode enabled)
-                      items.add(
-                        FutureBuilder<bool>(
-                          future: SharedPreferences.getInstance().then(
-                            (p) => p.getBool('owner_admin_mode') ?? false,
-                          ),
-                          builder: (context, snap) {
-                            if (!snap.hasData || !snap.data!) {
-                              return const SizedBox.shrink();
-                            }
-                            return _DashboardSquareTile(
-                              icon: Icons.admin_panel_settings,
-                              color: Colors.blueGrey,
-                              title: AppLocalizations.t('admin_dashboard'),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const AdminDashboard(),
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
                       );
 
                       return GridView(
