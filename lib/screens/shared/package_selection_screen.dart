@@ -662,7 +662,6 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
 
   Future<void> _activateWithCode(PricingPackage package) async {
     final activationCodeController = TextEditingController();
-    bool controllerDisposed = false;
 
     // Step 1: Show activation code input dialog
     final code = await showDialog<String>(
@@ -781,11 +780,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       ),
     );
 
-    // Dispose controller after dialog is completely closed
-    if (!controllerDisposed) {
-      activationCodeController.dispose();
-      controllerDisposed = true;
-    }
+    // Let the dialog finish its closing transition before disposal.
+    await Future<void>.delayed(Duration.zero);
+    activationCodeController.dispose();
 
     // User cancelled
     if (code == null || !mounted) return;
@@ -1481,6 +1478,11 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       ),
     );
 
+    final businessName = businessNameController.text.trim();
+    final contactEmail = contactEmailController.text.trim();
+    final contactPhone = contactPhoneController.text.trim();
+    final additionalNotes = notesController.text.trim();
+
     businessNameController.dispose();
     contactEmailController.dispose();
     contactPhoneController.dispose();
@@ -1517,10 +1519,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         packageName: package.name,
         packagePrice: package.price,
         requestType: requestType,
-        businessName: businessNameController.text.trim(),
-        contactEmail: contactEmailController.text.trim(),
-        contactPhone: contactPhoneController.text.trim(),
-        additionalNotes: notesController.text.trim(),
+        businessName: businessName,
+        contactEmail: contactEmail,
+        contactPhone: contactPhone,
+        additionalNotes: additionalNotes,
       );
 
       if (!mounted) return;
@@ -1545,7 +1547,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           content: Text(
             success
                 ? 'Your activation code request has been sent to the developer.\n\n'
-                      'You will receive the activation code via email at:\n${contactEmailController.text.trim()}\n\n'
+                      'You will receive the activation code via email at:\n$contactEmail\n\n'
                       'Please check your email within 24 hours.'
                 : 'Failed to send request. Please check your internet connection and try again, or contact support directly.',
           ),
@@ -1562,11 +1564,5 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         ),
       );
     }
-
-    // Dispose controllers
-    businessNameController.dispose();
-    contactEmailController.dispose();
-    contactPhoneController.dispose();
-    notesController.dispose();
   }
 }

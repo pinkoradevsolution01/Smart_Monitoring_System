@@ -2,6 +2,13 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const { query } = require('../db');
 
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch (_) {
+  nodemailer = null;
+}
+
 const router = express.Router();
 
 function toBool(value) {
@@ -10,6 +17,63 @@ function toBool(value) {
 
 function normalizeRows(rows) {
   return Array.isArray(rows) ? rows : [];
+}
+
+function getSmtpConfig() {
+  const host = process.env.SMTP_HOST || '';
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER || '';
+  const pass = process.env.SMTP_PASS || '';
+  const fromEmail = process.env.FROM_EMAIL || user || '';
+  return { host, port, user, pass, fromEmail };
+}
+
+async function sendActivationEmail({ to, code, businessName, packageName }) {
+  const config = getSmtpConfig();
+  const missing = [];
+
+  if (!config.host) missing.push('SMTP_HOST');
+  if (!config.user) missing.push('SMTP_USER');
+  if (!config.pass) missing.push('SMTP_PASS');
+  if (!config.fromEmail) missing.push('FROM_EMAIL');
+
+  if (missing.length) {
+    throw new Error(`Email service is not configured. Missing: ${missing.join(', ')}`);
+  }
+
+  if (!nodemailer) {
+    throw new Error('nodemailer is not installed. Run npm install in backend/');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.port === 465,
+    auth: {
+      user: config.user,
+      pass: config.pass,
+    },
+  });
+
+  await transporter.sendMail({
+    from: config.fromEmail,
+    to,
+    subject: `Your activation code for ${packageName}`,
+    text:
+      `Hello ${businessName},\n\n` +
+      `Your activation code is: ${code}\n\n` +
+      `Enter this code in the app to activate your subscription.\n\n` +
+      `Thank you.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <h2>Your activation code is ready</h2>
+        <p><strong>Business:</strong> ${businessName}</p>
+        <p><strong>Package:</strong> ${packageName}</p>
+        <p><strong>Activation Code:</strong> <span style="font-size: 18px; font-weight: bold;">${code}</span></p>
+        <p>Enter this code in the app to activate your subscription.</p>
+      </div>
+    `,
+  });
 }
 
 router.post('/activate', async (req, res) => {
@@ -379,6 +443,39 @@ router.patch('/requests/:id', async (req, res) => {
   } catch (error) {
     console.error('Update activation request error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update activation request.' });
+  }
+});
+
+router.post('/send-activation-email', async (req, res) => {
+  const {
+    email,
+    code,
+    business_name: businessName,
+    package_name: packageName,
+  } = req.body || {};
+
+  if (!email || !code || !businessName || !packageName) {
+    return res.status(400).json({
+      success: false,
+      message: 'email, code, business_name, and package_name are required.',
+    });
+  }
+
+  try {
+    await sendActivationEmail({
+      to: email,
+      code,
+      businessName,
+      packageName,
+    });
+
+    return res.json({ success: true, message: 'Activation email sent.' });
+  } catch (error) {
+    console.error('Send activation email error:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Failed to send activation email: ${error.message}`,
+    });
   }
 });
 

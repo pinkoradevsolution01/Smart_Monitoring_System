@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'backend_api_service.dart';
 
@@ -10,7 +9,6 @@ class CodeRequestService {
   CodeRequestService._internal();
 
   final ApiClient _api = ApiClient();
-  SupabaseClient get _supabaseClient => Supabase.instance.client;
 
   /// Submit activation code request to developer.
   /// Returns true if request was successfully sent.
@@ -173,8 +171,8 @@ class CodeRequestService {
     try {
       debugPrint('Sending activation email to: $customerEmail');
 
-      final response = await _supabaseClient.functions.invoke(
-        'send-activation-code',
+      final response = await _api.postJson(
+        'license/send-activation-email',
         body: {
           'email': customerEmail,
           'code': activationCode,
@@ -183,27 +181,14 @@ class CodeRequestService {
         },
       );
 
-      if (response.status == 200) {
+      if (response is Map<String, dynamic> && response['success'] == true) {
         debugPrint('Activation email sent successfully');
         return true;
-      } else {
-        debugPrint('Email response status: ${response.status}');
-        debugPrint('Response: ${response.data}');
-        return false;
       }
-    } on FunctionException catch (fe) {
-      if (fe.status == 404) {
-        debugPrint('Email function not deployed yet');
-        debugPrint(
-          'To enable emails, run: supabase functions deploy send-activation-code',
-        );
-      } else {
-        debugPrint('Email function error (${fe.status}): ${fe.details}');
-      }
-      return false;
     } catch (e) {
       debugPrint('Failed to send activation email: $e');
-      return false;
     }
+
+    return false;
   }
 }
