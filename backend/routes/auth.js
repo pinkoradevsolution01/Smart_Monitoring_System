@@ -16,6 +16,36 @@ function normalizeRedirectUri(value) {
     .replace(/[\\]+$/g, '');
 }
 
+function resolveBusinessId(req, body = {}) {
+  return (
+    body.businessId ||
+    body.business_id ||
+    req.query.businessId ||
+    req.query.business_id ||
+    req.auth?.businessId ||
+    req.auth?.business_id ||
+    null
+  );
+}
+
+async function fetchUserById(id, businessId = null) {
+  if (businessId) {
+    const scopedRows = await query(
+      'SELECT id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active, created_at, updated_at, last_login_at FROM users WHERE id = ? AND business_id = ? LIMIT 1',
+      [id, businessId],
+    );
+    if (scopedRows.length) {
+      return scopedRows[0];
+    }
+  }
+
+  const rows = await query(
+    'SELECT id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active, created_at, updated_at, last_login_at FROM users WHERE id = ? LIMIT 1',
+    [id],
+  );
+  return rows[0] || null;
+}
+
 async function verifyGoogleIdToken(idToken) {
   const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
   const response = await fetch(url);
@@ -112,27 +142,50 @@ function issueAppSession(profile) {
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
+  const businessId = resolveBusinessId(req, req.body || {});
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password are required.' });
   }
 
   try {
-    const rows = await query(
-      'SELECT id, email, password_hash, role, full_name, contact_number, auth_method FROM users WHERE email = ?',
-      [email],
-    );
+    const rows = businessId
+      ? await query(
+          'SELECT id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active FROM users WHERE business_id = ? AND email = ? LIMIT 1',
+          [businessId, email],
+        )
+      : await query(
+          'SELECT id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active FROM users WHERE email = ?',
+          [email],
+        );
+
     if (!rows.length) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
+    if (!businessId && rows.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Multiple accounts use this email. Please provide a businessId.',
+      });
+    }
+
     const user = rows[0];
+    if ((user.is_active ?? 1) !== 1) {
+      return res.status(403).json({ success: false, message: 'User account is inactive.' });
+    }
+
     const passwordMatches = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatches) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
+    await query(
+      'UPDATE users SET last_login_at = NOW() WHERE id = ?',
+      [user.id],
+    );
+
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      { userId: user.id, email: user.email, role: user.role, businessId: user.business_id || null },
       JWT_SECRET,
       { expiresIn: '12h' },
     );
@@ -143,6 +196,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
+        businessId: user.business_id || null,
         role: user.role,
         fullName: user.full_name,
         contactNumber: user.contact_number || null,
@@ -157,6 +211,7 @@ router.post('/login', async (req, res) => {
 
 router.post('/google/register-owner', async (req, res) => {
   const { id, email, fullName, avatarUrl, contactNumber } = req.body || {};
+  const businessId = resolveBusinessId(req, req.body || {});
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
 
   if (!normalizedEmail) {
@@ -164,10 +219,22 @@ router.post('/google/register-owner', async (req, res) => {
   }
 
   try {
-    const existingRows = await query(
-      'SELECT id, email, role, full_name, contact_number, auth_method FROM users WHERE email = ? LIMIT 1',
-      [normalizedEmail],
-    );
+    const existingRows = businessId
+      ? await query(
+          'SELECT id, business_id, email, role, full_name, contact_number, auth_method FROM users WHERE business_id = ? AND email = ? LIMIT 1',
+          [businessId, normalizedEmail],
+        )
+      : await query(
+          'SELECT id, business_id, email, role, full_name, contact_number, auth_method FROM users WHERE email = ?',
+          [normalizedEmail],
+        );
+
+    if (!businessId && existingRows.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: 'Multiple accounts already use this email. Please provide a businessId.',
+      });
+    }
 
     let userRow;
     let created = false;
@@ -175,20 +242,24 @@ router.post('/google/register-owner', async (req, res) => {
     if (existingRows.length) {
       userRow = existingRows[0];
       await query(
-        'UPDATE users SET full_name = ?, role = ?, contact_number = ?, auth_method = ? WHERE id = ?',
+        'UPDATE users SET full_name = ?, role = ?, contact_number = ?, auth_method = ?, business_id = COALESCE(?, business_id) WHERE id = ?',
         [
           fullName || userRow.full_name || normalizedEmail.split('@')[0],
           'owner',
           contactNumber || null,
           'google',
+          businessId,
           userRow.id,
         ],
       );
     } else {
       const placeholderHash = await bcrypt.hash(randomUUID(), 10);
+      const userId = id || randomUUID();
       await query(
-        'INSERT INTO users (email, password_hash, role, full_name, contact_number, auth_method) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO users (id, business_id, email, password_hash, role, full_name, contact_number, auth_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [
+          userId,
+          businessId,
           normalizedEmail,
           placeholderHash,
           'owner',
@@ -199,8 +270,8 @@ router.post('/google/register-owner', async (req, res) => {
       );
 
       const insertedRows = await query(
-        'SELECT id, email, role, full_name, contact_number, auth_method, created_at FROM users WHERE email = ? LIMIT 1',
-        [normalizedEmail],
+        'SELECT id, business_id, email, role, full_name, contact_number, auth_method, created_at FROM users WHERE id = ? LIMIT 1',
+        [userId],
       );
       userRow = insertedRows[0];
       created = true;
@@ -212,6 +283,7 @@ router.post('/google/register-owner', async (req, res) => {
       user: {
         id: userRow.id,
         email: userRow.email,
+        businessId: userRow.business_id || businessId || null,
         role: 'owner',
         fullName: userRow.full_name || fullName || normalizedEmail.split('@')[0],
         contactNumber: userRow.contact_number || contactNumber || null,
@@ -229,24 +301,26 @@ router.post('/google/register-owner', async (req, res) => {
 router.patch('/users/:id', async (req, res) => {
   const { id } = req.params;
   const { fullName, email, contactNumber, role } = req.body || {};
+  const businessId = resolveBusinessId(req, req.body || {});
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
 
   try {
-    const existingRows = await query(
-      'SELECT id, email, full_name, contact_number, role, auth_method FROM users WHERE id = ? LIMIT 1',
-      [id],
-    );
+    const existing = await fetchUserById(id, businessId);
 
-    if (!existingRows.length) {
+    if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    const existing = existingRows[0];
     if (normalizedEmail && normalizedEmail !== existing.email) {
-      const duplicate = await query(
-        'SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1',
-        [normalizedEmail, id],
-      );
+      const duplicate = businessId
+        ? await query(
+            'SELECT id FROM users WHERE business_id = ? AND email = ? AND id <> ? LIMIT 1',
+            [businessId, normalizedEmail, id],
+          )
+        : await query(
+            'SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1',
+            [normalizedEmail, id],
+          );
       if (duplicate.length) {
         return res.status(409).json({ success: false, message: 'Email already in use.' });
       }
@@ -265,17 +339,13 @@ router.patch('/users/:id', async (req, res) => {
       ],
     );
 
-    const updatedRows = await query(
-      'SELECT id, email, role, full_name, contact_number, auth_method, created_at FROM users WHERE id = ? LIMIT 1',
-      [id],
-    );
-
-    const updated = updatedRows[0];
+    const updated = await fetchUserById(id, businessId);
     return res.json({
       success: true,
       user: {
         id: updated.id,
         email: updated.email,
+        businessId: updated.business_id || null,
         role: updated.role,
         fullName: updated.full_name,
         contactNumber: updated.contact_number || null,
@@ -292,22 +362,19 @@ router.patch('/users/:id', async (req, res) => {
 router.patch('/users/:id/password', async (req, res) => {
   const { id } = req.params;
   const { currentPassword, newPassword } = req.body || {};
+  const businessId = resolveBusinessId(req, req.body || {});
 
   if (!newPassword || newPassword.length < 6) {
     return res.status(400).json({ success: false, message: 'New password must be at least 6 characters.' });
   }
 
   try {
-    const existingRows = await query(
-      'SELECT id, email, password_hash, auth_method FROM users WHERE id = ? LIMIT 1',
-      [id],
-    );
+    const existing = await fetchUserById(id, businessId);
 
-    if (!existingRows.length) {
+    if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    const existing = existingRows[0];
     const isGoogleAccount = (existing.auth_method || '').toLowerCase() === 'google';
 
     if (!isGoogleAccount) {
@@ -332,6 +399,7 @@ router.patch('/users/:id/password', async (req, res) => {
       user: {
         id: existing.id,
         email: existing.email,
+        businessId: existing.business_id || null,
       },
     });
   } catch (error) {
@@ -342,14 +410,19 @@ router.patch('/users/:id/password', async (req, res) => {
 
 router.delete('/users/:id', async (req, res) => {
   const { id } = req.params;
+  const businessId = resolveBusinessId(req, req.body || {});
 
   try {
-    const existingRows = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [id]);
-    if (!existingRows.length) {
+    const existing = await fetchUserById(id, businessId);
+    if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    await query('DELETE FROM users WHERE id = ?', [id]);
+    if (businessId) {
+      await query('DELETE FROM users WHERE id = ? AND business_id = ?', [id, businessId]);
+    } else {
+      await query('DELETE FROM users WHERE id = ?', [id]);
+    }
     return res.json({ success: true });
   } catch (error) {
     console.error('Auth /users/:id delete error:', error);

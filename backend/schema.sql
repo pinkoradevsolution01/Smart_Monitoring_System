@@ -9,17 +9,6 @@ USE smart_monitoring;
 
 SET NAMES utf8mb4;
 
-CREATE TABLE IF NOT EXISTS users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  email VARCHAR(255) NOT NULL UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(64) NOT NULL DEFAULT 'owner',
-  full_name VARCHAR(255),
-  contact_number VARCHAR(64),
-  auth_method VARCHAR(32) NOT NULL DEFAULT 'password',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
-
 CREATE TABLE IF NOT EXISTS businesses (
   id VARCHAR(64) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -36,6 +25,28 @@ CREATE TABLE IF NOT EXISTS businesses (
   UNIQUE KEY uq_businesses_owner_email (owner_email),
   KEY idx_businesses_owner_id (owner_id),
   KEY idx_businesses_is_active (is_active)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(64) PRIMARY KEY,
+  business_id VARCHAR(64) NULL,
+  email VARCHAR(255) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(64) NOT NULL DEFAULT 'owner',
+  full_name VARCHAR(255) NOT NULL,
+  contact_number VARCHAR(64),
+  auth_method VARCHAR(32) NOT NULL DEFAULT 'password',
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_login_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_users_business_email (business_id, email),
+  KEY idx_users_business (business_id),
+  KEY idx_users_business_role (business_id, role),
+  CONSTRAINT fk_users_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS activation_codes (
@@ -208,6 +219,7 @@ CREATE TABLE IF NOT EXISTS sales (
   cashier_id VARCHAR(64) NOT NULL,
   cashier_name VARCHAR(255) NOT NULL,
   customer_name VARCHAR(255),
+  customer_id BIGINT NULL,
   payment_method VARCHAR(128) NOT NULL,
   status VARCHAR(64) NOT NULL DEFAULT 'completed',
   subtotal DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
@@ -222,10 +234,15 @@ CREATE TABLE IF NOT EXISTS sales (
   KEY idx_sales_business (business_id),
   KEY idx_sales_business_datetime (business_id, datetime),
   KEY idx_sales_cashier (cashier_id),
+  KEY idx_sales_customer (customer_id),
   KEY idx_sales_status (business_id, status),
   CONSTRAINT fk_sales_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_sales_cashier
+    FOREIGN KEY (cashier_id) REFERENCES users(id)
+    ON DELETE RESTRICT
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
@@ -318,6 +335,10 @@ CREATE TABLE IF NOT EXISTS damage_reports (
   CONSTRAINT fk_damage_reports_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_damage_reports_product
+    FOREIGN KEY (product_id) REFERENCES products(id)
+    ON DELETE RESTRICT
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
@@ -378,8 +399,8 @@ CREATE TABLE IF NOT EXISTS customers (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
-  UNIQUE KEY uq_customers_customer_code (customer_code),
-  UNIQUE KEY uq_customers_barcode_value (barcode_value),
+  UNIQUE KEY uq_customers_business_code (business_id, customer_code),
+  UNIQUE KEY uq_customers_business_barcode (business_id, barcode_value),
   KEY idx_customers_business (business_id),
   KEY idx_customers_full_name (full_name),
   KEY idx_customers_email (email),
@@ -388,6 +409,12 @@ CREATE TABLE IF NOT EXISTS customers (
     ON DELETE CASCADE
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
+
+ALTER TABLE sales
+  ADD CONSTRAINT fk_sales_customer
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+  ON DELETE SET NULL
+  ON UPDATE CASCADE;
 
 CREATE TABLE IF NOT EXISTS loyalty_ledger (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

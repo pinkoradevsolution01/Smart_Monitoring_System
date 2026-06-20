@@ -14,7 +14,9 @@ router.post('/push', async (req, res) => {
     damageReports,
   } = req.body;
 
-  if (!businessId) {
+  const resolvedBusinessId = businessId || req.headers['x-business-id'] || req.auth?.businessId || null;
+
+  if (!resolvedBusinessId) {
     return res.status(400).json({ success: false, message: 'businessId is required.' });
   }
 
@@ -49,7 +51,7 @@ router.post('/push', async (req, res) => {
               updated_at = VALUES(updated_at)`,
           [
             product.id,
-            businessId,
+            resolvedBusinessId,
             product.barcode,
             product.name,
             product.category,
@@ -81,7 +83,7 @@ router.post('/push', async (req, res) => {
               is_active = VALUES(is_active)`,
           [
             supplier.id,
-            businessId,
+            resolvedBusinessId,
             supplier.name,
             supplier.contact_person,
             supplier.email,
@@ -100,11 +102,12 @@ router.post('/push', async (req, res) => {
       for (const sale of sales) {
         await connection.execute(
           `INSERT INTO sales
-            (id, business_id, cashier_id, cashier_name, customer_name, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, business_id, cashier_id, cashier_name, customer_name, customer_id, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               cashier_name = VALUES(cashier_name),
               customer_name = VALUES(customer_name),
+              customer_id = VALUES(customer_id),
               payment_method = VALUES(payment_method),
               status = VALUES(status),
               subtotal = VALUES(subtotal),
@@ -117,10 +120,11 @@ router.post('/push', async (req, res) => {
               notes = VALUES(notes)`,
           [
             sale.id,
-            businessId,
+            resolvedBusinessId,
             sale.cashier_id,
             sale.cashier_name,
             sale.customer_name,
+            sale.customer_id ?? sale.customerId ?? null,
             sale.payment_method,
             sale.status,
             sale.subtotal,
@@ -152,7 +156,7 @@ router.post('/push', async (req, res) => {
               subtotal = VALUES(subtotal)`,
           [
             item.sale_id,
-            businessId,
+            resolvedBusinessId,
             item.product_id,
             item.product_name,
             item.quantity,
@@ -183,7 +187,7 @@ router.post('/push', async (req, res) => {
               created_by = VALUES(created_by)`,
           [
             order.id,
-            businessId,
+            resolvedBusinessId,
             order.supplier_id,
             order.order_number,
             order.order_date,
@@ -215,7 +219,7 @@ router.post('/push', async (req, res) => {
               timestamp = VALUES(timestamp)`,
           [
             movement.id,
-            businessId,
+            resolvedBusinessId,
             movement.product_id,
             movement.product_name,
             movement.movement_type,
@@ -248,7 +252,7 @@ router.post('/push', async (req, res) => {
               resolution_notes = VALUES(resolution_notes)`,
           [
             report.id,
-            businessId,
+            resolvedBusinessId,
             report.product_id,
             report.product_name,
             report.quantity,
@@ -277,7 +281,7 @@ router.post('/push', async (req, res) => {
 });
 
 router.get('/pull', async (req, res) => {
-  const { businessId } = req.query;
+  const businessId = req.query.businessId || req.query.business_id || req.headers['x-business-id'] || req.auth?.businessId || null;
   if (!businessId) {
     return res.status(400).json({ success: false, message: 'businessId query parameter is required.' });
   }

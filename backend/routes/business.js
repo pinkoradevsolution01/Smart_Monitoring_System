@@ -18,6 +18,12 @@ router.post('/init', async (req, res) => {
             [ownerId, businessName, existingBusinessId],
           );
         }
+        if (ownerId) {
+          await query(
+            'UPDATE users SET business_id = ? WHERE id = ?',
+            [existingBusinessId, ownerId],
+          );
+        }
         return res.json({ success: true, businessId: existingBusinessId });
       }
       return res.status(404).json({ success: false, message: 'Existing business ID not found.' });
@@ -31,6 +37,9 @@ router.post('/init', async (req, res) => {
           [ownerId, businessName, existing[0].id],
         );
       }
+      if (ownerId) {
+        await query('UPDATE users SET business_id = ? WHERE id = ?', [existing[0].id, ownerId]);
+      }
       return res.json({ success: true, businessId: existing[0].id });
     }
 
@@ -39,6 +48,10 @@ router.post('/init', async (req, res) => {
       'INSERT INTO businesses (id, name, owner_email, owner_id, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
       [businessId, businessName, ownerEmail, ownerId || `owner-${Date.now()}`, 1],
     );
+
+    if (ownerId) {
+      await query('UPDATE users SET business_id = ? WHERE id = ?', [businessId, ownerId]);
+    }
 
     return res.json({ success: true, businessId });
   } catch (error) {

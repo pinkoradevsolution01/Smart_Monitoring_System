@@ -292,6 +292,7 @@ const RESOURCE_CONFIG = {
       'cashier_id',
       'cashier_name',
       'customer_name',
+      'customer_id',
       'payment_method',
       'status',
       'subtotal',
@@ -462,6 +463,9 @@ function extractBusinessId(req, payload = {}) {
     payload.businessId ||
     req.query.business_id ||
     req.query.businessId ||
+    req.headers['x-business-id'] ||
+    req.auth?.businessId ||
+    req.auth?.business_id ||
     null
   );
 }
