@@ -192,6 +192,79 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
     );
   }
 
+  void _showChangePinDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        final newPinCtrl = TextEditingController();
+        final confirmPinCtrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('Change Owner PIN'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: newPinCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                decoration: const InputDecoration(hintText: 'New 4-digit PIN'),
+                obscureText: true,
+              ),
+              TextField(
+                controller: confirmPinCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                decoration: const InputDecoration(hintText: 'Confirm PIN'),
+                obscureText: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppLocalizations.t('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final a = newPinCtrl.text.trim();
+                final b = confirmPinCtrl.text.trim();
+                if (a.length != 4 || b.length != 4 || a != b) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('PINs must match and be 4 digits')),
+                  );
+                  return;
+                }
+
+                if (_owner == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('No owner account to update')),
+                  );
+                  return;
+                }
+
+                final updated = _owner!.copyWith(pin: a);
+                final success = await _userService.updateUser(updated);
+                if (!mounted) return;
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(AppLocalizations.t('account_updated_success'))),
+                  );
+                  Navigator.pop(ctx);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(AppLocalizations.t('action_failed'))),
+                  );
+                }
+              },
+              child: Text(AppLocalizations.t('save_changes')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _deleteOwner() async {
     if (_owner == null) return;
     final confirmed = await showDialog<bool>(
@@ -392,6 +465,15 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                           onPressed: _showChangePasswordDialog,
                           icon: const Icon(Icons.lock_open),
                           label: Text(AppLocalizations.t('change_password')),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _showChangePinDialog,
+                          icon: const Icon(Icons.pin),
+                          label: const Text('Change PIN'),
                         ),
                       ),
                     ],

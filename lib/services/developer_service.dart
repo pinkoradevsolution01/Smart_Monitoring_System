@@ -123,9 +123,18 @@ class DeveloperService extends ChangeNotifier {
   }) async {
     if (!isConfigured) return false;
 
+    // Log Google credentials for debugging
+    debugPrint('=== GOOGLE SIGN-IN DEBUG ===');
+    debugPrint('Email: $email');
+    debugPrint('Name: $name');
+    debugPrint('Google Sub: $googleSub');
+    debugPrint('Avatar URL: $avatarUrl');
+    debugPrint('============================');
+
     try {
+      // Try register endpoint first (auto-creates account on first login)
       final response = await _api.postJson(
-        'developer/google/login',
+        'developer/google/register',
         body: {
           'email': email,
           'name': name,
@@ -143,6 +152,12 @@ class DeveloperService extends ChangeNotifier {
         }
         return true;
       }
+      
+      // Capture backend error message for better debugging
+      final errorMsg = response is Map<String, dynamic> 
+        ? (response['message'] ?? response['error'] ?? 'Unknown error')
+        : 'Invalid response format';
+      debugPrint('DeveloperService: google authenticate failed - $errorMsg');
       return false;
     } catch (e) {
       debugPrint('DeveloperService: google authenticate failed - $e');

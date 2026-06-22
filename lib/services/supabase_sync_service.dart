@@ -682,7 +682,8 @@ class SupabaseSyncService extends ChangeNotifier {
       final salesData = sales
           .map(
             (s) => {
-              'id': s.saleNumber,
+              // Send sale_number instead of passing a non-numeric 'id'
+              'sale_number': s.saleNumber,
               'business_id': _businessId,
               'cashier_id': _resolveCashierId(s.cashierName, users),
               'cashier_name': s.cashierName,
@@ -746,7 +747,8 @@ class SupabaseSyncService extends ChangeNotifier {
       for (final sale in sales) {
         for (final item in sale.items) {
           allItems.add({
-            'sale_id': sale.saleNumber,
+            // Reference sale by its sale_number to allow server mapping
+            'sale_number': sale.saleNumber,
             'business_id': _businessId,
             'product_id': item.productId.toString(),
             'product_name': item.productName,

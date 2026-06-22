@@ -380,6 +380,8 @@ router.post('/push', async (req, res) => {
 
     if (Array.isArray(sales)) {
       for (const sale of sales) {
+        // Accept both numeric/string id or sale_number from clients
+        const saleId = sale.id || sale.sale_number || sale.saleNumber || null;
         await connection.execute(
           `INSERT INTO sales
             (id, business_id, cashier_id, cashier_name, customer_name, customer_id, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, created_at)
@@ -399,7 +401,7 @@ router.post('/push', async (req, res) => {
               datetime = VALUES(datetime),
               notes = VALUES(notes)`,
           [
-            sale.id,
+            saleId,
             resolvedBusinessId,
             sale.cashier_id,
             sale.cashier_name,
@@ -424,6 +426,8 @@ router.post('/push', async (req, res) => {
 
     if (Array.isArray(saleItems)) {
       for (const item of saleItems) {
+        // Accept sale reference as sale_id or sale_number
+        const refSaleId = item.sale_id || item.saleId || item.sale_number || item.saleNumber || null;
         await connection.execute(
           `INSERT INTO sale_items
             (sale_id, business_id, product_id, product_name, quantity, unit_price, discount, subtotal, created_at)
@@ -435,7 +439,7 @@ router.post('/push', async (req, res) => {
               discount = VALUES(discount),
               subtotal = VALUES(subtotal)`,
           [
-            item.sale_id,
+            refSaleId,
             resolvedBusinessId,
             item.product_id,
             item.product_name,

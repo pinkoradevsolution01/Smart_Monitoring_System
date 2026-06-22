@@ -211,4 +211,73 @@ router.post('/google/login', async (req, res) => {
   }
 });
 
+router.post('/google/register', async (req, res) => {
+  const {
+    email,
+    name,
+    googleSub,
+    avatarUrl,
+  } = req.body || {};
+
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedName = String(name || '').trim() || 'Developer';
+  if (!normalizedEmail || !googleSub) {
+    return res.status(400).json({ success: false, message: 'Google profile information is required.' });
+  }
+
+  try {
+    let account = await getDeveloperAccount();
+
+    if (account && (account.is_active ?? 1) === 1) {
+      // Account exists - check if it matches the Google identity
+      const accountEmail = normalizeEmail(account.email);
+      const matches = normalizedEmail === accountEmail || String(account.google_sub || '') === String(googleSub);
+      
+      if (!matches) {
+        return res.status(401).json({ success: false, message: 'This Google account is not registered as the developer account.' });
+      }
+
+      // Update existing account with Google credentials
+      await query(
+        `UPDATE developer_accounts
+         SET display_name = COALESCE(?, display_name),
+             email = ?,
+             auth_method = 'google',
+             google_sub = ?,
+             avatar_url = ?,
+             updated_at = NOW()
+         WHERE id = ?`,
+        [
+          normalizedName,
+          normalizedEmail,
+          googleSub,
+          avatarUrl || null,
+          account.id,
+        ],
+      );
+    } else {
+      // No account exists - create one with Google credentials
+      await query(
+        `INSERT INTO developer_accounts
+          (id, display_name, email, auth_method, google_sub, avatar_url, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        [
+          'primary',
+          normalizedName,
+          normalizedEmail,
+          'google',
+          googleSub,
+          avatarUrl || null,
+        ],
+      );
+    }
+
+    const updated = await getDeveloperAccount();
+    return res.json({ success: true, account: sanitizeAccount(updated) });
+  } catch (error) {
+    console.error('Developer /google/register error:', error);
+    return res.status(500).json({ success: false, message: 'Google developer registration failed.' });
+  }
+});
+
 module.exports = router;

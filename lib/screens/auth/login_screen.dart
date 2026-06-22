@@ -9,14 +9,13 @@ import '../../services/admin_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../widgets/ai_help_button.dart';
-import '../../services/password_reset_service.dart';
 import '../owner/owner_dashboard.dart';
+import 'package:smart_monitoring_system/screens/owner/manage_owner_account_screen.dart';
 import '../cashier/cashier_dashboard.dart';
 import '../manager/manager_dashboard.dart';
 import '../inventory_clerk/inventory_clerk_dashboard.dart';
 import '../delivery_receiver/delivery_receiver_dashboard.dart';
 import '../sales_promoter/sales_promoter_dashboard.dart';
-import '../shared/settings_screen.dart';
 import '../shared/loading_screen.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 
@@ -31,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
   bool _obscure = true;
+  int _devTapCount = 0;
 
   final UserService _userService = GetIt.I.get<UserService>();
   final BusinessInfoService _businessInfo = GetIt.I.get<BusinessInfoService>();
@@ -126,9 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _showForgotDialog() {
-    showDialog(context: context, builder: (_) => const _ForgotPasswordDialog());
-  }
+  // Forgot password flow removed; owner PIN flow replaces it.
 
   Widget _storeIcon(BuildContext context) {
     return Container(
@@ -168,13 +166,6 @@ class _LoginScreenState extends State<LoginScreen> {
           IconButton(
             icon: const Icon(Icons.help_outline),
             onPressed: () => showAIHelpDialog(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
           ),
         ],
       ),
@@ -242,32 +233,124 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _login,
                       child: Text(AppLocalizations.t('login')),
                     ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _showForgotDialog,
-                      child: Text(AppLocalizations.t('forgot_password')),
-                    ),
                     const SizedBox(height: 12),
-                    const SizedBox(height: 12),
+                    // Owner PIN helpers
                     Center(
                       child: TextButton(
-                        onPressed: () => Navigator.pushNamed(
-                          context,
-                          '/developer-auth',
-                        ),
-                        child: const Text('Developer Sign In'),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ManageOwnerAccountScreen(),
+                            ),
+                          );
+                        },
+                        child: Text('Forgot Pin Code? Owner only'),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Center(
-                      child: Text(
-                        '© 2026 Smart Monitoring System',
-                        style: TextStyle(color: Colors.grey[600]),
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          // Show PIN entry dialog
+                          final pinController = TextEditingController();
+                          final result = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Owner Portal - Enter PIN'),
+                              content: TextField(
+                                controller: pinController,
+                                keyboardType: TextInputType.number,
+                                maxLength: 4,
+                                decoration: const InputDecoration(
+                                  hintText: '4-digit PIN',
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: Text(AppLocalizations.t('cancel')),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx, true);
+                                  },
+                                  child: Text(AppLocalizations.t('continue')),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (result != true) return;
+                          final entered = pinController.text.trim();
+                          if (entered.length != 4) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Please enter a 4-digit PIN')),
+                            );
+                            return;
+                          }
+
+                          // Find owner users and verify PIN
+                          final owners = _userService.getUsersByRole(user_model.UserRole.owner);
+                          if (owners.isEmpty) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('No owner account configured')),
+                            );
+                            return;
+                          }
+
+                          user_model.User? matched;
+                          for (final o in owners) {
+                            if (_userService.verifyPin(o.id, entered)) {
+                              matched = o;
+                              break;
+                            }
+                          }
+
+                          if (matched == null) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Invalid PIN')),
+                            );
+                            return;
+                          }
+
+                          if (!mounted) return;
+                          Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (_) => LoadingScreen(
+                                destination: OwnerDashboard(user: matched!),
+                                iconData: Icons.lock,
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text('Owner Portal'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _devTapCount++);
+                          if (_devTapCount >= 5) {
+                            // Silent developer access trigger (no UI feedback to clients)
+                            Navigator.pushNamed(context, '/developer-auth');
+                            _devTapCount = 0;
+                          }
+                        },
+                        child: Text(
+                          '© 2026 Smart Monitoring System',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
                       ),
                     ),
                   ],
@@ -281,286 +364,4 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // Clock functionality moved to shared HeaderClock widget.
-}
-
-class _ForgotPasswordDialog extends StatefulWidget {
-  const _ForgotPasswordDialog();
-
-  @override
-  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
-}
-
-class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
-  final TextEditingController _emailController = TextEditingController();
-  bool _isSending = false;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.t('valid_email_required'))),
-      );
-      return;
-    }
-
-    // Check if email belongs to an owner
-    final isOwner = await PasswordResetService.isOwnerEmail(email);
-    if (!isOwner) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.t('owner_email_required'))),
-      );
-      return;
-    }
-
-    setState(() => _isSending = true);
-    try {
-      // Send password reset email via Edge Function
-      final token = await PasswordResetService.sendPasswordResetEmail(email);
-      if (!mounted) return;
-      setState(() => _isSending = false);
-      
-      if (token != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.t('password_reset_email_sent')),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-        // Show the token verification dialog
-        await _showTokenVerificationDialog(token);
-        if (mounted) {
-          Navigator.pop(context);
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to send reset email. Please check your internet connection and try again.'),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      }
-    } catch (e, st) {
-      debugPrint('Password reset send failed: $e\n$st');
-      if (!mounted) return;
-      setState(() => _isSending = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
-  }
-
-  Future<void> _showTokenVerificationDialog(String expectedToken) async {
-    final tokenController = TextEditingController();
-    final newPassController = TextEditingController();
-    final confirmPassController = TextEditingController();
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx2, setDialogState) {
-            var loading = false;
-
-            Future<void> submit() async {
-              final token = tokenController.text.trim();
-              final np = newPassController.text;
-              final cp = confirmPassController.text;
-              
-              if (token.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter the reset token from your email'),
-                  ),
-                );
-                return;
-              }
-              
-              if (np.length < 6) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(AppLocalizations.t('password_too_short')),
-                  ),
-                );
-                return;
-              }
-              
-              if (np != cp) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(AppLocalizations.t('passwords_do_not_match')),
-                  ),
-                );
-                return;
-              }
-
-              setDialogState(() => loading = true);
-              try {
-                // Verify token and reset password
-                final result = await PasswordResetService.verifyTokenAndResetPassword(
-                  token: token,
-                  newPassword: np,
-                );
-                
-                final success = result['success'] == true;
-                
-                if (!mounted) return;
-                
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        AppLocalizations.t('password_changed_success'),
-                      ),
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
-                  Navigator.pop(ctx);
-                } else {
-                  final errorMsg = result['error'] ?? AppLocalizations.t('action_failed');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(errorMsg.toString()),
-                      duration: const Duration(seconds: 5),
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error: ${e.toString()}'),
-                    duration: const Duration(seconds: 5),
-                  ),
-                );
-              } finally {
-                if (mounted) {
-                  setDialogState(() => loading = false);
-                }
-              }
-            }
-
-            return AlertDialog(
-              title: const Text('🔐 Enter Reset Token'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Check your email for the password reset token. It should arrive within a few minutes.',
-                      style: TextStyle(fontSize: 14),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: tokenController,
-                      decoration: const InputDecoration(
-                        labelText: 'Reset Token',
-                        hintText: 'Paste token from email',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.key),
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: newPassController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: AppLocalizations.t('new_password'),
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.lock),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: confirmPassController,
-                      obscureText: true,
-                      decoration: InputDecoration(
-                        labelText: AppLocalizations.t('confirm_password'),
-                        border: const OutlineInputBorder(),
-                        prefixIcon: const Icon(Icons.lock_outline),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '⚠️ Token is valid for 1 hour',
-                      style: TextStyle(fontSize: 12, color: Colors.orange),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: loading ? null : () => Navigator.pop(ctx),
-                  child: Text(AppLocalizations.t('cancel')),
-                ),
-                ElevatedButton(
-                  onPressed: loading ? null : submit,
-                  child: loading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(AppLocalizations.t('reset_password_button')),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    tokenController.dispose();
-    newPassController.dispose();
-    confirmPassController.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(AppLocalizations.t('reset_owner_password')),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: AppLocalizations.t('email_gmail'),
-              border: const OutlineInputBorder(),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(AppLocalizations.t('cancel')),
-        ),
-        ElevatedButton(
-          onPressed: _isSending ? null : _send,
-          child: _isSending
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text('Request Access Tokens'),
-        ),
-      ],
-    );
-  }
 }

@@ -20,6 +20,7 @@ import '../../widgets/ai_help_button.dart';
 import '../../services/package_service.dart';
 import '../../services/supabase_sync_service.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
+import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
 
 class OwnerDashboard extends StatefulWidget {
   final User user;
@@ -74,6 +75,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                 vertical: 8.0,
               ),
               child: const HeaderClock(),
+            ),
+            IconButton(
+              tooltip: AppLocalizations.t('settings'),
+              icon: const Icon(Icons.settings),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
             ),
             IconButton(
               tooltip: AppLocalizations.t('sign_out'),
