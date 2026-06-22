@@ -1,13 +1,18 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
+import 'dart:async';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
 import '../models/supplier.dart';
 import '../models/damage_report.dart';
+import '../models/customer.dart';
+import '../models/user.dart';
 import 'database_service.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
+import 'attendance_service.dart';
+import 'user_service.dart';
 
 /// Comprehensive cloud sync service for Supabase integration
 /// Syncs all business data: products, sales, inventory, purchases, suppliers, etc.
@@ -17,13 +22,17 @@ class SupabaseSyncService extends ChangeNotifier {
   SupabaseSyncService._internal();
 
   final _api = ApiClient();
-  final _uuid = const Uuid();
 
   String? _businessId;
   bool _isSyncing = false;
   String? _lastError;
   DateTime? _lastSyncTime;
   final Map<String, int> _syncStats = {};
+  Timer? _autoSyncTimer;
+  Timer? _queuedPushTimer;
+  bool _autoSyncEnabled = true;
+  Duration _autoSyncInterval = const Duration(seconds: 30);
+  Duration _queuedPushDelay = const Duration(seconds: 2);
 
   // Getters
   bool get isSyncing => _isSyncing;
@@ -32,6 +41,9 @@ class SupabaseSyncService extends ChangeNotifier {
   Map<String, int> get syncStats => _syncStats;
   String? get businessId => _businessId;
   bool get isConfigured => BackendConfig.useRestBackend && _businessId != null;
+  bool get isAutoSyncEnabled => _autoSyncEnabled;
+  Duration get autoSyncInterval => _autoSyncInterval;
+  Duration get queuedPushDelay => _queuedPushDelay;
 
   /// Initialize business context (call this after license activation)
   Future<void> initializeBusiness({
@@ -62,6 +74,7 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       debugPrint('✅ Business initialized: $_businessId');
+      startAutoSync();
       notifyListeners();
     } catch (e) {
       debugPrint('❌ Error initializing business: $e');
@@ -87,6 +100,13 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('📤 Starting full backup to Supabase...');
 
       // Push data in order (respecting foreign keys)
+      await _pushUsers();
+      await _pushCustomers();
+      await _pushLoyaltyLedger();
+      await _pushCameras();
+      await _pushCctvTimestamps();
+      await _pushAttendance();
+      await _pushActivityLogs();
       await _pushSuppliers();
       await _pushProducts();
       await _pushSales();
@@ -133,12 +153,21 @@ class SupabaseSyncService extends ChangeNotifier {
       );
 
       // Pull data in order (respecting foreign keys)
-      await _pullSuppliers(db, payload);
-      await _pullProducts(db, payload);
-      await _pullSales(db, payload);
-      await _pullInventoryMovements(db, payload);
-      await _pullPurchaseOrders(db, payload);
-      await _pullDamageReports(db, payload);
+      await db.runWithoutCloudSync(() async {
+        await _pullUsers(payload);
+        await _pullCustomers(db, payload);
+        await _pullLoyaltyLedger(db, payload);
+        await _pullCameras(db, payload);
+        await _pullCctvTimestamps(db, payload);
+        await _pullAttendance(db, payload);
+        await _pullActivityLogs(db, payload);
+        await _pullSuppliers(db, payload);
+        await _pullProducts(db, payload);
+        await _pullSales(db, payload);
+        await _pullInventoryMovements(db, payload);
+        await _pullPurchaseOrders(db, payload);
+        await _pullDamageReports(db, payload);
+      });
 
       _lastSyncTime = DateTime.now();
       _isSyncing = false;
@@ -181,9 +210,421 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
+  /// Start periodic background sync while the app is open.
+  /// This helps keep multiple devices in sync against the same MySQL backend.
+  void startAutoSync({Duration? interval}) {
+    if (!isConfigured || !_autoSyncEnabled) {
+      return;
+    }
+
+    if (interval != null && interval.inSeconds > 0) {
+      _autoSyncInterval = interval;
+    }
+
+    _autoSyncTimer?.cancel();
+    _autoSyncTimer = Timer.periodic(_autoSyncInterval, (_) async {
+      if (!isConfigured || _isSyncing) {
+        return;
+      }
+
+      try {
+        await syncBidirectional();
+      } catch (e) {
+        debugPrint('⚠️ Auto-sync tick failed: $e');
+      }
+    });
+
+    debugPrint(
+      '✅ Auto-sync started for business $_businessId every ${_autoSyncInterval.inSeconds}s',
+    );
+  }
+
+  /// Stop periodic background sync.
+  void stopAutoSync() {
+    _autoSyncTimer?.cancel();
+    _autoSyncTimer = null;
+    _queuedPushTimer?.cancel();
+    _queuedPushTimer = null;
+    debugPrint('ℹ️ Auto-sync stopped');
+  }
+
+  /// Enable or disable automatic syncing.
+  void setAutoSyncEnabled(bool enabled, {Duration? interval}) {
+    _autoSyncEnabled = enabled;
+    if (enabled) {
+      startAutoSync(interval: interval);
+    } else {
+      stopAutoSync();
+    }
+  }
+
   // ============================================================================
   // PUSH METHODS (Local → Cloud)
   // ============================================================================
+
+  /// Queue a cloud push after a local write.
+  /// Repeated calls within a short window collapse into one sync.
+  void queuePushAllData({Duration? delay}) {
+    if (!isConfigured || !_autoSyncEnabled) {
+      return;
+    }
+
+    if (delay != null && delay.inMilliseconds > 0) {
+      _queuedPushDelay = delay;
+    }
+
+    _queuedPushTimer?.cancel();
+    _queuedPushTimer = Timer(_queuedPushDelay, () async {
+      if (!isConfigured || _isSyncing) {
+        return;
+      }
+
+      try {
+        await pushAllData();
+      } catch (e) {
+        debugPrint('⚠️ Queued push failed: $e');
+      }
+    });
+  }
+
+  Future<void> _pushCustomers() async {
+    try {
+      final db = DatabaseService();
+      final customers = await db.getCustomers();
+
+      if (customers.isEmpty) {
+        _syncStats['customers_pushed'] = 0;
+        return;
+      }
+
+      final customerData = customers
+          .map(
+            (c) => {
+              'id': c.id?.toString(),
+              'business_id': _businessId,
+              'customer_code': c.customerCode,
+              'full_name': c.fullName,
+              'phone_number': c.phoneNumber,
+              'email': c.email,
+              'address': c.address,
+              'points_balance': c.pointsBalance,
+              'lifetime_points': c.lifetimePoints,
+              'barcode_value': c.barcodeValue,
+              'created_at': c.createdAt.toIso8601String(),
+              'updated_at': c.updatedAt.toIso8601String(),
+              'is_active': c.isActive ? 1 : 0,
+            },
+          )
+          .toList();
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'customers': customerData},
+      );
+      _syncStats['customers_pushed'] = customers.length;
+      debugPrint('✅ Pushed ${customers.length} customers');
+    } catch (e) {
+      debugPrint('❌ Error pushing customers: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushUsers() async {
+    try {
+      final userService = UserService();
+      await userService.initialize();
+      final users = userService.users;
+
+      if (users.isEmpty) {
+        _syncStats['users_pushed'] = 0;
+        return;
+      }
+
+      final userData = users
+          .map(
+            (user) => {
+              'id': user.id,
+              'business_id': _businessId,
+              'email': user.email,
+              'password_hash': user.password,
+              'role': user.role.toString().split('.').last,
+              'full_name': user.name,
+              'contact_number': user.pin,
+              'auth_method': user.authMethod,
+              'is_active': user.isActive ? 1 : 0,
+              'last_login_at': null,
+              'created_at': user.createdAt.toIso8601String(),
+              'updated_at': DateTime.now().toIso8601String(),
+            },
+          )
+          .toList();
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'users': userData},
+      );
+      _syncStats['users_pushed'] = users.length;
+      debugPrint('✅ Pushed ${users.length} users');
+    } catch (e) {
+      debugPrint('❌ Error pushing users: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushLoyaltyLedger() async {
+    try {
+      final db = DatabaseService();
+      final customers = await db.getCustomers();
+      final entries = <Map<String, dynamic>>[];
+
+      for (final customer in customers) {
+        if (customer.id == null) continue;
+        final ledger = await db.getLoyaltyLedger(customer.id!);
+        for (final entry in ledger) {
+          entries.add({
+            'id': entry.id?.toString(),
+            'business_id': _businessId,
+            'customer_id': entry.customerId.toString(),
+            'sale_id': entry.saleId?.toString(),
+            'entry_type': entry.entryType.toString().split('.').last,
+            'points': entry.points,
+            'balance_after': entry.balanceAfter,
+            'notes': entry.notes,
+            'created_at': entry.createdAt.toIso8601String(),
+          });
+        }
+      }
+
+      if (entries.isEmpty) {
+        _syncStats['loyalty_ledger_pushed'] = 0;
+        return;
+      }
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'loyaltyLedger': entries},
+      );
+      _syncStats['loyalty_ledger_pushed'] = entries.length;
+      debugPrint('✅ Pushed ${entries.length} loyalty ledger entries');
+    } catch (e) {
+      debugPrint('❌ Error pushing loyalty ledger: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushCameras() async {
+    try {
+      final db = DatabaseService();
+      final cameras = await db.getAllCameras();
+
+      if (cameras.isEmpty) {
+        _syncStats['cameras_pushed'] = 0;
+        return;
+      }
+
+      final cameraData = cameras
+          .map(
+            (camera) => {
+              'id': camera['id']?.toString(),
+              'business_id': _businessId,
+              'name': camera['name'],
+              'location': camera['location'] ?? '',
+              'stream_url': camera['url'] ?? camera['stream_url'] ?? '',
+              'type': camera['type'] ?? 'http',
+              'position': camera['position'] ?? 0,
+              'is_active':
+                  (camera['isActive'] ?? camera['is_active'] ?? 1) == 1,
+              'username': camera['username'],
+              'password': camera['password'],
+              'created_at':
+                  camera['createdAt']?.toString() ??
+                  camera['created_at']?.toString() ??
+                  DateTime.now().toIso8601String(),
+            },
+          )
+          .toList();
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'cameras': cameraData},
+      );
+      _syncStats['cameras_pushed'] = cameras.length;
+      debugPrint('✅ Pushed ${cameras.length} cameras');
+    } catch (e) {
+      debugPrint('❌ Error pushing cameras: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushCctvTimestamps() async {
+    try {
+      final db = DatabaseService();
+      final timestamps = await db.getAllCCTVTimestamps();
+      final cameras = await db.getAllCameras();
+
+      if (timestamps.isEmpty) {
+        _syncStats['cctv_timestamps_pushed'] = 0;
+        return;
+      }
+
+      if (cameras.isEmpty) {
+        debugPrint('⚠️ Skipping CCTV timestamp push because no cameras exist');
+        _syncStats['cctv_timestamps_pushed'] = 0;
+        return;
+      }
+
+      final cameraId = cameras.first['id']?.toString();
+      if (cameraId == null || cameraId.isEmpty) {
+        _syncStats['cctv_timestamps_pushed'] = 0;
+        return;
+      }
+
+      final timestampData = timestamps
+          .map(
+            (timestamp) => {
+              'id': timestamp['id']?.toString(),
+              'business_id': _businessId,
+              'camera_id': cameraId,
+              'label': timestamp['description'] ?? 'Timestamp',
+              'description': timestamp['description'],
+              'timestamp':
+                  timestamp['timestamp']?.toString() ??
+                  DateTime.now().toIso8601String(),
+              'notes': timestamp['notes'],
+              'video_path': timestamp['videoPath'] ?? timestamp['video_path'],
+              'created_by': 'system',
+              'created_at':
+                  timestamp['createdAt']?.toString() ??
+                  timestamp['created_at']?.toString() ??
+                  DateTime.now().toIso8601String(),
+            },
+          )
+          .toList();
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'cctvTimestamps': timestampData},
+      );
+      _syncStats['cctv_timestamps_pushed'] = timestamps.length;
+      debugPrint('✅ Pushed ${timestamps.length} CCTV timestamps');
+    } catch (e) {
+      debugPrint('❌ Error pushing CCTV timestamps: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushAttendance() async {
+    try {
+      final userService = UserService();
+      await userService.initialize();
+
+      final users = userService.users;
+      final entries = <Map<String, dynamic>>[];
+      final leaves = <Map<String, dynamic>>[];
+      final attendance = AttendanceService.instance;
+
+      for (final user in users) {
+        final userEntries = await attendance.loadEntries(user.id);
+        for (final entry in userEntries) {
+          entries.add({
+            'id': null,
+            'business_id': _businessId,
+            'user_id': user.id,
+            'time': entry.time.toIso8601String(),
+            'type': entry.type,
+            'created_at': entry.time.toIso8601String(),
+          });
+        }
+
+        final userLeaves = await attendance.loadLeaves(user.id);
+        userLeaves.forEach((dateKey, payload) {
+          leaves.add({
+            'id': null,
+            'business_id': _businessId,
+            'user_id': user.id,
+            'date_key': dateKey,
+            'payload': payload is String ? payload : jsonEncode(payload),
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+        });
+      }
+
+      final schedule = await attendance.loadSchedule();
+      final schedulePayload = {
+        'key': 'global',
+        'value': jsonEncode(schedule),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      final body = <String, dynamic>{'businessId': _businessId};
+      if (entries.isNotEmpty) {
+        body['attendanceEntries'] = entries;
+      }
+      if (leaves.isNotEmpty) {
+        body['attendanceLeaves'] = leaves;
+      }
+      body['attendanceSchedule'] = schedulePayload;
+
+      await _api.postJson('sync/push', body: body);
+      _syncStats['attendance_entries_pushed'] = entries.length;
+      _syncStats['attendance_leaves_pushed'] = leaves.length;
+      _syncStats['attendance_schedule_pushed'] = 1;
+      debugPrint(
+        '✅ Pushed ${entries.length} attendance entries and ${leaves.length} leaves',
+      );
+    } catch (e) {
+      debugPrint('❌ Error pushing attendance data: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pushActivityLogs() async {
+    try {
+      final db = DatabaseService();
+      final logs = await db.fetchUnsentActivityLogs();
+
+      if (logs.isEmpty) {
+        _syncStats['activity_logs_pushed'] = 0;
+        return;
+      }
+
+      final payload = logs
+          .map(
+            (log) => {
+              'id': log['id']?.toString(),
+              'business_id': _businessId,
+              'type': log['type'],
+              'message': log['message'],
+              'meta': log['meta'],
+              'created_at':
+                  log['createdAt']?.toString() ??
+                  DateTime.now().toIso8601String(),
+              'sent': (log['sent'] as int? ?? 0) == 1,
+            },
+          )
+          .toList();
+
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'activityLogs': payload},
+      );
+
+      final ids = logs
+          .map((log) => int.tryParse(log['id'].toString()) ?? 0)
+          .where((id) => id > 0)
+          .toList();
+      if (ids.isNotEmpty) {
+        await db.markActivityLogsSent(ids);
+      }
+
+      _syncStats['activity_logs_pushed'] = payload.length;
+      debugPrint('✅ Pushed ${payload.length} activity logs');
+    } catch (e) {
+      debugPrint('❌ Error pushing activity logs: $e');
+      rethrow;
+    }
+  }
 
   Future<void> _pushProducts() async {
     try {
@@ -229,6 +670,9 @@ class SupabaseSyncService extends ChangeNotifier {
     try {
       final db = DatabaseService();
       final sales = await db.getAllSales();
+      final userService = UserService();
+      await userService.initialize();
+      final users = userService.users;
 
       if (sales.isEmpty) {
         _syncStats['sales_pushed'] = 0;
@@ -238,9 +682,9 @@ class SupabaseSyncService extends ChangeNotifier {
       final salesData = sales
           .map(
             (s) => {
-              'id': s.id.toString(),
+              'id': s.saleNumber,
               'business_id': _businessId,
-              'cashier_id': _uuid.v4(), // Generate if not available
+              'cashier_id': _resolveCashierId(s.cashierName, users),
               'cashier_name': s.cashierName,
               'customer_name': null,
               'payment_method': s.paymentMethod,
@@ -273,6 +717,28 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
+  String _resolveCashierId(String cashierName, List<User> users) {
+    final trimmed = cashierName.trim();
+    if (trimmed.isNotEmpty) {
+      final matched = users.where((u) {
+        return u.name.trim().toLowerCase() == trimmed.toLowerCase() ||
+            u.email.trim().toLowerCase() == trimmed.toLowerCase();
+      }).toList();
+      if (matched.isNotEmpty) {
+        return matched.first.id;
+      }
+    }
+
+    final activeUsers = users.where((u) => u.isActive).toList();
+    if (activeUsers.isNotEmpty) {
+      final cashiers = activeUsers.where((u) => u.role == UserRole.cashier).toList();
+      if (cashiers.isNotEmpty) return cashiers.first.id;
+      return activeUsers.first.id;
+    }
+
+    return users.isNotEmpty ? users.first.id : 'cashier-1';
+  }
+
   Future<void> _pushSaleItems(List<Sale> sales) async {
     try {
       final allItems = <Map<String, dynamic>>[];
@@ -280,7 +746,7 @@ class SupabaseSyncService extends ChangeNotifier {
       for (final sale in sales) {
         for (final item in sale.items) {
           allItems.add({
-            'sale_id': sale.id.toString(),
+            'sale_id': sale.saleNumber,
             'business_id': _businessId,
             'product_id': item.productId.toString(),
             'product_name': item.productName,
@@ -477,6 +943,337 @@ class SupabaseSyncService extends ChangeNotifier {
   // PULL METHODS (Cloud → Local)
   // ============================================================================
 
+  Future<void> _pullUsers(Map<String, dynamic> payload) async {
+    try {
+      final response = payload['users'] is List
+          ? List<Map<String, dynamic>>.from(payload['users'] as List)
+          : <Map<String, dynamic>>[];
+
+      final users = response.map((data) {
+        return User(
+          id: data['id']?.toString() ?? '',
+          name: data['full_name']?.toString() ?? '',
+          email: data['email']?.toString() ?? '',
+          password: data['password_hash']?.toString() ?? '',
+          pin: data['contact_number']?.toString(),
+          role: UserRole.values.firstWhere(
+            (role) =>
+                role.toString().split('.').last ==
+                data['role']?.toString().toLowerCase(),
+            orElse: () => UserRole.cashier,
+          ),
+          businessId: data['business_id']?.toString(),
+          createdAt: _asDateTime(data['created_at']),
+          isActive: _asBool(data['is_active']),
+          authMethod: data['auth_method']?.toString() ?? 'password',
+        );
+      }).toList();
+
+      final userService = UserService();
+      await userService.clearAllUsers();
+      for (final user in users) {
+        await userService.addUser(user);
+      }
+
+      _syncStats['users_pulled'] = users.length;
+      debugPrint('✅ Pulled ${users.length} users');
+    } catch (e) {
+      debugPrint('❌ Error pulling users: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullCustomers(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = payload['customers'] is List
+          ? List<Map<String, dynamic>>.from(payload['customers'] as List)
+          : <Map<String, dynamic>>[];
+
+      final customers = response.map((data) {
+        return Customer(
+          id: _asInt(data['id']),
+          customerCode: data['customer_code']?.toString() ?? '',
+          fullName: data['full_name']?.toString() ?? '',
+          phoneNumber: data['phone_number']?.toString(),
+          email: data['email']?.toString(),
+          address: data['address']?.toString(),
+          pointsBalance: _asInt(data['points_balance']),
+          lifetimePoints: _asInt(data['lifetime_points']),
+          barcodeValue: data['barcode_value']?.toString() ?? '',
+          createdAt: _asDateTime(data['created_at']),
+          updatedAt: _asDateTime(data['updated_at']),
+          isActive: _asBool(data['is_active']),
+        );
+      }).toList();
+
+      for (final customer in customers) {
+        await db.insertOrUpdateCustomer(customer);
+      }
+
+      _syncStats['customers_pulled'] = customers.length;
+      debugPrint('✅ Pulled ${customers.length} customers');
+    } catch (e) {
+      debugPrint('❌ Error pulling customers: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullLoyaltyLedger(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = payload['loyaltyLedger'] is List
+          ? List<Map<String, dynamic>>.from(payload['loyaltyLedger'] as List)
+          : <Map<String, dynamic>>[];
+
+      final entries = response
+          .map(
+            (data) => <String, dynamic>{
+              'id': _asInt(data['id']),
+              'customerId': _asInt(data['customer_id']),
+              'saleId': data['sale_id'] == null
+                  ? null
+                  : _asInt(data['sale_id']),
+              'entryType': data['entry_type']?.toString() ?? 'earn',
+              'points': _asInt(data['points']),
+              'balanceAfter': _asInt(data['balance_after']),
+              'notes': data['notes']?.toString(),
+              'createdAt': _asDateTime(data['created_at']).toIso8601String(),
+            },
+          )
+          .toList();
+
+      await db.replaceLoyaltyLedgerEntries(entries);
+      _syncStats['loyalty_ledger_pulled'] = entries.length;
+      debugPrint('✅ Pulled ${entries.length} loyalty ledger entries');
+    } catch (e) {
+      debugPrint('❌ Error pulling loyalty ledger: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullCameras(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = payload['cameras'] is List
+          ? List<Map<String, dynamic>>.from(payload['cameras'] as List)
+          : <Map<String, dynamic>>[];
+
+      final existing = await db.getAllCameras();
+      final existingIds = existing
+          .map((camera) => camera['id'])
+          .whereType<int>()
+          .toSet();
+      final incomingIds = <int>{};
+
+      for (final data in response) {
+        final rawId = data['id'];
+        final id = rawId == null ? null : _asInt(rawId);
+        final cameraMap = {
+          'id': id,
+          'name': data['name']?.toString() ?? '',
+          'url': data['stream_url']?.toString() ?? '',
+          'type': data['type']?.toString() ?? 'http',
+          'position': _asInt(data['position']),
+          'isActive': _asBool(data['is_active']) ? 1 : 0,
+          'createdAt': _asDateTime(data['created_at']).toIso8601String(),
+          'username': data['username']?.toString(),
+          'password': data['password']?.toString(),
+        };
+
+        if (id != null) {
+          incomingIds.add(id);
+          final existingCamera = await db.getCameraById(id);
+          if (existingCamera == null) {
+            await db.insertCamera(cameraMap);
+          } else {
+            await db.updateCamera(id, cameraMap);
+          }
+        } else {
+          await db.insertCamera(cameraMap);
+        }
+      }
+
+      for (final id in existingIds.difference(incomingIds)) {
+        await db.deleteCamera(id);
+      }
+
+      _syncStats['cameras_pulled'] = response.length;
+      debugPrint('✅ Pulled ${response.length} cameras');
+    } catch (e) {
+      debugPrint('❌ Error pulling cameras: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullCctvTimestamps(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = payload['cctvTimestamps'] is List
+          ? List<Map<String, dynamic>>.from(payload['cctvTimestamps'] as List)
+          : <Map<String, dynamic>>[];
+
+      await db.deleteAllCCTVTimestamps();
+      for (final data in response) {
+        await db.insertCCTVTimestamp({
+          'id': _asInt(data['id']),
+          'timestamp': _asDateTime(data['timestamp']).toIso8601String(),
+          'description': data['description']?.toString() ?? data['label']?.toString(),
+          'videoPath': data['video_path']?.toString(),
+          'createdAt': _asDateTime(data['created_at']).toIso8601String(),
+        });
+      }
+
+      _syncStats['cctv_timestamps_pulled'] = response.length;
+      debugPrint('✅ Pulled ${response.length} CCTV timestamps');
+    } catch (e) {
+      debugPrint('❌ Error pulling CCTV timestamps: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullAttendance(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final entriesResponse = payload['attendanceEntries'] is List
+          ? List<Map<String, dynamic>>.from(
+              payload['attendanceEntries'] as List,
+            )
+          : <Map<String, dynamic>>[];
+      final leavesResponse = payload['attendanceLeaves'] is List
+          ? List<Map<String, dynamic>>.from(payload['attendanceLeaves'] as List)
+          : <Map<String, dynamic>>[];
+      final scheduleResponse = payload['attendanceSchedule'];
+
+      final groupedEntries = <String, List<AttendanceEntry>>{};
+      for (final data in entriesResponse) {
+        final userId = data['user_id']?.toString() ?? '';
+        if (userId.isEmpty) continue;
+        final entry = AttendanceEntry(
+          time: _asDateTime(data['time']),
+          type: data['type']?.toString() ?? 'IN',
+        );
+        groupedEntries.putIfAbsent(userId, () => <AttendanceEntry>[]).add(entry);
+      }
+
+      for (final entry in groupedEntries.entries) {
+        await AttendanceService.instance.replaceEntries(entry.key, entry.value);
+      }
+
+      final leavesByUser = <String, Map<String, dynamic>>{};
+      for (final data in leavesResponse) {
+        final userId = data['user_id']?.toString() ?? '';
+        final dateKey = data['date_key']?.toString() ?? '';
+        if (userId.isEmpty || dateKey.isEmpty) continue;
+        leavesByUser.putIfAbsent(userId, () => <String, dynamic>{});
+        final payloadValue = data['payload'];
+        leavesByUser[userId]![dateKey] = payloadValue is String
+            ? (jsonDecode(payloadValue) as Map<String, dynamic>)
+            : Map<String, dynamic>.from(payloadValue as Map);
+      }
+
+      for (final entry in leavesByUser.entries) {
+        for (final leave in entry.value.entries) {
+          await AttendanceService.instance.saveLeave(
+            entry.key,
+            leave.key,
+            leave.value,
+          );
+        }
+      }
+
+      if (scheduleResponse != null) {
+        Map<String, dynamic>? schedule;
+        if (scheduleResponse is Map<String, dynamic>) {
+          final value = scheduleResponse['value'];
+          if (value is String && value.isNotEmpty) {
+            try {
+              schedule = Map<String, dynamic>.from(jsonDecode(value) as Map);
+            } catch (_) {
+              schedule = null;
+            }
+          } else if (value is Map) {
+            schedule = Map<String, dynamic>.from(value);
+          }
+        } else if (scheduleResponse is List && scheduleResponse.isNotEmpty) {
+          final first = scheduleResponse.first;
+          if (first is Map) {
+            final value = first['value'];
+            if (value is String && value.isNotEmpty) {
+              try {
+                schedule = Map<String, dynamic>.from(jsonDecode(value) as Map);
+              } catch (_) {
+                schedule = null;
+              }
+            } else if (value is Map) {
+              schedule = Map<String, dynamic>.from(value);
+            }
+          }
+        }
+
+        if (schedule != null) {
+          await AttendanceService.instance.saveSchedule(schedule);
+        }
+      }
+
+      _syncStats['attendance_entries_pulled'] = entriesResponse.length;
+      _syncStats['attendance_leaves_pulled'] = leavesResponse.length;
+      _syncStats['attendance_schedule_pulled'] = scheduleResponse == null ? 0 : 1;
+      debugPrint(
+        '✅ Pulled ${entriesResponse.length} attendance entries and ${leavesResponse.length} leaves',
+      );
+    } catch (e) {
+      debugPrint('❌ Error pulling attendance data: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> _pullActivityLogs(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = payload['activityLogs'] is List
+          ? List<Map<String, dynamic>>.from(payload['activityLogs'] as List)
+          : <Map<String, dynamic>>[];
+
+      final logs = response
+          .map(
+            (data) => <String, dynamic>{
+              'id': _asInt(data['id']),
+              'type': data['type']?.toString() ?? '',
+              'message': data['message']?.toString() ?? '',
+              'meta': data['meta']?.toString(),
+              'createdAt': _asDateTime(data['created_at']).toIso8601String(),
+              'sent': (() {
+                final sent = data['sent'];
+                if (sent == true) return 1;
+                if (sent is num && sent.toInt() == 1) return 1;
+                return 0;
+              })(),
+            },
+          )
+          .toList();
+
+      await db.replaceActivityLogs(logs);
+      _syncStats['activity_logs_pulled'] = logs.length;
+      debugPrint('✅ Pulled ${logs.length} activity logs');
+    } catch (e) {
+      debugPrint('❌ Error pulling activity logs: $e');
+      rethrow;
+    }
+  }
+
   Future<void> _pullProducts(DatabaseService db, Map<String, dynamic> payload) async {
     try {
       final response = payload['products'] is List
@@ -485,17 +1282,17 @@ class SupabaseSyncService extends ChangeNotifier {
 
       final products = response.map((data) {
         return Product(
-          id: int.tryParse(data['id'].toString()),
+          id: _asInt(data['id']),
           barcode: data['barcode'] ?? '',
           name: data['name'],
           description: null,
           buyingPrice: 0.0, // Not in cloud schema
-          sellingPrice: (data['selling_price'] as num).toDouble(),
-          quantity: data['quantity'] as int,
-          reorderLevel: data['low_stock_threshold'] ?? 5,
+          sellingPrice: _asDouble(data['selling_price']),
+          quantity: _asInt(data['quantity']),
+          reorderLevel: _asInt(data['low_stock_threshold'], fallback: 5),
           category: data['category'] ?? 'General',
           imagePath: data['image_path'],
-          createdAt: DateTime.parse(data['created_at']),
+          createdAt: _asDateTime(data['created_at']),
         );
       }).toList();
 
@@ -528,14 +1325,18 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       final sales = response.map((data) {
+        final saleId = _asInt(data['id']);
+        final saleNumber = data['sale_number']?.toString() ??
+            data['saleNumber']?.toString() ??
+            'S$saleId';
         final items = (itemsBySale[data['id']?.toString()] ?? []).map((itemData) {
-          final unitPrice = (itemData['unit_price'] as num).toDouble();
-          final quantity = itemData['quantity'] as int;
-          final discount = (itemData['discount'] as num?)?.toDouble() ?? 0.0;
+          final unitPrice = _asDouble(itemData['unit_price']);
+          final quantity = _asInt(itemData['quantity']);
+          final discount = _asDouble(itemData['discount']);
           return SaleItem(
             id: null,
-            saleId: int.tryParse(data['id'].toString()) ?? 0,
-            productId: int.tryParse(itemData['product_id'].toString()) ?? 0,
+            saleId: saleId,
+            productId: _asInt(itemData['product_id']),
             productName: itemData['product_name'],
             quantity: quantity,
             unitPrice: unitPrice,
@@ -545,23 +1346,23 @@ class SupabaseSyncService extends ChangeNotifier {
         }).toList();
 
         return Sale(
-          id: int.tryParse(data['id'].toString()),
-          saleNumber: 'S${data['id']}',
+          id: saleId,
+          saleNumber: saleNumber,
           items: items,
-          subtotal: (data['subtotal'] as num).toDouble(),
-          discountAmount: (data['discount'] as num?)?.toDouble() ?? 0.0,
+          subtotal: _asDouble(data['subtotal']),
+          discountAmount: _asDouble(data['discount']),
           taxAmount: 0.0,
-          totalAmount: (data['total_amount'] as num).toDouble(),
+          totalAmount: _asDouble(data['total_amount']),
           paymentMethod: data['payment_method'],
           status: _parseSaleStatus(data['status']),
           notes: data['notes'],
           cashierName: data['cashier_name'],
-          saleDate: DateTime.parse(data['datetime']),
+          saleDate: _asDateTime(data['datetime']),
         );
       }).toList();
 
       for (final sale in sales) {
-        await db.insertSale(sale);
+        await db.insertOrUpdateSale(sale);
       }
 
       _syncStats['sales_pulled'] = sales.length;
@@ -595,15 +1396,15 @@ class SupabaseSyncService extends ChangeNotifier {
 
       final suppliers = response.map((data) {
         return Supplier(
-          id: int.tryParse(data['id'].toString()),
+          id: _asInt(data['id']),
           name: data['name'],
           contactPerson: data['contact_person'] ?? '',
           phone: data['phone'] ?? '',
           email: data['email'] ?? '',
           address: data['address'] ?? '',
           notes: data['notes'] ?? '',
-          isActive: data['is_active'] ?? true,
-          createdAt: DateTime.parse(data['created_at']),
+          isActive: _asBool(data['is_active']),
+          createdAt: _asDateTime(data['created_at']),
         );
       }).toList();
 
@@ -646,15 +1447,15 @@ class SupabaseSyncService extends ChangeNotifier {
         final quantity = data['quantity'] as int;
         final unitPrice = 0.0; // Not stored in cloud, would need product lookup
         return DamageReport(
-          id: int.tryParse(data['id'].toString()),
-          productId: int.tryParse(data['product_id'].toString()) ?? 0,
+          id: _asInt(data['id']),
+          productId: _asInt(data['product_id']),
           productName: data['product_name'],
           quantity: quantity,
           unitPrice: unitPrice,
           totalValue: unitPrice * quantity,
           reason: data['damage_type'] ?? 'unknown',
           reportedBy: data['reported_by'] ?? 'unknown',
-          reportDate: DateTime.parse(data['reported_at']),
+          reportDate: _asDateTime(data['reported_at']),
         );
       }).toList();
 
@@ -674,6 +1475,40 @@ class SupabaseSyncService extends ChangeNotifier {
   // HELPER METHODS
   // ============================================================================
 
+  int _asInt(dynamic value, {int fallback = 0}) {
+    if (value == null) return fallback;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? fallback;
+  }
+
+  double _asDouble(dynamic value, {double fallback = 0.0}) {
+    if (value == null) return fallback;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString()) ?? fallback;
+  }
+
+  bool _asBool(dynamic value, {bool fallback = false}) {
+    if (value == null) return fallback;
+    if (value is bool) return value;
+    if (value is num) return value.toInt() != 0;
+    final text = value.toString().trim().toLowerCase();
+    if (text.isEmpty) return fallback;
+    if (text == 'true' || text == '1' || text == 'yes') return true;
+    if (text == 'false' || text == '0' || text == 'no') return false;
+    return fallback;
+  }
+
+  DateTime _asDateTime(dynamic value, {DateTime? fallback}) {
+    if (value == null) return fallback ?? DateTime.now();
+    if (value is DateTime) return value;
+    final parsed = DateTime.tryParse(value.toString());
+    return parsed ?? (fallback ?? DateTime.now());
+  }
+
   SaleStatus _parseSaleStatus(String status) {
     switch (status.toLowerCase()) {
       case 'completed':
@@ -691,6 +1526,9 @@ class SupabaseSyncService extends ChangeNotifier {
 
   /// Clear business context (call on logout)
   void clearBusinessContext() {
+    stopAutoSync();
+    _queuedPushTimer?.cancel();
+    _queuedPushTimer = null;
     _businessId = null;
     _lastError = null;
     _syncStats.clear();

@@ -1,77 +1,189 @@
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 
-/// Simple service to manage a developer account stored in SharedPreferences.
+import 'backend_api_service.dart';
+import 'backend_config.dart';
+
+class DeveloperAccount {
+  final String id;
+  final String displayName;
+  final String email;
+  final String authMethod;
+  final String? googleSub;
+  final String? avatarUrl;
+  final bool isActive;
+
+  DeveloperAccount({
+    required this.id,
+    required this.displayName,
+    required this.email,
+    required this.authMethod,
+    this.googleSub,
+    this.avatarUrl,
+    required this.isActive,
+  });
+
+  factory DeveloperAccount.fromMap(Map<String, dynamic> map) {
+    return DeveloperAccount(
+      id: map['id']?.toString() ?? 'primary',
+      displayName: map['displayName']?.toString() ?? 'Developer',
+      email: map['email']?.toString() ?? 'developer@smartmonitoring.com',
+      authMethod: map['authMethod']?.toString() ?? 'password',
+      googleSub: map['googleSub']?.toString(),
+      avatarUrl: map['avatarUrl']?.toString(),
+      isActive: map['isActive'] == true ||
+          (map['isActive'] is num && (map['isActive'] as num).toInt() == 1),
+    );
+  }
+}
+
+/// Backend-backed service for the developer account.
+/// The account data now lives in MySQL so multiple devices share one identity.
 class DeveloperService extends ChangeNotifier {
   static final DeveloperService _instance = DeveloperService._internal();
   factory DeveloperService() => _instance;
   DeveloperService._internal() {
-    _initialize();
+    _loadAccount();
   }
 
-  static const String _prefsKey = 'developer_account';
+  final ApiClient _api = ApiClient();
 
-  String _username = '';
-  String _password = '';
+  DeveloperAccount? _account;
+  bool _isLoading = false;
 
-  String get username => _username;
-  String get password => _password;
-  bool get hasDeveloperAccount => _username.isNotEmpty && _password.isNotEmpty;
+  String get username => _account?.email ?? '';
+  String get password => '';
+  String get displayName => _account?.displayName ?? '';
+  bool get hasDeveloperAccount => _account != null;
+  bool get isLoading => _isLoading;
+  bool get isConfigured => BackendConfig.useRestBackend;
 
-  /// Returns true when the given email matches the currently registered
-  /// developer identity. This is used to keep owner and developer accounts
-  /// from sharing the same Google account.
+  DeveloperAccount? get account => _account;
+
+  /// Returns true when the given email matches the registered developer identity.
   bool isDeveloperEmail(String email) {
-    if (_username.isEmpty || email.isEmpty) return false;
-    return _username.toLowerCase() == email.toLowerCase();
+    final accountEmail = _account?.email.trim().toLowerCase();
+    if (accountEmail == null || accountEmail.isEmpty) return false;
+    return accountEmail == email.trim().toLowerCase();
   }
 
-  Future<void> _initialize() async {
+  Future<void> _loadAccount() async {
+    if (!isConfigured) return;
+
+    _isLoading = true;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_prefsKey);
-      if (raw != null && raw.isNotEmpty) {
-        final data = jsonDecode(raw) as Map<String, dynamic>;
-        _username = (data['username'] as String?) ?? '';
-        _password = (data['password'] as String?) ?? '';
-        debugPrint('DeveloperService: loaded developer account for $_username');
-      } else {
-        // No modern developer_account found; attempt migration from legacy keys
-        final legacyPw = prefs.getString('dev_password') ?? '';
-        final legacyName = prefs.getString('dev_name') ?? prefs.getString('dev_email') ?? '';
-        if (legacyPw.isNotEmpty) {
-          _username = legacyName.isNotEmpty ? legacyName : 'Developer';
-          _password = legacyPw;
-          // Persist into new developer_account key
-          final payload = jsonEncode({'username': _username, 'password': _password});
-          await prefs.setString(_prefsKey, payload);
-          debugPrint('DeveloperService: migrated legacy developer account for $_username');
-        }
+      final response = await _api.getJson('developer/account');
+      if (response is Map<String, dynamic> && response['account'] is Map) {
+        _account = DeveloperAccount.fromMap(
+          Map<String, dynamic>.from(response['account'] as Map),
+        );
       }
     } catch (e) {
-      debugPrint('DeveloperService: failed to load - $e');
+      debugPrint('DeveloperService: failed to load account - $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
-  Future<void> updateDeveloperAccount({required String username, required String password}) async {
-    _username = username;
-    _password = password;
+  Future<DeveloperAccount?> refreshDeveloperAccount() async {
+    await _loadAccount();
+    return _account;
+  }
+
+  Future<bool> authenticate(String username, String password) async {
+    if (!isConfigured) return false;
+
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final payload = jsonEncode({'username': _username, 'password': _password});
-      await prefs.setString(_prefsKey, payload);
+      final response = await _api.postJson(
+        'developer/login',
+        body: {'username': username, 'password': password},
+      );
+
+      if (response is Map<String, dynamic> && response['success'] == true) {
+        if (response['account'] is Map) {
+          _account = DeveloperAccount.fromMap(
+            Map<String, dynamic>.from(response['account'] as Map),
+          );
+          notifyListeners();
+        }
+        return true;
+      }
+      return false;
     } catch (e) {
-      debugPrint('DeveloperService: failed to save - $e');
+      debugPrint('DeveloperService: authenticate failed - $e');
+      return false;
     }
-    notifyListeners();
   }
 
-  /// Authenticate supplied credentials against stored developer account.
-  /// If no stored account exists, returns false.
-  bool authenticate(String username, String password) {
-    if (_username.isEmpty || _password.isEmpty) return false;
-    return username.toLowerCase() == _username.toLowerCase() && password == _password;
+  Future<bool> authenticateWithGoogle({
+    required String email,
+    required String name,
+    required String googleSub,
+    String? avatarUrl,
+  }) async {
+    if (!isConfigured) return false;
+
+    try {
+      final response = await _api.postJson(
+        'developer/google/login',
+        body: {
+          'email': email,
+          'name': name,
+          'googleSub': googleSub,
+          'avatarUrl': avatarUrl,
+        },
+      );
+
+      if (response is Map<String, dynamic> && response['success'] == true) {
+        if (response['account'] is Map) {
+          _account = DeveloperAccount.fromMap(
+            Map<String, dynamic>.from(response['account'] as Map),
+          );
+          notifyListeners();
+        }
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('DeveloperService: google authenticate failed - $e');
+      return false;
+    }
+  }
+
+  Future<void> updateDeveloperAccount({
+    required String username,
+    String? password,
+    String? email,
+    String authMethod = 'password',
+    String? googleSub,
+    String? avatarUrl,
+  }) async {
+    if (!isConfigured) {
+      throw Exception('Backend not configured');
+    }
+
+    final body = <String, dynamic>{
+      'displayName': username,
+      'email': email ?? (username.contains('@') ? username : 'developer@smartmonitoring.com'),
+      'authMethod': authMethod,
+      'avatarUrl': avatarUrl,
+    };
+
+    if (authMethod == 'google') {
+      body['googleSub'] = googleSub ?? password;
+    } else if (password != null && password.isNotEmpty) {
+      body['password'] = password;
+    }
+
+    final response = await _api.putJson('developer/account', body: body);
+    if (response is Map<String, dynamic> && response['account'] is Map) {
+      _account = DeveloperAccount.fromMap(
+        Map<String, dynamic>.from(response['account'] as Map),
+      );
+      notifyListeners();
+      return;
+    }
+
+    throw Exception('Failed to update developer account');
   }
 }

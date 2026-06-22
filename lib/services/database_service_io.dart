@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:get_it/get_it.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
@@ -14,6 +15,7 @@ import '../models/restock_record.dart';
 import '../models/purchase_order.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
+import 'supabase_sync_service.dart';
 
 /// DatabaseService provides a singleton pattern for database operations.
 /// Handles all CRUD operations for products, sales, inventory movements,
@@ -21,12 +23,43 @@ import '../models/loyalty_ledger_entry.dart';
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   static Database? _database;
+  bool _suppressCloudSync = false;
 
   factory DatabaseService() {
     return _instance;
   }
 
   DatabaseService._internal();
+
+  SupabaseSyncService? _maybeSyncService() {
+    try {
+      return GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>()
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _queueCloudSync() {
+    if (_suppressCloudSync) {
+      return;
+    }
+    final sync = _maybeSyncService();
+    if (sync != null && sync.isConfigured) {
+      sync.queuePushAllData();
+    }
+  }
+
+  Future<T> runWithoutCloudSync<T>(Future<T> Function() action) async {
+    final previous = _suppressCloudSync;
+    _suppressCloudSync = true;
+    try {
+      return await action();
+    } finally {
+      _suppressCloudSync = previous;
+    }
+  }
 
   /// Lazy initialization of database connection
   Future<Database> get database async {
@@ -936,7 +969,9 @@ class DatabaseService {
   /// Insert a new product into the database
   Future<int> insertProduct(Product product) async {
     final db = await database;
-    return db.insert('products', product.toMap());
+    final id = await db.insert('products', product.toMap());
+    _queueCloudSync();
+    return id;
   }
 
   /// Retrieve all products, ordered by name
@@ -992,13 +1027,17 @@ class DatabaseService {
       debugPrint('   ShoeSizes JSON: ${map['shoeSizes']}');
     }
 
-    return db.update('products', map, where: 'id = ?', whereArgs: [product.id]);
+    final rows = await db.update('products', map, where: 'id = ?', whereArgs: [product.id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Delete a product by its ID
   Future<int> deleteProduct(int id) async {
     final db = await database;
-    return db.delete('products', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('products', where: 'id = ?', whereArgs: [id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Get all products with stock below reorder level
@@ -1032,6 +1071,7 @@ class DatabaseService {
     final map = customer.copyWith(updatedAt: now).toMap();
     map['id'] = null;
     final id = await db.insert('customers', map);
+    _queueCloudSync();
     return customer.copyWith(id: id, updatedAt: now);
   }
 
@@ -1044,7 +1084,41 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [updated.id],
     );
+    _queueCloudSync();
     return updated;
+  }
+
+  Future<Customer> insertOrUpdateCustomer(Customer customer) async {
+    final db = await database;
+    final now = DateTime.now();
+    final existing = customer.id == null
+        ? []
+        : await db.query(
+            'customers',
+            where: 'id = ?',
+            whereArgs: [customer.id],
+            limit: 1,
+          );
+
+    if (existing.isNotEmpty) {
+      final updated = customer.copyWith(updatedAt: now);
+      await db.update(
+        'customers',
+        updated.toMap(),
+        where: 'id = ?',
+        whereArgs: [updated.id],
+      );
+      _queueCloudSync();
+      return updated;
+    }
+
+    final map = customer.copyWith(updatedAt: now).toMap();
+    if (customer.id == null) {
+      map['id'] = null;
+    }
+    final id = await db.insert('customers', map);
+    _queueCloudSync();
+    return customer.copyWith(id: id, updatedAt: now);
   }
 
   Future<List<Customer>> getCustomers({String? query}) async {
@@ -1115,6 +1189,7 @@ class DatabaseService {
       );
       await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
     });
+    _queueCloudSync();
   }
 
   Future<List<LoyaltyLedgerEntry>> getLoyaltyLedger(int customerId) async {
@@ -1126,6 +1201,20 @@ class DatabaseService {
       orderBy: 'createdAt DESC',
     );
     return rows.map(LoyaltyLedgerEntry.fromMap).toList();
+  }
+
+  Future<void> replaceLoyaltyLedgerEntries(
+    List<Map<String, dynamic>> entries,
+  ) async {
+    final db = await database;
+    await db.delete('loyalty_ledger');
+    if (entries.isNotEmpty) {
+      final batch = db.batch();
+      for (final entry in entries) {
+        batch.insert('loyalty_ledger', entry);
+      }
+      await batch.commit(noResult: true);
+    }
   }
 
   Future<void> awardCustomerPoints({
@@ -1166,6 +1255,7 @@ class DatabaseService {
         'createdAt': DateTime.now().toIso8601String(),
       });
     });
+    _queueCloudSync();
   }
 
   Future<bool> redeemCustomerPoints({
@@ -1208,6 +1298,9 @@ class DatabaseService {
       });
       success = true;
     });
+    if (success) {
+      _queueCloudSync();
+    }
     return success;
   }
 
@@ -1233,26 +1326,70 @@ class DatabaseService {
       final saleId = await db.insert('sales', saleMap);
       debugPrint('✅ Sale inserted with ID: $saleId');
 
-      // Insert all sale items
-      for (final item in sale.items) {
-        await db.insert('sale_items', {
-          'saleId': saleId,
-          'productId': item.productId,
-          'productName': item.productName,
-          'quantity': item.quantity,
-          'unitPrice': item.unitPrice,
-          'discount': item.discount,
-          'subtotal': item.subtotal,
-          'shoeSize': item.shoeSize,
-        });
-      }
+      await _insertSaleItems(db, saleId, sale.items);
 
+      _queueCloudSync();
       return saleId;
     } catch (e) {
       debugPrint('❌ Error inserting sale: $e');
       debugPrint('   Sale map: $saleMap');
       rethrow;
     }
+  }
+
+  Future<void> _insertSaleItems(
+    DatabaseExecutor executor,
+    int saleId,
+    List<SaleItem> items,
+  ) async {
+    for (final item in items) {
+      await executor.insert('sale_items', {
+        'saleId': saleId,
+        'productId': item.productId,
+        'productName': item.productName,
+        'quantity': item.quantity,
+        'unitPrice': item.unitPrice,
+        'discount': item.discount,
+        'subtotal': item.subtotal,
+        'shoeSize': item.shoeSize,
+      });
+    }
+  }
+
+  /// Insert or replace a sale by sale number.
+  /// Used by cloud restore so repeated syncs do not fail on UNIQUE constraints.
+  Future<int> insertOrUpdateSale(Sale sale) async {
+    final db = await database;
+    final saleMap = Map<String, dynamic>.from(sale.toMap());
+    saleMap.remove('items');
+    saleMap.remove('id');
+
+    return await db.transaction((txn) async {
+      final existingRows = await txn.query(
+        'sales',
+        columns: ['id'],
+        where: 'saleNumber = ?',
+        whereArgs: [sale.saleNumber],
+        limit: 1,
+      );
+
+      if (existingRows.isNotEmpty) {
+        final saleId = existingRows.first['id'] as int;
+        await txn.update(
+          'sales',
+          saleMap,
+          where: 'id = ?',
+          whereArgs: [saleId],
+        );
+        await txn.delete('sale_items', where: 'saleId = ?', whereArgs: [saleId]);
+        await _insertSaleItems(txn, saleId, sale.items);
+        return saleId;
+      }
+
+      final saleId = await txn.insert('sales', saleMap);
+      await _insertSaleItems(txn, saleId, sale.items);
+      return saleId;
+    });
   }
 
   /// Get a sale by its ID with all its items
@@ -1285,6 +1422,7 @@ class DatabaseService {
 
     await db.update('sales', saleMap, where: 'id = ?', whereArgs: [sale.id]);
     debugPrint('✅ Sale updated: ${sale.saleNumber} (Status: ${sale.status})');
+    _queueCloudSync();
   }
 
   /// Get all sales, optionally filtered by date range
@@ -1673,7 +1811,9 @@ class DatabaseService {
   /// Insert a new CCTV timestamp
   Future<int> insertCCTVTimestamp(Map<String, dynamic> timestamp) async {
     final db = await database;
-    return db.insert('cctv_timestamps', timestamp);
+    final id = await db.insert('cctv_timestamps', timestamp);
+    _queueCloudSync();
+    return id;
   }
 
   /// Get all CCTV timestamps ordered by timestamp descending
@@ -1699,24 +1839,30 @@ class DatabaseService {
   /// Delete a CCTV timestamp
   Future<int> deleteCCTVTimestamp(int id) async {
     final db = await database;
-    return await db.delete('cctv_timestamps', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('cctv_timestamps', where: 'id = ?', whereArgs: [id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Update a CCTV timestamp (e.g., to add video path)
   Future<int> updateCCTVTimestamp(int id, Map<String, dynamic> data) async {
     final db = await database;
-    return await db.update(
+    final rows = await db.update(
       'cctv_timestamps',
       data,
       where: 'id = ?',
       whereArgs: [id],
     );
+    _queueCloudSync();
+    return rows;
   }
 
   /// Delete all CCTV timestamps
   Future<int> deleteAllCCTVTimestamps() async {
     final db = await database;
-    return await db.delete('cctv_timestamps');
+    final rows = await db.delete('cctv_timestamps');
+    _queueCloudSync();
+    return rows;
   }
 
   // ======================== CAMERA OPERATIONS ========================
@@ -1724,7 +1870,9 @@ class DatabaseService {
   /// Insert a new camera
   Future<int> insertCamera(Map<String, dynamic> camera) async {
     final db = await database;
-    return db.insert('cameras', camera);
+    final id = await db.insert('cameras', camera);
+    _queueCloudSync();
+    return id;
   }
 
   /// Get all cameras ordered by position
@@ -1759,13 +1907,17 @@ class DatabaseService {
   /// Update a camera
   Future<int> updateCamera(int id, Map<String, dynamic> data) async {
     final db = await database;
-    return await db.update('cameras', data, where: 'id = ?', whereArgs: [id]);
+    final rows = await db.update('cameras', data, where: 'id = ?', whereArgs: [id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Delete a camera
   Future<int> deleteCamera(int id) async {
     final db = await database;
-    return await db.delete('cameras', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('cameras', where: 'id = ?', whereArgs: [id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Update camera positions (for reordering)
@@ -1785,6 +1937,7 @@ class DatabaseService {
       );
     }
     await batch.commit(noResult: true);
+    _queueCloudSync();
   }
 
   // ======================== DATABASE MANAGEMENT ========================
@@ -1860,7 +2013,23 @@ class DatabaseService {
       'meta': meta != null ? jsonEncode(meta) : null,
       'createdAt': now,
     };
-    return await db.insert('activity_logs', row);
+    final id = await db.insert('activity_logs', row);
+    _queueCloudSync();
+    return id;
+  }
+
+  Future<void> replaceActivityLogs(
+    List<Map<String, dynamic>> logs,
+  ) async {
+    final db = await database;
+    await db.delete('activity_logs');
+    if (logs.isNotEmpty) {
+      final batch = db.batch();
+      for (final log in logs) {
+        batch.insert('activity_logs', log);
+      }
+      await batch.commit(noResult: true);
+    }
   }
 
   /// Fetch activity logs with optional filters (type, date range) ordered by createdAt desc
@@ -1922,6 +2091,7 @@ class DatabaseService {
       );
     }
     await batch.commit(noResult: true);
+    _queueCloudSync();
   }
 
   // ============================================================================
@@ -2140,6 +2310,7 @@ class DatabaseService {
       });
     }
     await batch.commit(noResult: true);
+    _queueCloudSync();
   }
 
   /// Load all attendance entries for a user (ordered ascending by time)
@@ -2171,6 +2342,7 @@ class DatabaseService {
       'dateKey': dateKey,
       'payload': payloadJson,
     });
+    _queueCloudSync();
   }
 
   /// Load leaves map for a user (dateKey -> payload JSON string)
@@ -2195,6 +2367,7 @@ class DatabaseService {
       where: 'userId = ? AND dateKey = ?',
       whereArgs: [userId, dateKey],
     );
+    _queueCloudSync();
   }
 
   /// Save attendance schedule as JSON under key 'global'
@@ -2207,6 +2380,7 @@ class DatabaseService {
       whereArgs: ['global'],
     );
     await db.insert('attendance_schedule', {'key': 'global', 'value': payload});
+    _queueCloudSync();
   }
 
   /// Load attendance schedule map (or null if none)
@@ -2233,7 +2407,9 @@ class DatabaseService {
   /// Insert a new supplier into the database
   Future<int> insertSupplier(Supplier supplier) async {
     final db = await database;
-    return db.insert('suppliers', supplier.toMap());
+    final id = await db.insert('suppliers', supplier.toMap());
+    _queueCloudSync();
+    return id;
   }
 
   /// Get all suppliers
@@ -2266,18 +2442,22 @@ class DatabaseService {
   /// Update supplier information
   Future<int> updateSupplier(Supplier supplier) async {
     final db = await database;
-    return db.update(
+    final rows = await db.update(
       'suppliers',
       supplier.toMap(),
       where: 'id = ?',
       whereArgs: [supplier.id],
     );
+    _queueCloudSync();
+    return rows;
   }
 
   /// Delete a supplier
   Future<int> deleteSupplier(int id) async {
     final db = await database;
-    return db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
+    _queueCloudSync();
+    return rows;
   }
 
   /// Search suppliers by name or contact person

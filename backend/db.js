@@ -1,4 +1,5 @@
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcryptjs');
 
 const {
   MYSQL_HOST = 'localhost',
@@ -156,6 +157,47 @@ async function ensureActivationCodeColumns() {
   await ensureColumn('activation_codes', 'created_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP');
 }
 
+async function ensureDeveloperAccountsTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS developer_accounts (
+      id VARCHAR(32) PRIMARY KEY,
+      display_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      password_hash VARCHAR(255) NULL,
+      auth_method VARCHAR(32) NOT NULL DEFAULT 'password',
+      google_sub VARCHAR(255) NULL,
+      avatar_url TEXT,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB
+  `);
+
+  const [rows] = await pool.execute(
+    'SELECT id FROM developer_accounts WHERE id = ? LIMIT 1',
+    ['primary'],
+  );
+
+  if (!rows.length) {
+    const passwordHash = await bcrypt.hash('dev123', 10);
+    await pool.execute(
+      `INSERT INTO developer_accounts
+        (id, display_name, email, password_hash, auth_method, google_sub, avatar_url, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'primary',
+        'Developer',
+        'developer@smartmonitoring.com',
+        passwordHash,
+        'password',
+        null,
+        null,
+        1,
+      ],
+    );
+  }
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -174,6 +216,7 @@ async function initDb() {
   await ensureUsersTableColumns();
   await ensureSalesAndCustomerRelations();
   await ensureActivationCodeColumns();
+  await ensureDeveloperAccountsTable();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);

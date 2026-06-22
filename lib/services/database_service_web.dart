@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:html' show window;
+import 'package:get_it/get_it.dart';
 
 import '../models/product.dart';
 import '../models/sale.dart';
@@ -9,6 +10,7 @@ import '../models/sale_item.dart';
 import '../models/inventory_movement.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
+import 'supabase_sync_service.dart';
 
 /// A lightweight web-backed DatabaseService that persists to window.localStorage.
 /// This provides a compatible API for web builds when sqflite is not available.
@@ -16,6 +18,7 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   factory DatabaseService() => _instance;
   DatabaseService._internal();
+  bool _suppressCloudSync = false;
 
   static const _storageKey = 'pos_system_db_v1';
 
@@ -25,14 +28,50 @@ class DatabaseService {
     'inventory_movements': <Map<String, dynamic>>[],
     'customers': <Map<String, dynamic>>[],
     'loyalty_ledger': <Map<String, dynamic>>[],
+    'activity_logs': <Map<String, dynamic>>[],
+    'cameras': <Map<String, dynamic>>[],
+    'cctv_timestamps': <Map<String, dynamic>>[],
     'counters': {
       'product': 0,
       'sale': 0,
       'movement': 0,
       'customer': 0,
       'ledger': 0,
+      'activity_log': 0,
+      'camera': 0,
+      'cctv_timestamp': 0,
     },
   };
+
+  SupabaseSyncService? _maybeSyncService() {
+    try {
+      return GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>()
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _queueCloudSync() {
+    if (_suppressCloudSync) {
+      return;
+    }
+    final sync = _maybeSyncService();
+    if (sync != null && sync.isConfigured) {
+      sync.queuePushAllData();
+    }
+  }
+
+  Future<T> runWithoutCloudSync<T>(Future<T> Function() action) async {
+    final previous = _suppressCloudSync;
+    _suppressCloudSync = true;
+    try {
+      return await action();
+    } finally {
+      _suppressCloudSync = previous;
+    }
+  }
 
   Future<void> _load() async {
     final raw = window.localStorage[_storageKey];
@@ -72,6 +111,15 @@ class DatabaseService {
     return next;
   }
 
+  void _bumpCounter(String key, int value) {
+    final counters = Map<String, dynamic>.from(_store['counters'] as Map);
+    final cur = (counters[key] as int?) ?? 0;
+    if (value > cur) {
+      counters[key] = value;
+      _store['counters'] = counters;
+    }
+  }
+
   // -------------------- Product Operations --------------------
 
   Future<int> insertProduct(Product product) async {
@@ -82,6 +130,7 @@ class DatabaseService {
     products.add(map);
     _store['products'] = products;
     await _save();
+    _queueCloudSync();
     return id;
   }
 
@@ -145,6 +194,7 @@ class DatabaseService {
     products[idx] = product.toMap();
     _store['products'] = products;
     await _save();
+    _queueCloudSync();
     return 1;
   }
 
@@ -155,6 +205,7 @@ class DatabaseService {
     products.removeWhere((m) => m['id'] == id);
     _store['products'] = products;
     await _save();
+    _queueCloudSync();
     return before - products.length;
   }
 
@@ -179,6 +230,7 @@ class DatabaseService {
     customers.add(map);
     _store['customers'] = customers;
     await _save();
+    _queueCloudSync();
     return Customer.fromMap(Map<String, dynamic>.from(map));
   }
 
@@ -193,7 +245,35 @@ class DatabaseService {
     customers[idx] = updated;
     _store['customers'] = customers;
     await _save();
+    _queueCloudSync();
     return Customer.fromMap(Map<String, dynamic>.from(updated));
+  }
+
+  Future<Customer> insertOrUpdateCustomer(Customer customer) async {
+    await _load();
+    final now = DateTime.now();
+    final List customers = List.from(_store['customers'] as List<dynamic>);
+    final idx = customer.id == null
+        ? -1
+        : customers.indexWhere((m) => m['id'] == customer.id);
+    if (idx >= 0) {
+      final updated = customer.copyWith(updatedAt: now).toMap();
+      customers[idx] = updated;
+      _store['customers'] = customers;
+      await _save();
+      _queueCloudSync();
+      return Customer.fromMap(Map<String, dynamic>.from(updated));
+    }
+
+    final map = customer.copyWith(updatedAt: now).toMap();
+    final id = customer.id ?? _nextId('customer');
+    _bumpCounter('customer', id);
+    final stored = {...map, 'id': id};
+    customers.add(stored);
+    _store['customers'] = customers;
+    await _save();
+    _queueCloudSync();
+    return Customer.fromMap(Map<String, dynamic>.from(stored));
   }
 
   Future<List<Customer>> getCustomers({String? query}) async {
@@ -270,6 +350,7 @@ class DatabaseService {
         .where((item) => (item['id'] as int?) != id)
         .toList();
     await _save();
+    _queueCloudSync();
   }
 
   Future<List<LoyaltyLedgerEntry>> getLoyaltyLedger(int customerId) async {
@@ -289,6 +370,22 @@ class DatabaseService {
               LoyaltyLedgerEntry.fromMap(Map<String, dynamic>.from(e as Map)),
         )
         .toList();
+  }
+
+  Future<void> replaceLoyaltyLedgerEntries(
+    List<Map<String, dynamic>> entries,
+  ) async {
+    await _load();
+    _store['loyalty_ledger'] = entries;
+    var maxId = 0;
+    for (final entry in entries) {
+      final id = int.tryParse(entry['id']?.toString() ?? '') ?? 0;
+      if (id > maxId) maxId = id;
+    }
+    if (maxId > 0) {
+      _bumpCounter('ledger', maxId);
+    }
+    await _save();
   }
 
   Future<void> awardCustomerPoints({
@@ -320,6 +417,7 @@ class DatabaseService {
     entries.add(entry.toMap());
     _store['loyalty_ledger'] = entries;
     await _save();
+    _queueCloudSync();
   }
 
   Future<bool> redeemCustomerPoints({
@@ -349,6 +447,7 @@ class DatabaseService {
     entries.add(entry.toMap());
     _store['loyalty_ledger'] = entries;
     await _save();
+    _queueCloudSync();
     return true;
   }
 
@@ -394,6 +493,7 @@ class DatabaseService {
     }
     _store['products'] = products;
     await _save();
+    _queueCloudSync();
     return saleId;
   }
 
@@ -576,13 +676,17 @@ class DatabaseService {
 
   Future<int> insertCamera(Map<String, dynamic> camera) async {
     await _load();
-    final id = _nextId('camera');
+    final id = camera['id'] is int
+        ? camera['id'] as int
+        : int.tryParse(camera['id']?.toString() ?? '') ?? _nextId('camera');
+    _bumpCounter('camera', id);
     final cameras = List<Map<String, dynamic>>.from(
       (_store['cameras'] as List<dynamic>?) ?? [],
     );
     cameras.add({...camera, 'id': id});
     _store['cameras'] = cameras;
     await _save();
+    _queueCloudSync();
     return id;
   }
 
@@ -603,6 +707,7 @@ class DatabaseService {
       cameras[index] = {...cameras[index], ...data};
       _store['cameras'] = cameras;
       await _save();
+      _queueCloudSync();
       return 1;
     }
     return 0;
@@ -616,6 +721,7 @@ class DatabaseService {
     cameras.removeWhere((c) => c['id'] == id);
     _store['cameras'] = cameras;
     await _save();
+    _queueCloudSync();
     return 1;
   }
 
@@ -623,13 +729,18 @@ class DatabaseService {
 
   Future<int> insertCCTVTimestamp(Map<String, dynamic> timestamp) async {
     await _load();
-    final id = _nextId('cctv_timestamp');
+    final id = timestamp['id'] is int
+        ? timestamp['id'] as int
+        : int.tryParse(timestamp['id']?.toString() ?? '') ??
+            _nextId('cctv_timestamp');
+    _bumpCounter('cctv_timestamp', id);
     final timestamps = List<Map<String, dynamic>>.from(
       (_store['cctv_timestamps'] as List<dynamic>?) ?? [],
     );
     timestamps.add({...timestamp, 'id': id});
     _store['cctv_timestamps'] = timestamps;
     await _save();
+    _queueCloudSync();
     return id;
   }
 
@@ -648,6 +759,7 @@ class DatabaseService {
     timestamps.removeWhere((t) => t['id'] == id);
     _store['cctv_timestamps'] = timestamps;
     await _save();
+    _queueCloudSync();
     return 1;
   }
 
@@ -655,6 +767,7 @@ class DatabaseService {
     await _load();
     _store['cctv_timestamps'] = <Map<String, dynamic>>[];
     await _save();
+    _queueCloudSync();
     return 1;
   }
 
@@ -668,9 +781,103 @@ class DatabaseService {
       timestamps[index] = {...timestamps[index], ...data};
       _store['cctv_timestamps'] = timestamps;
       await _save();
+      _queueCloudSync();
       return 1;
     }
     return 0;
+  }
+
+  // -------------------- Activity Log Operations --------------------
+
+  Future<int> insertActivityLog(
+    String type,
+    String message, {
+    Map<String, dynamic>? meta,
+  }) async {
+    await _load();
+    final id = _nextId('activity_log');
+    final logs = List<Map<String, dynamic>>.from(
+      (_store['activity_logs'] as List<dynamic>?) ?? [],
+    );
+    logs.add({
+      'id': id,
+      'type': type,
+      'message': message,
+      'meta': meta != null ? jsonEncode(meta) : null,
+      'createdAt': DateTime.now().toIso8601String(),
+      'sent': 0,
+    });
+    _store['activity_logs'] = logs;
+    await _save();
+    _queueCloudSync();
+    return id;
+  }
+
+  Future<void> replaceActivityLogs(List<Map<String, dynamic>> logs) async {
+    await _load();
+    _store['activity_logs'] = logs;
+    var maxId = 0;
+    for (final log in logs) {
+      final id = int.tryParse(log['id']?.toString() ?? '') ?? 0;
+      if (id > maxId) maxId = id;
+    }
+    if (maxId > 0) {
+      _bumpCounter('activity_log', maxId);
+    }
+    await _save();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchActivityLogs({
+    String? type,
+    DateTime? from,
+    DateTime? to,
+    int limit = 500,
+  }) async {
+    await _load();
+    final logs = List<Map<String, dynamic>>.from(
+      (_store['activity_logs'] as List<dynamic>?) ?? [],
+    );
+    final filtered = logs.where((row) {
+      if (type != null && type.isNotEmpty && row['type'] != type) {
+        return false;
+      }
+      final createdAt = DateTime.tryParse((row['createdAt'] ?? '').toString());
+      if (createdAt == null) return false;
+      if (from != null && createdAt.isBefore(from)) return false;
+      if (to != null && createdAt.isAfter(to)) return false;
+      return true;
+    }).toList();
+    filtered.sort(
+      (a, b) => (b['createdAt'] ?? '').toString().compareTo(
+        (a['createdAt'] ?? '').toString(),
+      ),
+    );
+    return filtered.take(limit).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUnsentActivityLogs({
+    int limit = 200,
+  }) async {
+    await _load();
+    final logs = List<Map<String, dynamic>>.from(
+      (_store['activity_logs'] as List<dynamic>?) ?? [],
+    );
+    return logs.where((row) => (row['sent'] as int? ?? 0) == 0).take(limit).toList();
+  }
+
+  Future<void> markActivityLogsSent(List<int> ids) async {
+    if (ids.isEmpty) return;
+    await _load();
+    final logs = List<Map<String, dynamic>>.from(
+      (_store['activity_logs'] as List<dynamic>?) ?? [],
+    );
+    for (var i = 0; i < logs.length; i++) {
+      if (ids.contains(logs[i]['id'])) {
+        logs[i] = {...logs[i], 'sent': 1};
+      }
+    }
+    _store['activity_logs'] = logs;
+    await _save();
   }
 
   // -------------------- Damage Report Operations --------------------
@@ -737,6 +944,9 @@ class DatabaseService {
       'products': <Map<String, dynamic>>[],
       'sales': <Map<String, dynamic>>[],
       'inventory_movements': <Map<String, dynamic>>[],
+      'customers': <Map<String, dynamic>>[],
+      'loyalty_ledger': <Map<String, dynamic>>[],
+      'activity_logs': <Map<String, dynamic>>[],
       'cameras': <Map<String, dynamic>>[],
       'cctv_timestamps': <Map<String, dynamic>>[],
       'damage_reports': <Map<String, dynamic>>[],
@@ -744,6 +954,9 @@ class DatabaseService {
         'product': 0,
         'sale': 0,
         'movement': 0,
+        'customer': 0,
+        'ledger': 0,
+        'activity_log': 0,
         'camera': 0,
         'cctv_timestamp': 0,
         'damage_report': 0,

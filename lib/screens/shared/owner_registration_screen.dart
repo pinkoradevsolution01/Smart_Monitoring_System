@@ -115,8 +115,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
       }
 
       final devService = GetIt.I<DeveloperService>();
-      final prefs = await SharedPreferences.getInstance();
-      final developerEmail = prefs.getString('dev_email') ?? devService.username;
+      await devService.refreshDeveloperAccount();
+      final developerEmail = devService.account?.email ?? devService.username;
       if (developerEmail.isNotEmpty &&
           (googleUser['email'] as String).toLowerCase() ==
               developerEmail.toLowerCase()) {

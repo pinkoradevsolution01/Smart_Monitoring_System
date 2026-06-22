@@ -3,6 +3,9 @@ import 'package:get_it/get_it.dart';
 import '../../services/package_service.dart';
 import '../../services/database_service.dart';
 import '../../services/cloud_subscription_service.dart';
+import '../../services/developer_service.dart';
+import '../../services/supabase_sync_service.dart';
+import '../../services/google_auth_service.dart';
 import '../../models/pricing_package.dart';
 import '../shared/developer_auth_screen.dart';
 // removed unused import: package selection is no longer referenced here
@@ -48,7 +51,10 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
           IconButton(
             tooltip: 'Sign Out',
             icon: const Icon(Icons.logout),
-            onPressed: () {
+            onPressed: () async {
+              GetIt.I<SupabaseSyncService>().clearBusinessContext();
+              await DeveloperAuthScreen.clearAuthentication();
+              await GoogleAuthService().clearSession();
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -305,14 +311,15 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
   }
 
   Widget _buildWelcomeCard() {
-    return FutureBuilder<SharedPreferences>(
-      future: SharedPreferences.getInstance(),
-      builder: (context, snapshot) {
-        final prefs = snapshot.data;
-        final name =
-            prefs?.getString('dev_name') ??
-            prefs?.getString('dev_email') ??
-            'Developer';
+    return ListenableBuilder(
+      listenable: GetIt.I<DeveloperService>(),
+      builder: (context, _) {
+        final devService = GetIt.I<DeveloperService>();
+        final name = devService.displayName.isNotEmpty
+            ? devService.displayName
+            : (devService.username.isNotEmpty
+                ? devService.username
+                : 'Developer');
 
         return Card(
           color: Colors.grey[850],

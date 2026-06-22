@@ -5,6 +5,15 @@ const router = express.Router();
 router.post('/push', async (req, res) => {
   const {
     businessId,
+    users,
+    customers,
+    loyaltyLedger,
+    cameras,
+    cctvTimestamps,
+    attendanceEntries,
+    attendanceLeaves,
+    attendanceSchedule,
+    activityLogs,
     products,
     suppliers,
     sales,
@@ -25,6 +34,15 @@ router.post('/push', async (req, res) => {
     await connection.beginTransaction();
 
     const stats = {
+      users: 0,
+      customers: 0,
+      loyaltyLedger: 0,
+      cameras: 0,
+      cctvTimestamps: 0,
+      attendanceEntries: 0,
+      attendanceLeaves: 0,
+      attendanceSchedule: 0,
+      activityLogs: 0,
       products: 0,
       suppliers: 0,
       sales: 0,
@@ -33,6 +51,268 @@ router.post('/push', async (req, res) => {
       inventoryMovements: 0,
       damageReports: 0,
     };
+
+    if (Array.isArray(users)) {
+      for (const user of users) {
+        await connection.execute(
+          `INSERT INTO users
+            (id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active, last_login_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              business_id = VALUES(business_id),
+              email = VALUES(email),
+              password_hash = VALUES(password_hash),
+              role = VALUES(role),
+              full_name = VALUES(full_name),
+              contact_number = VALUES(contact_number),
+              auth_method = VALUES(auth_method),
+              is_active = VALUES(is_active),
+              last_login_at = VALUES(last_login_at),
+              updated_at = VALUES(updated_at)`,
+          [
+            user.id,
+            resolvedBusinessId,
+            user.email,
+            user.password_hash,
+            user.role,
+            user.full_name,
+            user.contact_number,
+            user.auth_method,
+            user.is_active ? 1 : 0,
+            user.last_login_at,
+            user.created_at,
+            user.updated_at,
+          ],
+        );
+        stats.users += 1;
+      }
+    }
+
+    if (Array.isArray(customers)) {
+      for (const customer of customers) {
+        await connection.execute(
+          `INSERT INTO customers
+            (id, business_id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, barcode_value, created_at, updated_at, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              customer_code = VALUES(customer_code),
+              full_name = VALUES(full_name),
+              phone_number = VALUES(phone_number),
+              email = VALUES(email),
+              address = VALUES(address),
+              points_balance = VALUES(points_balance),
+              lifetime_points = VALUES(lifetime_points),
+              barcode_value = VALUES(barcode_value),
+              updated_at = VALUES(updated_at),
+              is_active = VALUES(is_active)`,
+          [
+            customer.id,
+            resolvedBusinessId,
+            customer.customer_code,
+            customer.full_name,
+            customer.phone_number,
+            customer.email,
+            customer.address,
+            customer.points_balance,
+            customer.lifetime_points,
+            customer.barcode_value,
+            customer.created_at,
+            customer.updated_at,
+            customer.is_active ? 1 : 0,
+          ],
+        );
+        stats.customers += 1;
+      }
+    }
+
+    if (Array.isArray(loyaltyLedger)) {
+      for (const entry of loyaltyLedger) {
+        await connection.execute(
+          `INSERT INTO loyalty_ledger
+            (id, business_id, customer_id, sale_id, entry_type, points, balance_after, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              customer_id = VALUES(customer_id),
+              sale_id = VALUES(sale_id),
+              entry_type = VALUES(entry_type),
+              points = VALUES(points),
+              balance_after = VALUES(balance_after),
+              notes = VALUES(notes)`,
+          [
+            entry.id,
+            resolvedBusinessId,
+            entry.customer_id,
+            entry.sale_id,
+            entry.entry_type,
+            entry.points,
+            entry.balance_after,
+            entry.notes,
+            entry.created_at,
+          ],
+        );
+        stats.loyaltyLedger += 1;
+      }
+    }
+
+    if (Array.isArray(cameras)) {
+      for (const camera of cameras) {
+        await connection.execute(
+          `INSERT INTO cameras
+            (id, business_id, name, location, stream_url, type, position, is_active, username, password, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              name = VALUES(name),
+              location = VALUES(location),
+              stream_url = VALUES(stream_url),
+              type = VALUES(type),
+              position = VALUES(position),
+              is_active = VALUES(is_active),
+              username = VALUES(username),
+              password = VALUES(password)`,
+          [
+            camera.id,
+            resolvedBusinessId,
+            camera.name,
+            camera.location,
+            camera.stream_url,
+            camera.type,
+            camera.position,
+            camera.is_active ? 1 : 0,
+            camera.username,
+            camera.password,
+            camera.created_at,
+          ],
+        );
+        stats.cameras += 1;
+      }
+    }
+
+    if (Array.isArray(cctvTimestamps)) {
+      for (const ts of cctvTimestamps) {
+        await connection.execute(
+          `INSERT INTO cctv_timestamps
+            (id, business_id, camera_id, label, description, timestamp, notes, video_path, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              camera_id = VALUES(camera_id),
+              label = VALUES(label),
+              description = VALUES(description),
+              timestamp = VALUES(timestamp),
+              notes = VALUES(notes),
+              video_path = VALUES(video_path),
+              created_by = VALUES(created_by)`,
+          [
+            ts.id,
+            resolvedBusinessId,
+            ts.camera_id,
+            ts.label,
+            ts.description,
+            ts.timestamp,
+            ts.notes,
+            ts.video_path,
+            ts.created_by,
+            ts.created_at,
+          ],
+        );
+        stats.cctvTimestamps += 1;
+      }
+    }
+
+    if (Array.isArray(attendanceEntries)) {
+      for (const entry of attendanceEntries) {
+        await connection.execute(
+          `INSERT INTO attendance_entries
+            (id, business_id, user_id, time, type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              user_id = VALUES(user_id),
+              time = VALUES(time),
+              type = VALUES(type)`,
+          [
+            entry.id,
+            resolvedBusinessId,
+            entry.user_id,
+            entry.time,
+            entry.type,
+            entry.created_at,
+          ],
+        );
+        stats.attendanceEntries += 1;
+      }
+    }
+
+    if (Array.isArray(attendanceLeaves)) {
+      for (const leave of attendanceLeaves) {
+        await connection.execute(
+          `INSERT INTO attendance_leaves
+            (id, business_id, user_id, date_key, payload, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              user_id = VALUES(user_id),
+              date_key = VALUES(date_key),
+              payload = VALUES(payload),
+              updated_at = VALUES(updated_at)`,
+          [
+            leave.id,
+            resolvedBusinessId,
+            leave.user_id,
+            leave.date_key,
+            leave.payload,
+            leave.created_at,
+            leave.updated_at,
+          ],
+        );
+        stats.attendanceLeaves += 1;
+      }
+    }
+
+    if (attendanceSchedule && typeof attendanceSchedule === 'object') {
+      const scheduleRows = Array.isArray(attendanceSchedule)
+        ? attendanceSchedule
+        : [attendanceSchedule];
+      for (const schedule of scheduleRows) {
+        await connection.execute(
+          `INSERT INTO attendance_schedule
+            (business_id, \`key\`, value, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              value = VALUES(value),
+              updated_at = VALUES(updated_at)`,
+          [
+            resolvedBusinessId,
+            schedule.key ?? 'global',
+            typeof schedule.value === 'string' ? schedule.value : JSON.stringify(schedule.value),
+            schedule.updated_at,
+          ],
+        );
+        stats.attendanceSchedule += 1;
+      }
+    }
+
+    if (Array.isArray(activityLogs)) {
+      for (const log of activityLogs) {
+        await connection.execute(
+          `INSERT INTO activity_logs
+            (id, business_id, type, message, meta, created_at, sent)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              type = VALUES(type),
+              message = VALUES(message),
+              meta = VALUES(meta),
+              sent = VALUES(sent)`,
+          [
+            log.id,
+            resolvedBusinessId,
+            log.type,
+            log.message,
+            log.meta,
+            log.created_at,
+            log.sent ? 1 : 0,
+          ],
+        );
+        stats.activityLogs += 1;
+      }
+    }
 
     if (Array.isArray(products)) {
       for (const product of products) {
@@ -287,7 +567,33 @@ router.get('/pull', async (req, res) => {
   }
 
   try {
-    const [products, suppliers, sales, saleItems, purchaseOrders, inventoryMovements, damageReports] = await Promise.all([
+    const [
+      users,
+      customers,
+      loyaltyLedger,
+      cameras,
+      cctvTimestamps,
+      attendanceEntries,
+      attendanceLeaves,
+      attendanceSchedule,
+      activityLogs,
+      products,
+      suppliers,
+      sales,
+      saleItems,
+      purchaseOrders,
+      inventoryMovements,
+      damageReports,
+    ] = await Promise.all([
+      query('SELECT * FROM users WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM customers WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM loyalty_ledger WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM cameras WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM cctv_timestamps WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM attendance_entries WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM attendance_leaves WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM attendance_schedule WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM activity_logs WHERE business_id = ?', [businessId]),
       query('SELECT * FROM products WHERE business_id = ?', [businessId]),
       query('SELECT * FROM suppliers WHERE business_id = ?', [businessId]),
       query('SELECT * FROM sales WHERE business_id = ?', [businessId]),
@@ -299,6 +605,15 @@ router.get('/pull', async (req, res) => {
 
     return res.json({
       success: true,
+      users,
+      customers,
+      loyaltyLedger,
+      cameras,
+      cctvTimestamps,
+      attendanceEntries,
+      attendanceLeaves,
+      attendanceSchedule,
+      activityLogs,
       products,
       suppliers,
       sales,

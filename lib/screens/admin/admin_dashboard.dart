@@ -3,6 +3,7 @@ import 'package:smart_monitoring_system/screens/auth/login_screen.dart';
 import 'package:get_it/get_it.dart';
 import '../../services/package_service.dart';
 import '../../services/database_service.dart';
+import '../../services/supabase_sync_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
@@ -37,6 +38,7 @@ class AdminDashboard extends StatelessWidget {
             tooltip: AppLocalizations.t('sign_out'),
             icon: const Icon(Icons.logout),
             onPressed: () {
+              GetIt.I<SupabaseSyncService>().clearBusinessContext();
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => LoginScreen()),

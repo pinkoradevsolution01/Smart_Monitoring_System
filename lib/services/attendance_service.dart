@@ -134,6 +134,15 @@ class AttendanceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Replace the current entries for a user from an external source.
+  /// Used by cloud sync restore paths.
+  Future<void> replaceEntries(
+    String userId,
+    List<AttendanceEntry> entries,
+  ) async {
+    await _saveEntries(userId, entries);
+  }
+
   /// Returns the next attendance type for the given user's today entries.
   Future<String> nextTypeForUser(String userId) async {
     final entries = await loadEntries(userId);

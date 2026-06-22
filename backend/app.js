@@ -6,6 +6,7 @@ const os = require('os');
 const jwt = require('jsonwebtoken');
 const { initDb, query } = require('./db');
 const authRouter = require('./routes/auth');
+const developerRouter = require('./routes/developer');
 const businessRouter = require('./routes/business');
 const licenseRouter = require('./routes/license');
 const syncRouter = require('./routes/sync');
@@ -33,6 +34,7 @@ app.use((req, _res, next) => {
 });
 
 app.use('/api/auth', authRouter);
+app.use('/api/developer', developerRouter);
 app.use('/api/business', businessRouter);
 app.use('/api/license', licenseRouter);
 app.use('/api/sync', syncRouter);

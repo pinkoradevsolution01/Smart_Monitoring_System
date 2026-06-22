@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../models/cart_item.dart';
@@ -8,9 +9,11 @@ import '../models/inventory_movement.dart';
 import '../models/shoe_size.dart';
 import 'database_service.dart';
 import 'customer_service.dart';
+import 'supabase_sync_service.dart';
 
 class POSService extends ChangeNotifier {
   final DatabaseService _databaseService = DatabaseService();
+  SupabaseSyncService get _syncService => GetIt.I<SupabaseSyncService>();
 
   final List<CartItem> _cart = [];
   List<Product> _products = [];
@@ -61,16 +64,19 @@ class POSService extends ChangeNotifier {
   Future<void> addProduct(Product product) async {
     await _databaseService.insertProduct(product);
     await loadProducts();
+    _queueCloudSync();
   }
 
   Future<void> updateProduct(Product product) async {
     await _databaseService.updateProduct(product);
     await loadProducts();
+    _queueCloudSync();
   }
 
   Future<void> deleteProduct(int id) async {
     await _databaseService.deleteProduct(id);
     await loadProducts();
+    _queueCloudSync();
   }
 
   Future<Product?> getProductByBarcode(String barcode) async {
@@ -377,6 +383,7 @@ class POSService extends ChangeNotifier {
       _cart.clear();
       await loadProducts();
       await loadRecentSales();
+      _queueCloudSync();
       notifyListeners();
       debugPrint('✅ Sale completed successfully');
       return true;
@@ -474,6 +481,7 @@ class POSService extends ChangeNotifier {
       // Reload data
       await loadProducts();
       await loadRecentSales();
+      _queueCloudSync();
       notifyListeners();
       return true;
     } catch (e) {
@@ -539,5 +547,12 @@ class POSService extends ChangeNotifier {
     await _databaseService.clearAllData();
 
     notifyListeners();
+  }
+
+  void _queueCloudSync() {
+    if (!_syncService.isConfigured) {
+      return;
+    }
+    _syncService.queuePushAllData();
   }
 }

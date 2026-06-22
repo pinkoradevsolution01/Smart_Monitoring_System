@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get_it/get_it.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/developer_service.dart';
@@ -99,11 +98,14 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
             ),
             ElevatedButton(
               onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                final stored = prefs.getString('dev_password') ?? '';
+                final devService = GetIt.I.get<DeveloperService>();
+                final account = devService.account;
 
                 // If a stored password exists, require current to match
-                if (stored.isNotEmpty && currentCtrl.text != stored) {
+                if ((account?.authMethod ?? 'password') == 'password' &&
+                    account != null &&
+                    currentCtrl.text.isNotEmpty &&
+                    !await devService.authenticate(account.email, currentCtrl.text)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Current password is incorrect'),
@@ -135,15 +137,11 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
                   return;
                 }
 
-                await prefs.setString('dev_password', newCtrl.text);
-                // Update DeveloperService canonical store as well
-                try {
-                  final devService = GetIt.I.get<DeveloperService>();
-                  final name = prefs.getString('dev_name') ?? 'Developer';
-                  await devService.updateDeveloperAccount(username: name, password: newCtrl.text);
-                } catch (e) {
-                  debugPrint('DeveloperAccountScreen: failed to update DeveloperService - $e');
-                }
+                await devService.updateDeveloperAccount(
+                  username: account?.displayName ?? 'Developer',
+                  password: newCtrl.text,
+                  authMethod: 'password',
+                );
                 Navigator.pop(context, true);
               },
               child: const Text('Change'),
@@ -155,8 +153,10 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
 
     if (result == true && mounted) {
       // Refresh the in-page Create Password field to show the new system password
-      final prefs = await SharedPreferences.getInstance();
-      final updated = prefs.getString('dev_password') ?? '';
+      final devService = GetIt.I.get<DeveloperService>();
+      final updated = devService.account?.authMethod == 'password'
+          ? 'Updated on server'
+          : 'Google account';
       setState(() {
         _currentPasswordController.text = updated;
       });
@@ -179,7 +179,8 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
   }
 
   Future<void> _loadDeveloperInfo() async {
-    final prefs = await SharedPreferences.getInstance();
+    final devService = GetIt.I.get<DeveloperService>();
+    await devService.refreshDeveloperAccount();
 
     // Try to get email from backend-authenticated Google user first
     final user = GoogleAuthService().currentUser;
@@ -188,18 +189,13 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
     if (user != null && user['email'] != null) {
       emailToDisplay = user['email'].toString();
     } else {
-      // No OAuth session - use stored developer email
-      emailToDisplay =
-          prefs.getString('dev_email') ?? 'dev@smartmonitoring.com';
+      emailToDisplay = devService.account?.email ?? 'dev@smartmonitoring.com';
     }
 
-    // Load stored developer password so the Create Password field shows it
-    final storedPassword = prefs.getString('dev_password') ?? '';
-
     setState(() {
-      _nameController.text = prefs.getString('dev_name') ?? 'Developer';
+      _nameController.text = devService.account?.displayName ?? 'Developer';
       _authenticatedEmail = emailToDisplay;
-      _currentPasswordController.text = storedPassword;
+      _currentPasswordController.clear();
     });
   }
 
@@ -209,54 +205,35 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final devService = GetIt.I.get<DeveloperService>();
+      final currentAccount = devService.account;
 
-      // Handle first-time creation: if no stored password, allow creating it here
-      final storedPassword = prefs.getString('dev_password') ?? '';
-      if (storedPassword.isEmpty) {
-          if (_currentPasswordController.text.isNotEmpty) {
-          if (_currentPasswordController.text !=
-              _confirmPasswordController.text) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Passwords do not match'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-            setState(() => _isLoading = false);
-            return;
-          }
-
-          // Save the newly created password
-          await prefs.setString(
-            'dev_password',
-            _currentPasswordController.text,
+      if (_currentPasswordController.text.isNotEmpty &&
+          _currentPasswordController.text != _confirmPasswordController.text) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Passwords do not match'),
+              backgroundColor: Colors.red,
+            ),
           );
-          // Also update DeveloperService
-          try {
-            final devService = GetIt.I.get<DeveloperService>();
-            final name = prefs.getString('dev_name') ?? 'Developer';
-            await devService.updateDeveloperAccount(username: name, password: _currentPasswordController.text);
-          } catch (e) {
-            debugPrint('DeveloperAccountScreen: failed to update DeveloperService - $e');
-          }
-          _confirmPasswordController.clear();
         }
+        setState(() => _isLoading = false);
+        return;
       }
 
-      // Save basic info (email is read-only from authentication)
-      await prefs.setString('dev_name', _nameController.text);
-      await prefs.setString('dev_email', _authenticatedEmail);
-      // Sync to DeveloperService
-      try {
-        final devService = GetIt.I.get<DeveloperService>();
-        final pw = prefs.getString('dev_password') ?? '';
-        await devService.updateDeveloperAccount(username: _nameController.text, password: pw);
-      } catch (e) {
-        debugPrint('DeveloperAccountScreen: failed to sync DeveloperService - $e');
-      }
+      await devService.updateDeveloperAccount(
+        username: _nameController.text,
+        email: _authenticatedEmail,
+        password: _currentPasswordController.text.isNotEmpty
+            ? _currentPasswordController.text
+            : null,
+        authMethod: _currentPasswordController.text.isNotEmpty
+            ? 'password'
+            : (currentAccount?.authMethod ?? 'password'),
+        googleSub: currentAccount?.googleSub,
+        avatarUrl: currentAccount?.avatarUrl,
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -313,17 +290,13 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
 
     if (confirmed != true) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('dev_name', 'Developer');
-    await prefs.setString('dev_email', 'dev@smartmonitoring.com');
-    await prefs.setString('dev_password', 'developer123');
-    // Sync reset values into DeveloperService
-    try {
-      final devService = GetIt.I.get<DeveloperService>();
-      await devService.updateDeveloperAccount(username: 'Developer', password: 'developer123');
-    } catch (e) {
-      debugPrint('DeveloperAccountScreen: failed to sync DeveloperService on reset - $e');
-    }
+    final devService = GetIt.I.get<DeveloperService>();
+    await devService.updateDeveloperAccount(
+      username: 'Developer',
+      email: 'dev@smartmonitoring.com',
+      password: 'developer123',
+      authMethod: 'password',
+    );
 
     _loadDeveloperInfo();
     _currentPasswordController.clear();
@@ -372,10 +345,13 @@ class _DeveloperAccountScreenState extends State<DeveloperAccountScreen> {
     if (confirmed != true) return;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('dev_name');
-      await prefs.remove('dev_email');
-      await prefs.remove('dev_password');
+      final devService = GetIt.I.get<DeveloperService>();
+      await devService.updateDeveloperAccount(
+        username: 'Developer',
+        email: 'dev@smartmonitoring.com',
+        password: 'developer123',
+        authMethod: 'password',
+      );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

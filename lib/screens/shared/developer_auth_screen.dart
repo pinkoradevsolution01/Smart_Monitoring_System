@@ -38,10 +38,6 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
   bool _isGoogleLoading = false;
   bool _showFounderSetup = false;
 
-  // Default developer credentials
-  static const String _defaultUsername = 'developer';
-  static const String _defaultPassword = 'dev123';
-
   @override
   void dispose() {
     _usernameController.dispose();
@@ -60,10 +56,6 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
     setState(() => _isLoading = true);
 
-    // Simulate authentication delay
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Check credentials
     final devService = GetIt.I.get<DeveloperService>();
     final userService = GetIt.I.get<UserService>();
     final ownerEmails = userService
@@ -77,15 +69,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       );
       return;
     }
-    final storedPw = devService.password;
-    final hasRegisteredDev = storedPw.isNotEmpty;
-    final storedOk = devService.authenticate(username, password);
-    final fallbackOk = (username.toLowerCase() == _defaultUsername && password == _defaultPassword) ||
-      (username.toLowerCase() == 'admin' && password == 'admin123');
-
-    // If a registered developer account exists, require it. Only allow demo defaults when
-    // there is no registered developer password stored.
-    final allowed = hasRegisteredDev ? storedOk : (storedOk || fallbackOk);
+    final allowed = await devService.authenticate(username, password);
 
     if (allowed) {
       // Save authentication status
@@ -94,7 +78,7 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
       if (mounted) {
         setState(() => _isLoading = false);
-            Navigator.pushReplacementNamed(context, '/developer-dashboard');
+        Navigator.pushReplacementNamed(context, '/developer-dashboard');
       }
     } else {
       setState(() => _isLoading = false);
@@ -211,8 +195,22 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
         return;
       }
 
-      // Save developer account with Gmail data (do NOT overwrite owner/admin)
-      await _saveGmailDeveloperAccount(userId, userName, userEmail, userPicture);
+      final devService = GetIt.I<DeveloperService>();
+      final allowed = await devService.authenticateWithGoogle(
+        email: userEmail,
+        name: userName,
+        googleSub: userId,
+        avatarUrl: userPicture,
+      );
+
+      if (!allowed) {
+        await _googleAuth.signOut();
+        setState(() => _isGoogleLoading = false);
+        _showError(
+          'This Google account is not registered as the developer account.',
+        );
+        return;
+      }
 
       // Save authentication status
       final prefs = await SharedPreferences.getInstance();
@@ -229,29 +227,6 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
     } catch (e) {
       setState(() => _isGoogleLoading = false);
       _showError('Google sign-in failed: ${e.toString()}');
-    }
-  }
-
-  /// Save Gmail account as developer account (do NOT modify admin/owner)
-  Future<void> _saveGmailDeveloperAccount(
-    String userId,
-    String name,
-    String email,
-    String? pictureUrl,
-  ) async {
-    try {
-      // Store developer identity separately so owner/admin account isn't overwritten
-      final devService = GetIt.I<DeveloperService>();
-      final prefs = await SharedPreferences.getInstance();
-
-      // Use email as username and store the oauth userId as a non-empty password
-      // (DeveloperService requires a password field for legacy flows).
-      await devService.updateDeveloperAccount(username: email, password: userId);
-      await prefs.setString('dev_email', email);
-      await prefs.setString('dev_name', name);
-      debugPrint('OK: Developer account saved: $email');
-    } catch (e) {
-      debugPrint('Error saving developer account: $e');
     }
   }
 

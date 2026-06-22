@@ -74,6 +74,19 @@ class ApiClient {
     return _processResponse(response);
   }
 
+  Future<dynamic> putJson(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = _buildUri(path);
+    final response = await _client.put(
+      uri,
+      headers: BackendConfig.defaultHeaders,
+      body: body == null ? null : jsonEncode(body),
+    );
+    return _processResponse(response);
+  }
+
   Future<dynamic> deleteJson(
     String path, {
     Map<String, String>? queryParameters,

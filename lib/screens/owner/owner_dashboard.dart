@@ -18,6 +18,7 @@ import '../../models/user.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../services/package_service.dart';
+import '../../services/supabase_sync_service.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 
 class OwnerDashboard extends StatefulWidget {
@@ -78,6 +79,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               tooltip: AppLocalizations.t('sign_out'),
               icon: const Icon(Icons.logout),
               onPressed: () {
+                GetIt.I<SupabaseSyncService>().clearBusinessContext();
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (_) => LoginScreen()),
