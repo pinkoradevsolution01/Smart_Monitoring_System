@@ -102,6 +102,8 @@ Best regards,
 Smart Monitoring System Team
 ```
 
+**Note:** The 24-hour activation window starts when the code is emailed to the subscriber.
+
 ---
 
 ## Done!

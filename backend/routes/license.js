@@ -19,6 +19,18 @@ function normalizeRows(rows) {
   return Array.isArray(rows) ? rows : [];
 }
 
+function buildInClause(values) {
+  const items = Array.isArray(values) ? values.filter((value) => value !== null && value !== undefined) : [];
+  if (!items.length) {
+    return { clause: '(NULL)', params: [] };
+  }
+
+  return {
+    clause: `(${items.map(() => '?').join(', ')})`,
+    params: items,
+  };
+}
+
 function getSmtpConfig() {
   const host = process.env.SMTP_HOST || '';
   const port = Number(process.env.SMTP_PORT || 587);
@@ -39,6 +51,22 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
 
   if (missing.length) {
     throw new Error(`Email service is not configured. Missing: ${missing.join(', ')}`);
+  }
+
+  const codeRows = await query(
+    'SELECT code, status FROM activation_codes WHERE code = ?',
+    [code],
+  );
+  if (!codeRows.length) {
+    throw new Error('Activation code not found.');
+  }
+
+  const currentCode = codeRows[0];
+  if (currentCode.status === 'used') {
+    throw new Error('This activation code has already been used.');
+  }
+  if (currentCode.status === 'revoked') {
+    throw new Error('This activation code has been revoked.');
   }
 
   if (!nodemailer) {
@@ -74,6 +102,69 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
       </div>
     `,
   });
+
+  await query(
+    `UPDATE activation_codes
+     SET status = 'assigned',
+         assigned_at = COALESCE(assigned_at, NOW()),
+         email_sent_at = NOW(),
+         expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR)
+     WHERE code = ?`,
+    [code],
+  );
+}
+
+async function fulfillActivationRequest({ requestId, activationCode }) {
+  const requestRows = await query(
+    `SELECT id, business_name, package_name, package_price, request_type, contact_email, contact_phone, additional_notes, status
+     FROM activation_code_requests
+     WHERE id = ?
+     LIMIT 1`,
+    [requestId],
+  );
+
+  if (!requestRows.length) {
+    throw new Error('Activation request not found.');
+  }
+
+  const request = requestRows[0];
+  if (request.status === 'fulfilled') {
+    throw new Error('This request has already been fulfilled.');
+  }
+
+  const codeRows = await query(
+    'SELECT code, package_name, status FROM activation_codes WHERE code = ?',
+    [activationCode],
+  );
+
+  if (!codeRows.length) {
+    throw new Error('Activation code not found.');
+  }
+
+  const currentCode = codeRows[0];
+  if (currentCode.status === 'used') {
+    throw new Error('This activation code has already been used.');
+  }
+  if (currentCode.status === 'revoked') {
+    throw new Error('This activation code has been revoked.');
+  }
+
+  await sendActivationEmail({
+    to: request.contact_email,
+    code: activationCode,
+    businessName: request.business_name,
+    packageName: request.package_name,
+  });
+
+  await query(
+    `UPDATE activation_code_requests
+     SET status = 'fulfilled',
+         activation_code = ?,
+         fulfilled_at = COALESCE(fulfilled_at, NOW()),
+         updated_at = NOW()
+     WHERE id = ?`,
+    [activationCode, requestId],
+  );
 }
 
 router.post('/activate', async (req, res) => {
@@ -87,7 +178,7 @@ router.post('/activate', async (req, res) => {
 
   try {
     const rows = await query(
-      'SELECT code, package_name, status FROM activation_codes WHERE code = ?',
+      'SELECT code, package_name, status, assigned_at, email_sent_at, expires_at FROM activation_codes WHERE code = ?',
       [code],
     );
     if (!rows.length) {
@@ -100,6 +191,12 @@ router.post('/activate', async (req, res) => {
     }
     if (codeRow.status === 'revoked') {
       return res.status(400).json({ success: false, message: 'This activation code has been revoked.' });
+    }
+    if (codeRow.expires_at && new Date(codeRow.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({
+        success: false,
+        message: 'This activation code expired 24 hours after it was emailed.',
+      });
     }
 
     await query(
@@ -140,7 +237,7 @@ router.get('/code/:code', async (req, res) => {
   const { code } = req.params;
   try {
     const rows = await query(
-      'SELECT code, package_name, status, device_id, device_name, assigned_at, notes, used_at, created_at FROM activation_codes WHERE code = ?',
+      'SELECT code, package_name, status, device_id, device_name, assigned_at, email_sent_at, expires_at, notes, used_at, created_at FROM activation_codes WHERE code = ?',
       [code],
     );
     if (!rows.length) {
@@ -169,7 +266,7 @@ router.get('/codes', async (req, res) => {
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const rows = await query(
-      `SELECT code, package_name, status, device_id, device_name, assigned_at, notes, used_at, created_at
+      `SELECT code, package_name, status, device_id, device_name, assigned_at, email_sent_at, expires_at, notes, used_at, created_at
        FROM activation_codes ${where}
        ORDER BY created_at DESC`,
       params,
@@ -177,10 +274,11 @@ router.get('/codes', async (req, res) => {
 
     if (toBool(includeSubscription) && rows.length) {
       const codesList = rows.map((row) => row.code);
+      const { clause, params: codeParams } = buildInClause(codesList);
       const subscriptionRows = codesList.length
         ? await query(
-            'SELECT activation_code, status AS subscription_status, expires_at, activated_at FROM subscriptions WHERE activation_code IN (?)',
-            [codesList],
+            `SELECT activation_code, status AS subscription_status, expires_at, activated_at FROM subscriptions WHERE activation_code IN ${clause}`,
+            codeParams,
           )
         : [];
       const byCode = new Map(subscriptionRows.map((row) => [row.activation_code, row]));
@@ -291,7 +389,10 @@ router.post('/codes/:code/assign', async (req, res) => {
     }
 
     await query(
-      'UPDATE activation_codes SET status = ?, assigned_at = NOW() WHERE code = ?',
+      `UPDATE activation_codes
+       SET status = ?,
+           assigned_at = COALESCE(assigned_at, NOW())
+       WHERE code = ?`,
       ['assigned', code],
     );
 
@@ -446,6 +547,36 @@ router.patch('/requests/:id', async (req, res) => {
   }
 });
 
+router.post('/requests/:id/fulfill', async (req, res) => {
+  const { id } = req.params;
+  const { activation_code: activationCode } = req.body || {};
+
+  if (!activationCode) {
+    return res.status(400).json({
+      success: false,
+      message: 'activation_code is required.',
+    });
+  }
+
+  try {
+    await fulfillActivationRequest({
+      requestId: id,
+      activationCode,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Request fulfilled and activation email sent.',
+    });
+  } catch (error) {
+    console.error('Fulfill activation request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: `Failed to fulfill request: ${error.message}`,
+    });
+  }
+});
+
 router.post('/send-activation-email', async (req, res) => {
   const {
     email,
@@ -573,19 +704,23 @@ router.get('/subscription-renewals', async (req, res) => {
 router.get('/used-codes', async (req, res) => {
   try {
     const codes = await query(
-      `SELECT code, package_name, status, device_id, device_name, assigned_at, notes, used_at, created_at
+      `SELECT code, package_name, status, device_id, device_name, assigned_at, email_sent_at, expires_at, notes, used_at, created_at
        FROM activation_codes
        WHERE status = 'used'
        ORDER BY used_at DESC`,
     );
 
     const subscriptions = codes.length
-      ? await query(
-          `SELECT activation_code, status AS subscription_status, expires_at, activated_at
-           FROM subscriptions
-           WHERE activation_code IN (?)`,
-          [codes.map((row) => row.code)],
-        )
+      ? (() => {
+          const codeList = codes.map((row) => row.code);
+          const { clause, params } = buildInClause(codeList);
+          return query(
+            `SELECT activation_code, status AS subscription_status, expires_at, activated_at
+             FROM subscriptions
+             WHERE activation_code IN ${clause}`,
+            params,
+          );
+        })()
       : [];
 
     const subscriptionsByCode = new Map(

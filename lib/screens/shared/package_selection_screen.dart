@@ -1261,8 +1261,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           content: Text(
             success
                 ? 'Your activation code request has been sent to the developer.\n\n'
-                      'You will receive the activation code via email at:\n${requestData.contactEmail}\n\n'
-                      'Please check your email within 24 hours.'
+                  'You will receive the activation code via email at:\n${requestData.contactEmail}\n\n'
+                  'Once the code is emailed, it will be valid for 24 hours.'
                 : 'Failed to send request. Please check your internet connection and try again, or contact support directly.',
           ),
           actions: [

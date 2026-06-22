@@ -110,6 +110,34 @@ class CodeRequestService {
     }
   }
 
+  /// Fulfill a request by sending the activation email on the server.
+  /// This keeps the request status and code expiry in sync with the actual email send.
+  Future<bool> fulfillRequestWithEmail({
+    required String requestId,
+    required String activationCode,
+  }) async {
+    try {
+      final response = await _api.postJson(
+        'license/requests/$requestId/fulfill',
+        body: {'activation_code': activationCode},
+      );
+
+      if (response is Map<String, dynamic> && response['success'] == true) {
+        debugPrint('Request fulfilled and activation email sent');
+        return true;
+      }
+
+      throw Exception(
+        response is Map<String, dynamic>
+            ? (response['message']?.toString() ?? 'Request fulfillment failed')
+            : 'Request fulfillment failed',
+      );
+    } catch (e) {
+      debugPrint('Failed to fulfill request with email: $e');
+      return false;
+    }
+  }
+
   /// Get owner information for the request.
   Future<Map<String, String>> getOwnerInfo() async {
     try {

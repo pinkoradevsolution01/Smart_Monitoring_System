@@ -56,12 +56,15 @@ CREATE TABLE IF NOT EXISTS activation_codes (
   device_id VARCHAR(128),
   device_name VARCHAR(255),
   assigned_at DATETIME NULL,
+  email_sent_at DATETIME NULL,
+  expires_at DATETIME NULL,
   notes TEXT,
   used_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_activation_codes_status (status),
   KEY idx_activation_codes_device_id (device_id),
   KEY idx_activation_codes_package_name (package_name),
+  KEY idx_activation_codes_expires_at (expires_at),
   KEY idx_activation_codes_available (package_name, status, created_at)
 ) ENGINE=InnoDB;
 

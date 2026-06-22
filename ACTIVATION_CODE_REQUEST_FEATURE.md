@@ -22,7 +22,7 @@ This feature allows customers to request activation codes directly from the app,
 3. **Confirmation:**
    - Request is sent to developer
    - Customer receives confirmation
-   - Activation code will be emailed within 24 hours
+   - Activation code is emailed by the developer, then the 24-hour activation window starts only after the email is successfully sent
 
 ### For Developers:
 
@@ -33,7 +33,8 @@ This feature allows customers to request activation codes directly from the app,
 2. **Fulfill Requests:**
    - Generate/assign activation code
    - Mark request as fulfilled
-   - System can auto-email customer (optional)
+   - Send the code by email to the customer
+   - The code becomes valid for 24 hours only after the email is successfully sent
 
 ## Database Setup
 

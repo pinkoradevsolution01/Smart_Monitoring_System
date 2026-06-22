@@ -147,6 +147,15 @@ async function ensureSalesAndCustomerRelations() {
   }
 }
 
+async function ensureActivationCodeColumns() {
+  await ensureColumn('activation_codes', 'assigned_at', 'DATETIME NULL');
+  await ensureColumn('activation_codes', 'email_sent_at', 'DATETIME NULL');
+  await ensureColumn('activation_codes', 'expires_at', 'DATETIME NULL');
+  await ensureColumn('activation_codes', 'notes', 'TEXT NULL');
+  await ensureColumn('activation_codes', 'used_at', 'DATETIME NULL');
+  await ensureColumn('activation_codes', 'created_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP');
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -164,6 +173,7 @@ async function initDb() {
   await connection.ping();
   await ensureUsersTableColumns();
   await ensureSalesAndCustomerRelations();
+  await ensureActivationCodeColumns();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);

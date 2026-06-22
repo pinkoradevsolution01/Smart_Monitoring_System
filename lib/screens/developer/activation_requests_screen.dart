@@ -499,29 +499,16 @@ Requested: ${_formatDate(request['requested_at'])}
         return;
       }
 
-      // Mark code as assigned (ready for customer activation)
-      final codeMarked = await _requestService.markActivationCodeAsUsed(code);
-      if (!codeMarked) {
-        throw Exception('Failed to assign code');
-      }
-
-      // Fulfill the request
-      final success = await _requestService.markRequestFulfilled(
-        request['id'],
-        code,
+      // Fulfill the request on the server so the email send and expiry start
+      // happen together only after delivery succeeds.
+      final success = await _requestService.fulfillRequestWithEmail(
+        requestId: request['id'],
+        activationCode: code,
       );
 
       if (!success) {
-        throw Exception('Failed to fulfill request');
+        throw Exception('Failed to fulfill request and send activation email');
       }
-
-      // Send activation email to customer
-      final emailSent = await _requestService.sendActivationEmail(
-        customerEmail: request['contact_email'] as String,
-        businessName: request['business_name'] as String,
-        packageName: packageName,
-        activationCode: code,
-      );
 
       // Close loading dialog
       if (mounted && dialogContext.mounted) {
@@ -532,9 +519,7 @@ Requested: ${_formatDate(request['requested_at'])}
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            emailSent
-                ? '✅ Request fulfilled! Code: $code\n📧 Email sent to customer'
-                : '✅ Request fulfilled! Code: $code\n⚠️ Email failed (code still valid)',
+            '✅ Request fulfilled! Code: $code\n📧 Email sent to customer',
           ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),

@@ -62,7 +62,7 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
     Package: $packageName
     Code: $code
 
-    ⚠️ IMPORTANT: This code expires in 24 hours!
+    ⚠️ IMPORTANT: The 24-hour timer starts once this code is emailed to the subscriber.
     Enter it as soon as the customer is ready to activate.
 
     How to activate:
@@ -72,7 +72,7 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
     4. Paste this code: $code
     5. Enjoy your 30-day subscription!
 
-    ⏰ Code valid: 24 hours from now
+    ⏰ Code valid: 24 hours after email delivery
     📅 Subscription: 30 days after activation
     📱 Valid for: 1 device only
     Support: [Your Contact Info]
@@ -151,7 +151,7 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '⚠️ Codes expire in 24 hours!\nTap any code to copy → Send to customer.\nCustomer must activate within 24 hours.',
+                    '⚠️ These codes do not start a 24-hour countdown until they are emailed.\nTap any code to copy → Send to customer.\nCustomer gets 24 hours after email delivery to activate.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -325,7 +325,8 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       _buildExpiryIndicator(
-                                        codeData['created_at'],
+                                        codeData['email_sent_at']?.toString(),
+                                        codeData['expires_at']?.toString(),
                                       ),
                                     ],
                                   ),
@@ -367,17 +368,32 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
     }
   }
 
-  Widget _buildExpiryIndicator(String? createdAt) {
-    if (createdAt == null) {
+  Widget _buildExpiryIndicator(String? emailSentAt, String? expiresAt) {
+    if (expiresAt == null) {
+      if (emailSentAt == null) {
+        return Row(
+          children: [
+            Icon(Icons.schedule, size: 12, color: Colors.blueGrey[400]),
+            const SizedBox(width: 4),
+            Text(
+              'No expiry until emailed',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.blueGrey[400],
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        );
+      }
+
       return const SizedBox.shrink();
     }
 
     try {
-      final created = DateTime.parse(createdAt);
+      final expiry = DateTime.parse(expiresAt);
       final now = DateTime.now();
-      final age = now.difference(created);
-      final validity = const Duration(hours: 24);
-      final remaining = validity - age;
+      final remaining = expiry.difference(now);
 
       Color statusColor;
       String statusText;
@@ -419,7 +435,20 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
         ],
       );
     } catch (e) {
-      return const SizedBox.shrink();
+      return Row(
+        children: [
+          Icon(Icons.schedule, size: 12, color: Colors.blueGrey[400]),
+          const SizedBox(width: 4),
+          Text(
+            'Available until emailed',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.blueGrey[400],
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      );
     }
   }
 }
