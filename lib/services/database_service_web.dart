@@ -7,6 +7,7 @@ import 'package:get_it/get_it.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
+import '../models/purchase_order.dart';
 import '../models/inventory_movement.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
@@ -25,6 +26,8 @@ class DatabaseService {
   Map<String, dynamic> _store = {
     'products': <Map<String, dynamic>>[],
     'sales': <Map<String, dynamic>>[],
+    'purchase_orders': <Map<String, dynamic>>[],
+    'purchase_order_items': <Map<String, dynamic>>[],
     'inventory_movements': <Map<String, dynamic>>[],
     'customers': <Map<String, dynamic>>[],
     'loyalty_ledger': <Map<String, dynamic>>[],
@@ -34,6 +37,8 @@ class DatabaseService {
     'counters': {
       'product': 0,
       'sale': 0,
+      'purchase_order': 0,
+      'purchase_order_item': 0,
       'movement': 0,
       'customer': 0,
       'ledger': 0,
@@ -73,6 +78,16 @@ class DatabaseService {
     }
   }
 
+  Future<String> copyBackupToAppFolder(String sourcePath) async {
+    throw UnsupportedError(
+      'Local backup folders are not supported on web builds.',
+    );
+  }
+
+  Future<String> ensureBackupDirectoryExists() async {
+    return 'web';
+  }
+
   Future<void> _load() async {
     final raw = window.localStorage[_storageKey];
     if (raw == null) return;
@@ -81,6 +96,8 @@ class DatabaseService {
       _store = decoded;
       _store.putIfAbsent('products', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('sales', () => <Map<String, dynamic>>[]);
+      _store.putIfAbsent('purchase_orders', () => <Map<String, dynamic>>[]);
+      _store.putIfAbsent('purchase_order_items', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('inventory_movements', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('customers', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('loyalty_ledger', () => <Map<String, dynamic>>[]);
@@ -89,6 +106,8 @@ class DatabaseService {
       );
       counters.putIfAbsent('product', () => 0);
       counters.putIfAbsent('sale', () => 0);
+      counters.putIfAbsent('purchase_order', () => 0);
+      counters.putIfAbsent('purchase_order_item', () => 0);
       counters.putIfAbsent('movement', () => 0);
       counters.putIfAbsent('customer', () => 0);
       counters.putIfAbsent('ledger', () => 0);
@@ -602,6 +621,183 @@ class DatabaseService {
   ) async {
     final sales = await getAllSales(startDate: startDate, endDate: endDate);
     return sales.length;
+  }
+
+  // -------------------- Purchase Order Operations --------------------
+
+  String generateOrderNumber() {
+    final now = DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch.toString().substring(6);
+    return 'PO-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-$timestamp';
+  }
+
+  Future<int> insertPurchaseOrder(PurchaseOrder order) async {
+    await _load();
+    final orderId = _nextId('purchase_order');
+    final orderMap = order.toMap()..['id'] = orderId;
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    orders.add(orderMap);
+    _store['purchase_orders'] = orders;
+
+    final items = List.from(_store['purchase_order_items'] as List<dynamic>);
+    for (final item in order.items) {
+      final itemId = item.id ?? _nextId('purchase_order_item');
+      final itemMap = item.copyWith(id: itemId, orderId: orderId).toMap();
+      items.add(itemMap);
+    }
+    _store['purchase_order_items'] = items;
+    await _save();
+    _queueCloudSync();
+    return orderId;
+  }
+
+  Future<int> insertOrUpdatePurchaseOrder(PurchaseOrder order) async {
+    await _load();
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    final idx = orders.indexWhere((m) => m['orderNumber'] == order.orderNumber);
+    if (idx >= 0) {
+      final existingId = orders[idx]['id'] as int;
+      orders[idx] = order.copyWith(id: existingId).toMap();
+      final items = List.from(_store['purchase_order_items'] as List<dynamic>)
+          .where((m) => m['orderId'] != existingId)
+          .toList();
+      for (final item in order.items) {
+        final itemId = item.id ?? _nextId('purchase_order_item');
+        items.add(item.copyWith(id: itemId, orderId: existingId).toMap());
+      }
+      _store['purchase_orders'] = orders;
+      _store['purchase_order_items'] = items;
+      await _save();
+      _queueCloudSync();
+      return existingId;
+    }
+    return insertPurchaseOrder(order);
+  }
+
+  Future<List<PurchaseOrderItem>> getPurchaseOrderItems(int orderId) async {
+    await _load();
+    final List items = _store['purchase_order_items'] as List<dynamic>;
+    return items
+        .where((m) => (m as Map)['orderId'] == orderId)
+        .map((e) => PurchaseOrderItem.fromMap(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<List<PurchaseOrder>> getAllPurchaseOrders() async {
+    await _load();
+    final List orders = _store['purchase_orders'] as List<dynamic>;
+    final results = <PurchaseOrder>[];
+    for (final order in orders) {
+      final map = Map<String, dynamic>.from(order as Map);
+      final items = await getPurchaseOrderItems(map['id'] as int);
+      results.add(PurchaseOrder.fromMap(map).copyWith(items: items));
+    }
+    results.sort((a, b) => b.orderDate.compareTo(a.orderDate));
+    return results;
+  }
+
+  Future<PurchaseOrder?> getPurchaseOrderById(int id) async {
+    await _load();
+    final List orders = _store['purchase_orders'] as List<dynamic>;
+    for (final order in orders) {
+      final map = Map<String, dynamic>.from(order as Map);
+      if (map['id'] == id) {
+        final items = await getPurchaseOrderItems(id);
+        return PurchaseOrder.fromMap(map).copyWith(items: items);
+      }
+    }
+    return null;
+  }
+
+  Future<PurchaseOrder?> getPurchaseOrderByNumber(String orderNumber) async {
+    await _load();
+    final List orders = _store['purchase_orders'] as List<dynamic>;
+    for (final order in orders) {
+      final map = Map<String, dynamic>.from(order as Map);
+      if (map['orderNumber'] == orderNumber) {
+        final items = await getPurchaseOrderItems(map['id'] as int);
+        return PurchaseOrder.fromMap(map).copyWith(items: items);
+      }
+    }
+    return null;
+  }
+
+  Future<List<PurchaseOrder>> getPurchaseOrdersBySupplier(int supplierId) async {
+    final orders = await getAllPurchaseOrders();
+    return orders.where((order) => order.supplierId == supplierId).toList();
+  }
+
+  Future<List<PurchaseOrder>> getPurchaseOrdersByStatus(String status) async {
+    final orders = await getAllPurchaseOrders();
+    return orders.where((order) => order.status == status).toList();
+  }
+
+  Future<int> updatePurchaseOrder(PurchaseOrder order) async {
+    await _load();
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    final idx = orders.indexWhere((m) => m['id'] == order.id);
+    if (idx == -1) return 0;
+    orders[idx] = order.toMap();
+    final items = List.from(_store['purchase_order_items'] as List<dynamic>)
+        .where((m) => m['orderId'] != order.id)
+        .toList();
+    for (final item in order.items) {
+      final itemId = item.id ?? _nextId('purchase_order_item');
+      items.add(item.copyWith(id: itemId, orderId: order.id!).toMap());
+    }
+    _store['purchase_orders'] = orders;
+    _store['purchase_order_items'] = items;
+    await _save();
+    _queueCloudSync();
+    return order.id!;
+  }
+
+  Future<int> approvePurchaseOrder(
+    int orderId,
+    String approvedBy,
+    String signatureData,
+  ) async {
+    await _load();
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    final idx = orders.indexWhere((m) => m['id'] == orderId);
+    if (idx == -1) return 0;
+    final updated = Map<String, dynamic>.from(orders[idx] as Map)
+      ..['status'] = 'approved'
+      ..['approvedBy'] = approvedBy
+      ..['signatureData'] = signatureData
+      ..['approvalDate'] = DateTime.now().toIso8601String();
+    orders[idx] = updated;
+    _store['purchase_orders'] = orders;
+    await _save();
+    _queueCloudSync();
+    return orderId;
+  }
+
+  Future<int> updatePurchaseOrderStatus(int orderId, String status) async {
+    await _load();
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    final idx = orders.indexWhere((m) => m['id'] == orderId);
+    if (idx == -1) return 0;
+    final updated = Map<String, dynamic>.from(orders[idx] as Map)..['status'] = status;
+    orders[idx] = updated;
+    _store['purchase_orders'] = orders;
+    await _save();
+    _queueCloudSync();
+    return orderId;
+  }
+
+  Future<int> deletePurchaseOrder(int id) async {
+    await _load();
+    final orders = List.from(_store['purchase_orders'] as List<dynamic>);
+    orders.removeWhere((m) => m['id'] == id);
+    final items = List.from(_store['purchase_order_items'] as List<dynamic>)
+        .where((m) => m['orderId'] != id)
+        .toList();
+    _store['purchase_orders'] = orders;
+    _store['purchase_order_items'] = items;
+    await _save();
+    _queueCloudSync();
+    return 1;
   }
 
   // -------------------- Inventory Movements --------------------

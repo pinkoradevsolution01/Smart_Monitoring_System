@@ -4,6 +4,7 @@ import 'dart:async';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
+import '../models/purchase_order.dart';
 import '../models/supplier.dart';
 import '../models/damage_report.dart';
 import '../models/customer.dart';
@@ -885,12 +886,37 @@ class SupabaseSyncService extends ChangeNotifier {
           )
           .toList();
 
+      final orderItems = <Map<String, dynamic>>[];
+      for (final order in orders) {
+        final orderId = order.id;
+        if (orderId == null) continue;
+        for (final item in order.items) {
+          orderItems.add({
+            'id': item.id?.toString(),
+            'business_id': _businessId,
+            'purchase_order_id': orderId.toString(),
+            'order_id': orderId.toString(),
+            'product_id': item.productId.toString(),
+            'product_name': item.productName,
+            'quantity': item.quantity,
+            'unit_price': item.unitPrice,
+            'total_price': item.totalPrice,
+          });
+        }
+      }
+
       await _api.postJson(
         'sync/push',
-        body: {'businessId': _businessId, 'purchaseOrders': orderData},
+        body: {
+          'businessId': _businessId,
+          'purchaseOrders': orderData,
+          'purchaseOrderItems': orderItems,
+        },
       );
       _syncStats['purchase_orders_pushed'] = orders.length;
+      _syncStats['purchase_order_items_pushed'] = orderItems.length;
       debugPrint('✅ Pushed ${orders.length} purchase orders');
+      debugPrint('✅ Pushed ${orderItems.length} purchase order items');
     } catch (e) {
       debugPrint('❌ Error pushing purchase orders: $e');
       rethrow;
@@ -1427,12 +1453,72 @@ class SupabaseSyncService extends ChangeNotifier {
       final response = payload['purchaseOrders'] is List
           ? List<Map<String, dynamic>>.from(payload['purchaseOrders'] as List)
           : <Map<String, dynamic>>[];
+      final responseItems = payload['purchaseOrderItems'] is List
+          ? List<Map<String, dynamic>>.from(payload['purchaseOrderItems'] as List)
+          : <Map<String, dynamic>>[];
 
-      _syncStats['purchase_orders_pulled'] = response.length;
-      debugPrint('✅ Pulled ${response.length} purchase orders');
-      debugPrint(
-        '⚠️ Purchase order line items not synced (requires additional implementation)',
-      );
+      final itemsByOrder = <String, List<Map<String, dynamic>>>{};
+      for (final item in responseItems) {
+        final orderId = item['purchase_order_id']?.toString() ??
+            item['order_id']?.toString() ??
+            '';
+        itemsByOrder.putIfAbsent(orderId, () => []).add(item);
+      }
+
+      final orders = response.map((data) {
+        final cloudOrderId = _asInt(data['id']);
+        final orderNumber = data['order_number']?.toString() ??
+            data['orderNumber']?.toString() ??
+            'PO-$cloudOrderId';
+        final itemMaps = itemsByOrder[data['id']?.toString()] ?? const [];
+        final items = itemMaps.map((itemData) {
+          final quantity = _asInt(itemData['quantity']);
+          final unitPrice = _asDouble(itemData['unit_price']);
+          return PurchaseOrderItem(
+            id: _asInt(itemData['id']) == 0 ? null : _asInt(itemData['id']),
+            orderId: cloudOrderId,
+            productId: _asInt(itemData['product_id']),
+            productName: itemData['product_name']?.toString() ?? '',
+            quantity: quantity,
+            unitPrice: unitPrice,
+            totalPrice: _asDouble(
+              itemData['total_price'],
+              fallback: unitPrice * quantity,
+            ),
+          );
+        }).toList();
+
+        return PurchaseOrder(
+          id: cloudOrderId,
+          orderNumber: orderNumber,
+          supplierId: _asInt(data['supplier_id']),
+          supplierName: data['supplier_name']?.toString() ?? '',
+          orderDate: _asDateTime(data['order_date']),
+          expectedDeliveryDate: data['expected_delivery'] == null
+              ? null
+              : _asDateTime(data['expected_delivery']),
+          status: data['status']?.toString() ?? 'pending',
+          items: items,
+          totalAmount: _asDouble(data['total_amount']),
+          notes: data['notes']?.toString() ?? '',
+          approvedBy: data['approved_by']?.toString(),
+          signatureData:
+              data['signatureData']?.toString() ??
+              data['signature_data']?.toString(),
+          approvalDate: data['approval_date'] == null
+              ? null
+              : _asDateTime(data['approval_date']),
+        );
+      }).toList();
+
+      for (final order in orders) {
+        await db.insertOrUpdatePurchaseOrder(order);
+      }
+
+      _syncStats['purchase_orders_pulled'] = orders.length;
+      _syncStats['purchase_order_items_pulled'] = responseItems.length;
+      debugPrint('✅ Pulled ${orders.length} purchase orders');
+      debugPrint('✅ Pulled ${responseItems.length} purchase order items');
     } catch (e) {
       debugPrint('❌ Error pulling purchase orders: $e');
       // Don't rethrow - continue with other syncs

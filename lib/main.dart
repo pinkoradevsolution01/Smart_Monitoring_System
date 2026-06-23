@@ -31,6 +31,7 @@ import 'services/ai_help_service.dart';
 import 'services/business_info_service.dart';
 import 'services/package_service.dart';
 import 'services/subscriber_service.dart';
+import 'services/database_service.dart';
 import 'services/shared_api_service.dart';
 import 'services/license_service.dart';
 import 'services/backend_config.dart';
@@ -128,6 +129,10 @@ Future<void> main() async {
     cameraUrl: CCTVConfig.defaultCameraUrl,
     recordingsDirectory: CCTVConfig.defaultRecordingsDir,
   );
+
+  // Create the app backup folder at startup so it exists before the first
+  // backup is taken, even if the app crashes later.
+  await DatabaseService().ensureBackupDirectoryExists();
   // Optional: Test connection on startup (can be slow, so commented out)
   // await cctvService.testConnection();
 

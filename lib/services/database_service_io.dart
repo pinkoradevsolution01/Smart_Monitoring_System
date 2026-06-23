@@ -2139,6 +2139,116 @@ class DatabaseService {
     }
   }
 
+  /// Ensure the app's backup folder exists before any backups are created.
+  Future<String> ensureBackupDirectoryExists() async {
+    final Directory documentsDir = await getApplicationDocumentsDirectory();
+    final String backupDir = join(
+      documentsDir.path,
+      'SmartMonitoringSystem',
+      'Backups',
+    );
+
+    final backupDirectory = Directory(backupDir);
+    if (!await backupDirectory.exists()) {
+      await backupDirectory.create(recursive: true);
+      debugPrint('✅ Backup directory created: $backupDir');
+    }
+    return backupDir;
+  }
+
+  /// Create a backup of the database into a specific directory selected by the user.
+  /// Returns the backup file path.
+  Future<String> createBackupAt(String directoryPath) async {
+    try {
+      final db = await database;
+      final dbPath = db.path;
+
+      // Ensure target directory exists
+      final targetDir = Directory(directoryPath);
+      if (!await targetDir.exists()) {
+        await targetDir.create(recursive: true);
+      }
+
+      // Test writability by creating a temporary sentinel file, then remove it.
+      final testFile = File(join(targetDir.path, '.backup_write_test'));
+      try {
+        await testFile.writeAsString('test');
+        await testFile.delete();
+      } catch (e) {
+        throw Exception(
+            'Permission denied writing to $directoryPath. On Android use app-specific folders or grant storage permission. Original error: $e');
+      }
+
+      // Generate backup filename with timestamp
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')[0];
+      final backupPath = join(targetDir.path, 'pos_system_backup_$timestamp.db');
+
+      // Copy database file to selected location
+      final dbFile = File(dbPath);
+      await dbFile.copy(backupPath);
+
+      debugPrint('✅ Backup created at selected folder: $backupPath');
+      return backupPath;
+    } catch (e) {
+      debugPrint('❌ createBackupAt failed: $e');
+      rethrow;
+    }
+  }
+
+  /// Copy an existing backup file into the app's Backups folder so it appears
+  /// in the app's local backup list.
+  Future<String> copyBackupToAppFolder(String sourcePath) async {
+    try {
+      final sourceFile = File(sourcePath);
+      if (!await sourceFile.exists()) {
+        throw Exception('Backup file not found: $sourcePath');
+      }
+
+      final Directory documentsDir = await getApplicationDocumentsDirectory();
+      final String backupDir = join(
+        documentsDir.path,
+        'SmartMonitoringSystem',
+        'Backups',
+      );
+
+      final backupDirectory = Directory(backupDir);
+      if (!await backupDirectory.exists()) {
+        await backupDirectory.create(recursive: true);
+      }
+
+      final sourceFileName = basename(sourcePath);
+      final destinationPath = join(backupDir, sourceFileName);
+
+      if (normalize(sourceFile.path) == normalize(destinationPath)) {
+        return sourceFile.path;
+      }
+
+      String finalDestinationPath = destinationPath;
+      if (await File(finalDestinationPath).exists()) {
+        final nameWithoutExtension = basenameWithoutExtension(sourceFileName);
+        final fileExtension = extension(sourceFileName);
+        final timestamp = DateTime.now()
+            .toIso8601String()
+            .replaceAll(':', '-')
+            .split('.')[0];
+        finalDestinationPath = join(
+          backupDir,
+          '${nameWithoutExtension}_$timestamp$fileExtension',
+        );
+      }
+
+      await sourceFile.copy(finalDestinationPath);
+      debugPrint('✅ Backup copied to app folder: $finalDestinationPath');
+      return finalDestinationPath;
+    } catch (e) {
+      debugPrint('❌ copyBackupToAppFolder failed: $e');
+      rethrow;
+    }
+  }
+
   /// Restore database from a backup file
   /// WARNING: This will replace all current data
   Future<void> restoreFromBackup(String backupPath) async {
@@ -2162,6 +2272,15 @@ class DatabaseService {
 
       // Reinitialize database
       await database;
+
+      // After restoring the database file, queue a cloud sync so restored
+      // data is pushed to the configured backend (if any).
+      try {
+        _queueCloudSync();
+        debugPrint('🔄 Queued cloud sync after restoreFromBackup');
+      } catch (e) {
+        debugPrint('⚠️ Could not queue cloud sync after restore: $e');
+      }
     } catch (e) {
       debugPrint('❌ Restore failed: $e');
       rethrow;
@@ -2281,6 +2400,15 @@ class DatabaseService {
 
       // Reinitialize database
       await database;
+
+      // After importing the database bytes, queue a cloud sync so restored
+      // data is pushed to the configured backend (if any).
+      try {
+        _queueCloudSync();
+        debugPrint('🔄 Queued cloud sync after importDatabaseFromBytes');
+      } catch (e) {
+        debugPrint('⚠️ Could not queue cloud sync after import: $e');
+      }
     } catch (e) {
       debugPrint('❌ Import failed: $e');
       rethrow;
@@ -2561,6 +2689,53 @@ class DatabaseService {
         );
       }
 
+      return orderId;
+    });
+  }
+
+  /// Insert or replace a purchase order by order number.
+  /// Used by cloud restore so repeated syncs do not create duplicates.
+  Future<int> insertOrUpdatePurchaseOrder(PurchaseOrder order) async {
+    final db = await database;
+
+    return await db.transaction((txn) async {
+      final existingRows = await txn.query(
+        'purchase_orders',
+        columns: ['id'],
+        where: 'orderNumber = ?',
+        whereArgs: [order.orderNumber],
+        limit: 1,
+      );
+
+      if (existingRows.isNotEmpty) {
+        final orderId = existingRows.first['id'] as int;
+        await txn.update(
+          'purchase_orders',
+          order.copyWith(id: orderId).toMap(),
+          where: 'id = ?',
+          whereArgs: [orderId],
+        );
+        await txn.delete(
+          'purchase_order_items',
+          where: 'orderId = ?',
+          whereArgs: [orderId],
+        );
+        for (final item in order.items) {
+          await txn.insert(
+            'purchase_order_items',
+            item.copyWith(orderId: orderId).toMap(),
+          );
+        }
+        return orderId;
+      }
+
+      final orderId = await txn.insert('purchase_orders', order.toMap());
+      for (final item in order.items) {
+        await txn.insert(
+          'purchase_order_items',
+          item.copyWith(orderId: orderId).toMap(),
+        );
+      }
       return orderId;
     });
   }

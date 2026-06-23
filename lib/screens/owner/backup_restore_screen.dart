@@ -179,12 +179,49 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
         context,
       ).showSnackBar(const SnackBar(content: Text('Creating backup...')));
 
-      await _databaseService.createBackup();
+      final isMobile = Platform.isAndroid || Platform.isIOS;
+      String? selectedDir;
+      if (!isMobile) {
+        // Let desktop users pick a folder. Mobile platforms should use the
+        // app-managed backup folder because external writes are often blocked.
+        try {
+          selectedDir = await FilePicker.getDirectoryPath(
+            dialogTitle: 'Select folder to save backup',
+          );
+        } catch (e) {
+          selectedDir = null;
+        }
+      }
+
+      String backupPath;
+      if (isMobile || selectedDir == null || selectedDir.isEmpty) {
+        // Mobile or cancelled folder selection: use default backup location.
+        backupPath = await _databaseService.createBackup();
+      } else {
+        try {
+          backupPath = await _databaseService.createBackupAt(selectedDir);
+        } catch (e) {
+          // Likely a permissions/scoped storage error on Android. Fall back
+          // to app-local backup folder and inform the user.
+          final fallbackPath = await _databaseService.createBackup();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Could not write to selected folder. Saved backup to app folder instead: $fallbackPath\nError: $e',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 6),
+            ),
+          );
+          backupPath = fallbackPath;
+        }
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Backup created successfully!'),
+        SnackBar(
+          content: Text('✅ Backup created successfully! Saved to: $backupPath'),
           backgroundColor: Colors.green,
         ),
       );
@@ -430,7 +467,11 @@ class _BackupRestoreScreenState extends State<BackupRestoreScreen>
       final filePath = file!.path;
       if (filePath == null) return;
 
-      await _restoreBackup(filePath);
+      final storedBackupPath = await _databaseService.copyBackupToAppFolder(
+        filePath,
+      );
+
+      await _restoreBackup(storedBackupPath);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
