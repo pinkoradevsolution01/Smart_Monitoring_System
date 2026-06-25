@@ -399,26 +399,11 @@ class POSService extends ChangeNotifier {
   Future<void> loadRecentSales({int days = 7}) async {
     final startDate = DateTime.now().subtract(Duration(days: days));
     final endDate = DateTime.now();
-    // Load regular sales within range
     final recent = await _databaseService.getAllSales(
       startDate: startDate,
       endDate: endDate,
     );
-
-    // Also ensure delivery transactions within the same date range are included
-    final deliveryAll = await _databaseService.getDeliverySalesByStatus();
-    final deliveryInRange = deliveryAll.where((s) {
-      return !s.saleDate.isBefore(startDate) && !s.saleDate.isAfter(endDate);
-    }).toList();
-
-    // Merge and deduplicate by saleNumber, preferring entries from recent
-    final Map<String, Sale> merged = {for (final s in recent) s.saleNumber: s};
-    for (final s in deliveryInRange) {
-      merged.putIfAbsent(s.saleNumber, () => s);
-    }
-
-    _recentSales = merged.values.toList()
-      ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
+    _recentSales = recent..sort((a, b) => b.saleDate.compareTo(a.saleDate));
     notifyListeners();
   }
 

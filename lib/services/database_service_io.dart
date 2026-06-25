@@ -116,6 +116,10 @@ class DatabaseService {
     // Force check and add shoe size columns if they don't exist
     await _ensureShoeSizeColumnsExist(db);
 
+    // Remove legacy duplicate sales that may have been imported from backups
+    // or created before saleNumber uniqueness was enforced.
+    await _cleanupDuplicateSales(db);
+
     return db;
   }
 
@@ -1356,6 +1360,54 @@ class DatabaseService {
     }
   }
 
+  List<Sale> _dedupeSalesByNumber(List<Sale> sales) {
+    final Map<String, Sale> unique = {};
+    for (final sale in sales) {
+      unique.putIfAbsent(sale.saleNumber, () => sale);
+    }
+    return unique.values.toList();
+  }
+
+  Future<void> _cleanupDuplicateSales(Database db) async {
+    await db.transaction((txn) async {
+      final rows = await txn.query(
+        'sales',
+        columns: ['id', 'saleNumber', 'saleDate'],
+        orderBy: 'saleDate DESC, id DESC',
+      );
+
+      final seenSaleNumbers = <String>{};
+      final duplicateIds = <int>[];
+
+      for (final row in rows) {
+        final saleNumber = row['saleNumber'] as String?;
+        final saleId = row['id'] as int?;
+        if (saleNumber == null || saleId == null) {
+          continue;
+        }
+
+        if (seenSaleNumbers.add(saleNumber)) {
+          continue;
+        }
+
+        duplicateIds.add(saleId);
+      }
+
+      if (duplicateIds.isEmpty) {
+        return;
+      }
+
+      for (final saleId in duplicateIds) {
+        await txn.delete('sale_items', where: 'saleId = ?', whereArgs: [saleId]);
+        await txn.delete('sales', where: 'id = ?', whereArgs: [saleId]);
+      }
+
+      debugPrint(
+        '🧹 Removed ${duplicateIds.length} duplicate sale record(s) during database cleanup',
+      );
+    });
+  }
+
   /// Insert or replace a sale by sale number.
   /// Used by cloud restore so repeated syncs do not fail on UNIQUE constraints.
   Future<int> insertOrUpdateSale(Sale sale) async {
@@ -1458,7 +1510,7 @@ class DatabaseService {
       final items = itemMaps.map((m) => SaleItem.fromMap(m)).toList();
       results.add(sale.copyWith(items: items));
     }
-    return results;
+    return _dedupeSalesByNumber(results);
   }
 
   /// Get sales for a specific date range
@@ -1504,7 +1556,7 @@ class DatabaseService {
       final items = itemMaps.map((m) => SaleItem.fromMap(m)).toList();
       results.add(sale.copyWith(items: items));
     }
-    return results;
+    return _dedupeSalesByNumber(results);
   }
 
   /// Get delivery sales by status (for For Delivery screen)
@@ -1536,57 +1588,29 @@ class DatabaseService {
       final items = itemMaps.map((m) => SaleItem.fromMap(m)).toList();
       results.add(sale.copyWith(items: items));
     }
-    return results;
+    return _dedupeSalesByNumber(results);
   }
 
   /// Calculate total sales for a specific day
   Future<double> getDailySales(DateTime date) async {
-    final db = await database;
     final startDate = DateTime(date.year, date.month, date.day);
     final endDate = startDate.add(const Duration(days: 1));
-
-    debugPrint('📊 getDailySales for: ${date.toIso8601String()}');
-    debugPrint('   Start: ${startDate.toIso8601String()}');
-    debugPrint('   End: ${endDate.toIso8601String()}');
-
-    // First check all sales without status filter
-    final allSales = await db.rawQuery(
-      'SELECT saleNumber, totalAmount, status, saleDate FROM sales WHERE saleDate >= ? AND saleDate < ?',
-      [startDate.toIso8601String(), endDate.toIso8601String()],
-    );
-    debugPrint('   Found ${allSales.length} total sales in range:');
-    for (final sale in allSales) {
-      debugPrint(
-        '      - ${sale['saleNumber']}: ₱${sale['totalAmount']} (${sale['status']}) at ${sale['saleDate']}',
-      );
+    final sales = await getAllSales(startDate: startDate, endDate: endDate);
+    double total = 0.0;
+    for (final sale in sales) {
+      if (sale.status == SaleStatus.completed) {
+        total += sale.totalAmount;
+      }
     }
-
-    final result = await db.rawQuery(
-      'SELECT SUM(totalAmount) as total FROM sales WHERE saleDate >= ? AND saleDate < ? AND status = ?',
-      [startDate.toIso8601String(), endDate.toIso8601String(), 'completed'],
-    );
-
-    final total = (result.isEmpty || result.first['total'] == null)
-        ? 0.0
-        : (result.first['total'] as num).toDouble();
-    debugPrint('   Total for completed sales: ₱$total');
-
     return total;
   }
 
   /// Get transaction count for a specific day
   Future<int> getTotalTransactions(DateTime date) async {
-    final db = await database;
     final startDate = DateTime(date.year, date.month, date.day);
     final endDate = startDate.add(const Duration(days: 1));
-
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM sales WHERE saleDate >= ? AND saleDate < ? AND status = ?',
-      [startDate.toIso8601String(), endDate.toIso8601String(), 'completed'],
-    );
-
-    if (result.isEmpty) return 0;
-    return (result.first['count'] as int);
+    final sales = await getAllSales(startDate: startDate, endDate: endDate);
+    return sales.where((sale) => sale.status == SaleStatus.completed).length;
   }
 
   /// Calculate total sales for a date range
@@ -1594,14 +1618,14 @@ class DatabaseService {
     DateTime startDate,
     DateTime endDate,
   ) async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT SUM(totalAmount) as total FROM sales WHERE saleDate >= ? AND saleDate < ? AND status = ?',
-      [startDate.toIso8601String(), endDate.toIso8601String(), 'completed'],
-    );
-
-    if (result.isEmpty || result.first['total'] == null) return 0.0;
-    return (result.first['total'] as num).toDouble();
+    final sales = await getAllSales(startDate: startDate, endDate: endDate);
+    double total = 0.0;
+    for (final sale in sales) {
+      if (sale.status == SaleStatus.completed) {
+        total += sale.totalAmount;
+      }
+    }
+    return total;
   }
 
   /// Get transaction count for a date range
@@ -1609,14 +1633,8 @@ class DatabaseService {
     DateTime startDate,
     DateTime endDate,
   ) async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM sales WHERE saleDate >= ? AND saleDate < ? AND status = ?',
-      [startDate.toIso8601String(), endDate.toIso8601String(), 'completed'],
-    );
-
-    if (result.isEmpty) return 0;
-    return (result.first['count'] as int);
+    final sales = await getAllSales(startDate: startDate, endDate: endDate);
+    return sales.where((sale) => sale.status == SaleStatus.completed).length;
   }
 
   // ======================== INVENTORY MOVEMENT OPERATIONS ========================

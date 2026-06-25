@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:html' show window;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:get_it/get_it.dart';
 
 import '../models/product.dart';
@@ -112,6 +113,11 @@ class DatabaseService {
       counters.putIfAbsent('customer', () => 0);
       counters.putIfAbsent('ledger', () => 0);
       _store['counters'] = counters;
+
+      final cleaned = _cleanupDuplicateSalesInStore();
+      if (cleaned) {
+        await _save();
+      }
     } catch (_) {
       // ignore and keep defaults
     }
@@ -516,6 +522,56 @@ class DatabaseService {
     return saleId;
   }
 
+  List<Sale> _dedupeSalesByNumber(List<Sale> sales) {
+    final Map<String, Sale> unique = {};
+    for (final sale in sales) {
+      unique.putIfAbsent(sale.saleNumber, () => sale);
+    }
+    return unique.values.toList();
+  }
+
+  bool _cleanupDuplicateSalesInStore() {
+    final salesSource = (_store['sales'] as List<dynamic>?) ?? <dynamic>[];
+    final rawSales = List<Map<String, dynamic>>.from(
+      salesSource.map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+    if (rawSales.length < 2) {
+      return false;
+    }
+
+    rawSales.sort((a, b) {
+      final aDate = DateTime.tryParse(a['saleDate']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final bDate = DateTime.tryParse(b['saleDate']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+      final dateCompare = bDate.compareTo(aDate);
+      if (dateCompare != 0) return dateCompare;
+
+      final aId = (a['id'] as num?)?.toInt() ?? 0;
+      final bId = (b['id'] as num?)?.toInt() ?? 0;
+      return bId.compareTo(aId);
+    });
+
+    final unique = <String, Map<String, dynamic>>{};
+    for (final sale in rawSales) {
+      final saleNumber = sale['saleNumber']?.toString();
+      if (saleNumber == null || saleNumber.isEmpty) {
+        continue;
+      }
+      unique.putIfAbsent(saleNumber, () => sale);
+    }
+
+    final cleanedSales = unique.values.toList();
+    final changed = cleanedSales.length != rawSales.length;
+    if (changed) {
+      _store['sales'] = cleanedSales;
+      debugPrint(
+        '🧹 Removed ${rawSales.length - cleanedSales.length} duplicate sale record(s) from local storage',
+      );
+    }
+    return changed;
+  }
+
   Future<Sale?> getSaleById(int id) async {
     await _load();
     final List sales = _store['sales'] as List<dynamic>;
@@ -567,15 +623,17 @@ class DatabaseService {
         999,
       );
 
-      return results.where((s) {
+      final filtered = results.where((s) {
         final d = s.saleDate;
         return (d.isAfter(adjustedStart) ||
                 d.isAtSameMomentAs(adjustedStart)) &&
             (d.isBefore(adjustedEnd) || d.isAtSameMomentAs(adjustedEnd));
       }).toList();
+      filtered.sort((a, b) => b.saleDate.compareTo(a.saleDate));
+      return _dedupeSalesByNumber(filtered);
     }
     results.sort((a, b) => b.saleDate.compareTo(a.saleDate));
-    return results;
+    return _dedupeSalesByNumber(results);
   }
 
   Future<List<Sale>> getSalesByDateRange(
@@ -591,7 +649,9 @@ class DatabaseService {
     final sales = await getAllSales(startDate: start, endDate: end);
     double total = 0.0;
     for (final s in sales) {
-      total += s.totalAmount;
+      if (s.status == SaleStatus.completed) {
+        total += s.totalAmount;
+      }
     }
     return total;
   }
@@ -600,7 +660,7 @@ class DatabaseService {
     final start = DateTime(date.year, date.month, date.day);
     final end = start.add(const Duration(days: 1));
     final sales = await getAllSales(startDate: start, endDate: end);
-    return sales.length;
+    return sales.where((sale) => sale.status == SaleStatus.completed).length;
   }
 
   Future<double> getSalesForDateRange(
@@ -610,7 +670,9 @@ class DatabaseService {
     final sales = await getAllSales(startDate: startDate, endDate: endDate);
     double total = 0.0;
     for (final s in sales) {
-      total += s.totalAmount;
+      if (s.status == SaleStatus.completed) {
+        total += s.totalAmount;
+      }
     }
     return total;
   }
@@ -620,7 +682,7 @@ class DatabaseService {
     DateTime endDate,
   ) async {
     final sales = await getAllSales(startDate: startDate, endDate: endDate);
-    return sales.length;
+    return sales.where((sale) => sale.status == SaleStatus.completed).length;
   }
 
   // -------------------- Purchase Order Operations --------------------
