@@ -68,6 +68,7 @@ app.get('/api/health/db', async (req, res) => {
 });
 
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || '0.0.0.0';
 
 function getLanIps() {
   const interfaces = os.networkInterfaces();
@@ -98,10 +99,11 @@ if (!process.env.GOOGLE_REDIRECT_URI) {
 
 initDb()
   .then(() => {
-    app.listen(port, () => {
-      console.log(`Smart Monitoring backend listening on port ${port}`);
+    app.listen(port, host, () => {
+      console.log(`Smart Monitoring backend listening on ${host}:${port}`);
       console.log(`Local health check: http://localhost:${port}/api/health`);
       console.log(`Android emulator: http://10.0.2.2:${port}/api`);
+      console.log(`Physical device base URL: http://<laptop-ip>:${port}/api`);
 
       const lanIps = getLanIps();
       if (lanIps.length > 0) {

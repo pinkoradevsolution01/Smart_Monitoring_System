@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend_config.dart';
 
@@ -21,8 +22,18 @@ class BackendServerResolver {
       return BackendConfig.resolvedApiBaseUrl!;
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    final savedBaseUrl = prefs.getString(BackendConfig.backendApiBaseUrlPrefsKey);
+    final savedBaseUrls = prefs.getString(
+      BackendConfig.backendApiBaseUrlsPrefsKey,
+    );
+
     final candidateUrls = _normalizeCandidates(
-      candidates ?? BackendConfig.configuredApiBaseUrls,
+      [
+        ..._splitCandidates(savedBaseUrl ?? ''),
+        ..._splitCandidates(savedBaseUrls ?? ''),
+        ...(candidates ?? BackendConfig.configuredApiBaseUrls),
+      ],
     );
     if (candidateUrls.isEmpty) {
       throw StateError('No backend URLs were configured for auto-detection.');
@@ -35,6 +46,9 @@ class BackendServerResolver {
     final healthyUrl = await _probeCandidates(candidateUrls);
     final selectedUrl = healthyUrl ?? candidateUrls.first;
     BackendConfig.setResolvedApiBaseUrl(selectedUrl);
+    if (healthyUrl != null) {
+      await _saveSelectedUrl(prefs, selectedUrl);
+    }
     _initialized = true;
 
     if (healthyUrl != null) {
@@ -51,6 +65,14 @@ class BackendServerResolver {
   static List<String> _normalizeCandidates(List<String> candidates) {
     return candidates
         .map((candidate) => candidate.trim().replaceAll(RegExp(r'/+$'), ''))
+        .where((candidate) => candidate.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static List<String> _splitCandidates(String rawCandidates) {
+    return rawCandidates
+        .split(RegExp(r'[,\n; ]+'))
+        .map((candidate) => candidate.trim())
         .where((candidate) => candidate.isNotEmpty)
         .toList(growable: false);
   }
@@ -74,6 +96,29 @@ class BackendServerResolver {
       debugPrint('BackendServerResolver: probe failed for $baseUrl: $e');
       return false;
     }
+  }
+
+  static Future<bool> testBaseUrl(String baseUrl) {
+    final normalized = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    if (normalized.isEmpty) {
+      return Future.value(false);
+    }
+    return _probe(normalized);
+  }
+
+  static Future<void> savePreferredBaseUrl(String baseUrl) async {
+    final normalized = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, normalized);
+    BackendConfig.setResolvedApiBaseUrl(normalized);
+    _initialized = true;
+  }
+
+  static Future<void> _saveSelectedUrl(
+    SharedPreferences prefs,
+    String selectedUrl,
+  ) async {
+    await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, selectedUrl);
   }
 
   static void resetForTests() {

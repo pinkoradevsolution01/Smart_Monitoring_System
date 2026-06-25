@@ -20,6 +20,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 2. Configure MySQL credentials and JWT secret in `backend/.env`.
    - If MySQL is already installed on this laptop, you can skip any install step and just point the backend at the existing server.
    - For a local XAMPP setup on this laptop, set `MYSQL_HOST=localhost`.
+   - For a physical Android/iPhone device on the same Wi-Fi, make sure the Node server binds to `0.0.0.0` so it accepts LAN connections.
 3. Create the database and tables:
    - `mysql -u root -p < backend/schema.sql`
 4. Install dependencies:
@@ -28,6 +29,41 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
    - `cd backend && npm start`
    - Or run `start_backend.bat` from the repo root to start local XAMPP MySQL first, then launch the backend.
 
+## Deploy To DigitalOcean
+
+If you want this backend to run on a DigitalOcean droplet instead of your laptop, the easiest setup is:
+
+1. Create a **Basic Droplet** with **Ubuntu 22.04 LTS**.
+2. Pick the nearest region to your users, such as **Singapore**.
+3. Add your **SSH key** during setup, or set a strong root password if you are just testing.
+4. SSH into the droplet after it finishes provisioning.
+5. Install the backend runtime and database tools on the droplet:
+   - Node.js 20+
+   - MySQL Server 8+
+   - `git`
+6. Clone this repository onto the droplet.
+7. Create `backend/.env` on the droplet and point it at the droplet's MySQL instance:
+   - `PORT=3000`
+   - `HOST=0.0.0.0`
+   - `MYSQL_HOST=127.0.0.1`
+   - `MYSQL_PORT=3306`
+   - `MYSQL_USER=<your-mysql-user>`
+   - `MYSQL_PASSWORD=<your-mysql-password>`
+   - `MYSQL_DATABASE=smart_monitoring`
+   - `JWT_SECRET=<a-long-random-secret>`
+8. Import the schema into MySQL:
+   - `mysql -u root -p smart_monitoring < backend/schema.sql`
+9. Start the backend:
+   - `cd backend && npm install`
+   - `npm start`
+10. Keep it running with a process manager such as `pm2` or a `systemd` service.
+11. Open port `3000` in the droplet firewall, or put Nginx in front of the Node.js app if you want HTTPS and a clean public URL.
+
+After that, your Flutter app should point to the droplet API base URL, for example:
+
+- `http://<your-droplet-ip>:3000/api`
+- or `https://api.yourdomain.com/api` if you add a domain and reverse proxy later.
+
 ## Verify
 
 - `GET /api/health` checks whether the backend is running.
@@ -35,6 +71,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 - For a phone on the same network, set the Flutter app's base URL to
   `http://192.168.1.9:3000/api`.
 - For the Android emulator, use `http://10.0.2.2:3000/api`.
+- If the phone still gets `Connection refused`, confirm Windows Firewall allows inbound TCP port `3000` and that the backend process is not bound to `localhost` only.
 
 Example:
 

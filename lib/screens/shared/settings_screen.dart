@@ -9,6 +9,8 @@ import '../../utils/policy_dialogs.dart';
 import '../../services/package_service.dart';
 import '../../services/license_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/backend_config.dart';
+import '../../services/backend_server_resolver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/print_settings.dart';
 import 'user_manual_screen.dart';
@@ -25,8 +27,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late Locale _selectedLocale;
   late String _selectedThemeKey;
   late bool _selectedReduceMotion;
+  final TextEditingController _backendUrlController = TextEditingController();
   String _selectedPaperSize = 'Thermal 48mm';
   bool _hasChanges = false;
+  bool _isSavingBackendUrl = false;
   String? _subscriptionMode;
   DateTime? _trialExpires;
   DateTime? _subscriptionExpires; // Monthly rental expiry
@@ -42,15 +46,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _selectedLocale = LocaleController.locale.value;
     _selectedThemeKey = ThemeController.themeKey.value;
     _selectedReduceMotion = MotionController.reduceMotion.value;
+    _backendUrlController.text = BackendConfig.resolvedApiBaseUrl ??
+        BackendConfig.apiBaseUrl;
     // Load saved default paper size and update shared notifier
     SharedPreferences.getInstance().then((prefs) {
       final saved = prefs.getString('default_receipt_paper_size');
+      final savedBackendUrl = prefs.getString(
+        BackendConfig.backendApiBaseUrlPrefsKey,
+      );
       final mode = prefs.getString('subscription_mode');
       final trialExpiresStr = prefs.getString('trial_expires');
       final subscriptionExpiresStr = prefs.getString('subscription_expires');
       final activated = prefs.getBool('activation_status') ?? false;
       if (mounted) {
         if (saved != null) setState(() => _selectedPaperSize = saved);
+        if (savedBackendUrl != null && savedBackendUrl.isNotEmpty) {
+          _backendUrlController.text = savedBackendUrl;
+        }
         if (mode != null) setState(() => _subscriptionMode = mode);
         if (trialExpiresStr != null) {
           try {
@@ -112,6 +124,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _selectedReduceMotion = MotionController.reduceMotion.value;
       _hasChanges = false;
     });
+  }
+
+  Future<void> _saveBackendUrl() async {
+    final entered = _backendUrlController.text.trim();
+    if (entered.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter your laptop backend URL'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final normalized = entered.replaceAll(RegExp(r'/+$'), '');
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a valid URL like http://192.168.1.9:3000/api'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSavingBackendUrl = true);
+    try {
+      final ok = await BackendServerResolver.testBaseUrl(normalized);
+      if (!ok) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cannot reach $normalized/health. Check laptop IP, port 3000, and firewall.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      await BackendServerResolver.savePreferredBaseUrl(normalized);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Backend URL saved: $normalized'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save backend URL: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingBackendUrl = false);
+      }
+    }
   }
 
   // ======================== CLOUD SYNC HANDLERS ========================
@@ -359,6 +435,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    _backendUrlController.dispose();
     super.dispose();
   }
 
@@ -499,6 +576,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             const SizedBox(height: 16),
+            _buildBackendConnectionCard(context),
+            const SizedBox(height: 24),
             // Cloud Sync Section - Standard Package Required
             _buildCloudSyncSection(context),
 
@@ -2000,6 +2079,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildBackendConnectionCard(BuildContext context) {
+    final activeUrl = BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.link, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Backend Connection',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'For a physical device, enter your laptop or server LAN URL here. Example: http://192.168.1.9:3000/api',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _backendUrlController,
+              decoration: const InputDecoration(
+                labelText: 'Backend URL',
+                hintText: 'http://192.168.x.x:3000/api',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              enableSuggestions: false,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isSavingBackendUrl ? null : _saveBackendUrl,
+                    icon: _isSavingBackendUrl
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(
+                      _isSavingBackendUrl ? 'Saving...' : 'Save Backend URL',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Active URL: $activeUrl',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

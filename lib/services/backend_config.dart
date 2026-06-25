@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart'
 /// Backend REST API configuration for MySQL-based sync and license services.
 class BackendConfig {
   static String? _resolvedApiBaseUrl;
+  static const String backendApiBaseUrlPrefsKey = 'backend_api_base_url';
+  static const String backendApiBaseUrlsPrefsKey = 'backend_api_base_urls';
 
   /// Set this to your Node.js backend URL, including `/api` if desired.
   ///
