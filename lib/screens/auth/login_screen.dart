@@ -6,11 +6,13 @@ import '../../utils/app_localizations.dart';
 import '../../utils/locale_controller.dart';
 import '../../services/user_service.dart';
 import '../../services/admin_service.dart';
+import '../../services/backend_api_service.dart';
+import '../../services/backend_config.dart';
+import '../../services/otp_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../widgets/ai_help_button.dart';
 import '../owner/owner_dashboard.dart';
-import 'package:smart_monitoring_system/screens/owner/manage_owner_account_screen.dart';
 import '../cashier/cashier_dashboard.dart';
 import '../manager/manager_dashboard.dart';
 import '../inventory_clerk/inventory_clerk_dashboard.dart';
@@ -29,6 +31,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
+  final ApiClient _api = ApiClient();
   bool _obscure = true;
   int _devTapCount = 0;
 
@@ -126,7 +129,256 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  // Forgot password flow removed; owner PIN flow replaces it.
+  Future<String?> _promptOwnerEmail() async {
+    final controller = TextEditingController(text: _email.text.trim());
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recover Owner PIN'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Registered owner email',
+            hintText: 'owner@example.com',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.t('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final email = controller.text.trim();
+              if (email.isEmpty || !email.contains('@')) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter a valid owner email'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(ctx, email);
+            },
+            child: Text(AppLocalizations.t('continue')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _promptOtpCode(String email) async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Verify OTP'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('A verification code was sent to $email'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: const InputDecoration(
+                labelText: '6-digit OTP',
+                hintText: '123456',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.t('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final otp = controller.text.trim();
+              if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter the 6-digit OTP'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(ctx, otp);
+            },
+            child: Text(AppLocalizations.t('verify')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _promptNewPin() async {
+    final pinController = TextEditingController();
+    final confirmController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set New PIN'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'New 4-digit PIN',
+                hintText: '1234',
+              ),
+            ),
+            TextField(
+              controller: confirmController,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Confirm PIN',
+                hintText: '1234',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(AppLocalizations.t('cancel')),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final pin = pinController.text.trim();
+              final confirm = confirmController.text.trim();
+              if (!RegExp(r'^\d{4}$').hasMatch(pin) || pin != confirm) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('PINs must match and be 4 digits'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(ctx, pin);
+            },
+            child: Text(AppLocalizations.t('save_changes')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _recoverOwnerPin() async {
+    final email = await _promptOwnerEmail();
+    if (email == null || email.isEmpty) return;
+
+    final owner = _userService.getUserByEmail(email);
+    if (owner == null || owner.role != user_model.UserRole.owner) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No owner account found for that email')),
+      );
+      return;
+    }
+
+    final otpSent = await OtpService.requestOtp(email);
+    if (!otpSent) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to send OTP. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('OTP sent to $email')),
+    );
+
+    final otp = await _promptOtpCode(email);
+    if (otp == null || otp.isEmpty) return;
+
+    final newPin = await _promptNewPin();
+    if (newPin == null || newPin.isEmpty) return;
+
+    final verification = await OtpService.verifyOtp(
+      email,
+      otp,
+      owner.password.isNotEmpty
+          ? owner.password
+          : 'pin-reset-${owner.id}-${DateTime.now().millisecondsSinceEpoch}',
+    );
+
+    if (verification['success'] != true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            verification['error']?.toString() ?? 'OTP verification failed',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (BackendConfig.useRestBackend) {
+      try {
+        final response = await _api.patchJson(
+          'auth/users/${Uri.encodeComponent(owner.id)}',
+          body: {
+            'fullName': owner.name,
+            'email': owner.email,
+            'contactNumber': newPin,
+            'role': owner.role.toString().split('.').last,
+          },
+        );
+        if (response is! Map<String, dynamic> || response['success'] != true) {
+          throw Exception('Failed to persist PIN to backend');
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('OTP verified, but PIN save failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    final updatedOwner = owner.copyWith(pin: newPin);
+    final success = await _userService.updateUser(updatedOwner);
+    if (!mounted) return;
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Owner PIN has been reset successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('PIN reset failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   Widget _storeIcon(BuildContext context) {
     return Container(
@@ -242,14 +494,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     // Owner PIN helpers
                     Center(
                       child: TextButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ManageOwnerAccountScreen(),
-                            ),
-                          );
-                        },
+                        onPressed: _recoverOwnerPin,
                         child: Text('Forgot Pin Code? Owner only'),
                       ),
                     ),

@@ -199,67 +199,137 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
       builder: (ctx) {
         final newPinCtrl = TextEditingController();
         final confirmPinCtrl = TextEditingController();
-        return AlertDialog(
-          title: const Text('Change Owner PIN'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: newPinCtrl,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                decoration: const InputDecoration(hintText: 'New 4-digit PIN'),
-                obscureText: true,
+        bool isSaving = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Change Owner PIN'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: newPinCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    decoration: const InputDecoration(
+                      hintText: 'New 4-digit PIN',
+                    ),
+                    obscureText: true,
+                  ),
+                  TextField(
+                    controller: confirmPinCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    decoration: const InputDecoration(hintText: 'Confirm PIN'),
+                    obscureText: true,
+                  ),
+                ],
               ),
-              TextField(
-                controller: confirmPinCtrl,
-                keyboardType: TextInputType.number,
-                maxLength: 4,
-                decoration: const InputDecoration(hintText: 'Confirm PIN'),
-                obscureText: true,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppLocalizations.t('cancel')),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final a = newPinCtrl.text.trim();
-                final b = confirmPinCtrl.text.trim();
-                if (a.length != 4 || b.length != 4 || a != b) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('PINs must match and be 4 digits')),
-                  );
-                  return;
-                }
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(AppLocalizations.t('cancel')),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (isSaving) return;
 
-                if (_owner == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('No owner account to update')),
-                  );
-                  return;
-                }
+                    final a = newPinCtrl.text.trim();
+                    final b = confirmPinCtrl.text.trim();
+                    final pinPattern = RegExp(r'^\d{4}$');
+                    if (!pinPattern.hasMatch(a) ||
+                        !pinPattern.hasMatch(b) ||
+                        a != b) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('PINs must match and be 4 digits'),
+                        ),
+                      );
+                      return;
+                    }
 
-                final updated = _owner!.copyWith(pin: a);
-                final success = await _userService.updateUser(updated);
-                if (!mounted) return;
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.t('account_updated_success'))),
-                  );
-                  Navigator.pop(ctx);
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.t('action_failed'))),
-                  );
-                }
-              },
-              child: Text(AppLocalizations.t('save_changes')),
-            ),
-          ],
+                    if (_owner == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No owner account to update'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    setDialogState(() {
+                      isSaving = true;
+                    });
+
+                    if (BackendConfig.useRestBackend) {
+                      try {
+                        final response = await _api.patchJson(
+                          'auth/users/${Uri.encodeComponent(_owner!.id)}',
+                          body: {
+                            'fullName': _owner!.name,
+                            'email': _owner!.email,
+                            'contactNumber': a,
+                            'role': _owner!.role.toString().split('.').last,
+                          },
+                        );
+                        if (response is! Map<String, dynamic> ||
+                            response['success'] != true) {
+                          throw Exception('Failed to update PIN in backend');
+                        }
+                      } catch (e) {
+                        if (!mounted) return;
+                        setDialogState(() {
+                          isSaving = false;
+                        });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Failed to save PIN changes to MySQL: $e',
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+                    }
+
+                    final updated = _owner!.copyWith(pin: a);
+                    final success = await _userService.updateUser(updated);
+                    if (!mounted) return;
+                    setDialogState(() {
+                      isSaving = false;
+                    });
+                    if (success) {
+                      setState(() {
+                        _owner = updated;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            AppLocalizations.t('account_updated_success'),
+                          ),
+                        ),
+                      );
+                      Navigator.pop(ctx);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(AppLocalizations.t('action_failed')),
+                        ),
+                      );
+                    }
+                  },
+                  child: isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(AppLocalizations.t('save_changes')),
+                ),
+              ],
+            );
+          },
         );
       },
     );
