@@ -1353,17 +1353,17 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       final sales = response.map((data) {
-        final saleId = _asInt(data['id']);
+        final cloudSaleId = data['id']?.toString() ?? '';
         final saleNumber = data['sale_number']?.toString() ??
             data['saleNumber']?.toString() ??
-            'S$saleId';
-        final items = (itemsBySale[data['id']?.toString()] ?? []).map((itemData) {
+            cloudSaleId;
+        final items = (itemsBySale[cloudSaleId] ?? []).map((itemData) {
           final unitPrice = _asDouble(itemData['unit_price']);
           final quantity = _asInt(itemData['quantity']);
           final discount = _asDouble(itemData['discount']);
           return SaleItem(
             id: null,
-            saleId: saleId,
+            saleId: 0,
             productId: _asInt(itemData['product_id']),
             productName: itemData['product_name'],
             quantity: quantity,
@@ -1374,7 +1374,7 @@ class SupabaseSyncService extends ChangeNotifier {
         }).toList();
 
         return Sale(
-          id: saleId,
+          id: null,
           saleNumber: saleNumber,
           items: items,
           subtotal: _asDouble(data['subtotal']),
@@ -1407,9 +1407,27 @@ class SupabaseSyncService extends ChangeNotifier {
           ? List<Map<String, dynamic>>.from(payload['inventoryMovements'] as List)
           : <Map<String, dynamic>>[];
 
+      final movements = response
+          .map(
+            (data) => <String, dynamic>{
+              'id': _asInt(data['id']),
+              'productId': _asInt(data['product_id']),
+              // The backend stores the reduced cloud payload, so the exact
+              // before/after quantities cannot be reconstructed here.
+              'quantityBefore': 0,
+              'quantityAfter': _asInt(data['quantity']),
+              'quantityChanged': _asInt(data['quantity']),
+              'movementType': data['movement_type']?.toString() ?? '',
+              'reference': data['reference']?.toString() ?? '',
+              'reason': data['notes']?.toString() ?? '',
+              'movementDate': _asDateTime(data['timestamp']).toIso8601String(),
+            },
+          )
+          .toList();
+
+      await db.replaceInventoryMovements(movements);
       _syncStats['inventory_movements_pulled'] = response.length;
       debugPrint('✅ Pulled ${response.length} inventory movements');
-      // Note: Local InventoryMovement model may need adjustments
     } catch (e) {
       debugPrint('❌ Error pulling inventory movements: $e');
       // Don't rethrow - continue with other syncs
@@ -1459,24 +1477,25 @@ class SupabaseSyncService extends ChangeNotifier {
 
       final itemsByOrder = <String, List<Map<String, dynamic>>>{};
       for (final item in responseItems) {
-        final orderId = item['purchase_order_id']?.toString() ??
+        final orderId = item['purchase_order_id']?.toString() ?? 
             item['order_id']?.toString() ??
             '';
         itemsByOrder.putIfAbsent(orderId, () => []).add(item);
       }
 
-      final orders = response.map((data) {
-        final cloudOrderId = _asInt(data['id']);
+      final orders = <PurchaseOrder>[];
+      for (final data in response) {
+        final cloudOrderKey = data['id']?.toString() ?? '';
         final orderNumber = data['order_number']?.toString() ??
             data['orderNumber']?.toString() ??
-            'PO-$cloudOrderId';
-        final itemMaps = itemsByOrder[data['id']?.toString()] ?? const [];
+            cloudOrderKey;
+        final itemMaps = itemsByOrder[cloudOrderKey] ?? const [];
         final items = itemMaps.map((itemData) {
           final quantity = _asInt(itemData['quantity']);
           final unitPrice = _asDouble(itemData['unit_price']);
           return PurchaseOrderItem(
             id: _asInt(itemData['id']) == 0 ? null : _asInt(itemData['id']),
-            orderId: cloudOrderId,
+            orderId: 0,
             productId: _asInt(itemData['product_id']),
             productName: itemData['product_name']?.toString() ?? '',
             quantity: quantity,
@@ -1488,28 +1507,37 @@ class SupabaseSyncService extends ChangeNotifier {
           );
         }).toList();
 
-        return PurchaseOrder(
-          id: cloudOrderId,
-          orderNumber: orderNumber,
-          supplierId: _asInt(data['supplier_id']),
-          supplierName: data['supplier_name']?.toString() ?? '',
-          orderDate: _asDateTime(data['order_date']),
-          expectedDeliveryDate: data['expected_delivery'] == null
-              ? null
-              : _asDateTime(data['expected_delivery']),
-          status: data['status']?.toString() ?? 'pending',
-          items: items,
-          totalAmount: _asDouble(data['total_amount']),
-          notes: data['notes']?.toString() ?? '',
-          approvedBy: data['approved_by']?.toString(),
-          signatureData:
-              data['signatureData']?.toString() ??
-              data['signature_data']?.toString(),
-          approvalDate: data['approval_date'] == null
-              ? null
-              : _asDateTime(data['approval_date']),
+        final supplierId = _asInt(data['supplier_id']);
+        var supplierName = data['supplier_name']?.toString() ?? '';
+        if (supplierName.isEmpty && supplierId > 0) {
+          final supplier = await db.getSupplierById(supplierId);
+          supplierName = supplier?.name ?? '';
+        }
+
+        orders.add(
+          PurchaseOrder(
+            id: null,
+            orderNumber: orderNumber,
+            supplierId: supplierId,
+            supplierName: supplierName,
+            orderDate: _asDateTime(data['order_date']),
+            expectedDeliveryDate: data['expected_delivery'] == null
+                ? null
+                : _asDateTime(data['expected_delivery']),
+            status: data['status']?.toString() ?? 'pending',
+            items: items,
+            totalAmount: _asDouble(data['total_amount']),
+            notes: data['notes']?.toString() ?? '',
+            approvedBy: data['approved_by']?.toString(),
+            signatureData:
+                data['signatureData']?.toString() ??
+                data['signature_data']?.toString(),
+            approvalDate: data['approval_date'] == null
+                ? null
+                : _asDateTime(data['approval_date']),
+          ),
         );
-      }).toList();
+      }
 
       for (final order in orders) {
         await db.insertOrUpdatePurchaseOrder(order);

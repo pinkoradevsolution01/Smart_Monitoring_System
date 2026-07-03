@@ -926,8 +926,21 @@ class DatabaseService {
               m.movementDate.isBefore(endDate.add(const Duration(seconds: 1))),
         )
         .toList();
-    results.sort((a, b) => b.movementDate.compareTo(a.movementDate));
-    return results;
+      results.sort((a, b) => b.movementDate.compareTo(a.movementDate));
+      return results;
+  }
+
+  /// Replace all inventory movements with a restored set from cloud sync.
+  /// The cloud backend stores a reduced movement payload, so quantityBefore
+  /// and quantityAfter are approximated from the available quantity change.
+  Future<void> replaceInventoryMovements(
+    List<Map<String, dynamic>> movements,
+  ) async {
+    await _load();
+    _store['inventory_movements'] = List<Map<String, dynamic>>.from(
+      movements.map((movement) => Map<String, dynamic>.from(movement)),
+    );
+    await _save();
   }
 
   // -------------------- Camera Operations --------------------

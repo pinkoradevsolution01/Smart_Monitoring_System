@@ -1692,6 +1692,21 @@ class DatabaseService {
     return maps.map((map) => InventoryMovement.fromMap(map)).toList();
   }
 
+  /// Replace all inventory movements with a restored set from cloud sync.
+  /// The cloud backend stores a reduced movement payload, so quantityBefore
+  /// and quantityAfter are approximated from the available quantity change.
+  Future<void> replaceInventoryMovements(
+    List<Map<String, dynamic>> movements,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('inventory_movements');
+      for (final movement in movements) {
+        await txn.insert('inventory_movements', movement);
+      }
+    });
+  }
+
   // ======================== DAMAGE REPORT OPERATIONS ========================
 
   /// Insert a new damage report

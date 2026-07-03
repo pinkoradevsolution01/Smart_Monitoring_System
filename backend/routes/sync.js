@@ -19,6 +19,7 @@ router.post('/push', async (req, res) => {
     sales,
     saleItems,
     purchaseOrders,
+    purchaseOrderItems,
     inventoryMovements,
     damageReports,
   } = req.body;
@@ -48,6 +49,7 @@ router.post('/push', async (req, res) => {
       sales: 0,
       saleItems: 0,
       purchaseOrders: 0,
+      purchaseOrderItems: 0,
       inventoryMovements: 0,
       damageReports: 0,
     };
@@ -487,6 +489,35 @@ router.post('/push', async (req, res) => {
       }
     }
 
+    if (Array.isArray(purchaseOrderItems)) {
+      for (const item of purchaseOrderItems) {
+        const refOrderId = item.purchase_order_id || item.order_id || item.orderId || null;
+        await connection.execute(
+          `INSERT INTO purchase_order_items
+            (id, business_id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              product_id = VALUES(product_id),
+              product_name = VALUES(product_name),
+              quantity = VALUES(quantity),
+              unit_price = VALUES(unit_price),
+              total_price = VALUES(total_price)`,
+          [
+            item.id,
+            resolvedBusinessId,
+            refOrderId,
+            item.product_id,
+            item.product_name,
+            item.quantity,
+            item.unit_price,
+            item.total_price,
+            item.created_at || new Date().toISOString(),
+          ],
+        );
+        stats.purchaseOrderItems += 1;
+      }
+    }
+
     if (Array.isArray(inventoryMovements)) {
       for (const movement of inventoryMovements) {
         await connection.execute(
@@ -586,6 +617,7 @@ router.get('/pull', async (req, res) => {
       sales,
       saleItems,
       purchaseOrders,
+      purchaseOrderItems,
       inventoryMovements,
       damageReports,
     ] = await Promise.all([
@@ -603,6 +635,9 @@ router.get('/pull', async (req, res) => {
       query('SELECT * FROM sales WHERE business_id = ?', [businessId]),
       query('SELECT * FROM sale_items WHERE business_id = ?', [businessId]),
       query('SELECT * FROM purchase_orders WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM purchase_order_items WHERE business_id = ?', [
+        businessId,
+      ]),
       query('SELECT * FROM inventory_movements WHERE business_id = ?', [businessId]),
       query('SELECT * FROM damage_reports WHERE business_id = ?', [businessId]),
     ]);
@@ -623,6 +658,7 @@ router.get('/pull', async (req, res) => {
       sales,
       saleItems,
       purchaseOrders,
+      purchaseOrderItems,
       inventoryMovements,
       damageReports,
     });

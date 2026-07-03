@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -130,7 +131,8 @@ class _SplashScreenState extends State<SplashScreen>
       if (ownerAccounts.isNotEmpty) {
         final owner = ownerAccounts.first;
         
-        // Initialize and sync business data from cloud before navigating to dashboard
+        // Initialize business context immediately, then let cloud restore run
+        // in the background so the app can open without waiting for a full sync.
         try {
           final supabaseSyncService = GetIt.I<SupabaseSyncService>();
           
@@ -141,17 +143,10 @@ class _SplashScreenState extends State<SplashScreen>
             existingBusinessId: owner.businessId,
           );
           debugPrint('✅ Business context initialized for cloud sync');
-          
-          // Auto-sync data from cloud if this is a returning owner on different device
-          try {
-            final synced = await supabaseSyncService.pullAllData();
-            if (synced) {
-              final stats = supabaseSyncService.getSyncSummary();
-              debugPrint('✅ Data synced from cloud: $stats');
-            }
-          } catch (e) {
-            debugPrint('ℹ️ Auto-sync on login: $e (data will be synced on demand)');
-          }
+
+          // Fire-and-forget restore. We keep this off the critical path so the
+          // first screen becomes interactive sooner.
+          unawaited(_restoreCloudDataInBackground(supabaseSyncService));
         } catch (e) {
           debugPrint('⚠️ Warning: Could not initialize business context: $e');
           // App continues - user can still access dashboard but may not sync to cloud
@@ -193,6 +188,20 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
       );
+    }
+  }
+
+  Future<void> _restoreCloudDataInBackground(
+    SupabaseSyncService supabaseSyncService,
+  ) async {
+    try {
+      final synced = await supabaseSyncService.pullAllData();
+      if (synced) {
+        final stats = supabaseSyncService.getSyncSummary();
+        debugPrint('✅ Data synced from cloud: $stats');
+      }
+    } catch (e) {
+      debugPrint('ℹ️ Auto-sync on login: $e (data will be synced on demand)');
     }
   }
 

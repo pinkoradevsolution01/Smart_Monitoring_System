@@ -6,6 +6,8 @@ class BackendConfig {
   static String? _resolvedApiBaseUrl;
   static const String backendApiBaseUrlPrefsKey = 'backend_api_base_url';
   static const String backendApiBaseUrlsPrefsKey = 'backend_api_base_urls';
+  static const String _defaultDropletApiBaseUrl =
+      'http://152.42.185.35:3000/api';
 
   /// Set this to your Node.js backend URL, including `/api` if desired.
   ///
@@ -18,6 +20,7 @@ class BackendConfig {
   /// - Windows/macOS/Linux desktop: `http://localhost:3000/api`
   /// - Android emulator: `http://10.0.2.2:3000/api`
   /// - Physical phone on the same LAN: `http://192.168.1.9:3000/api`
+  /// - Public Droplet: `http://152.42.185.35:3000/api`
   ///
   /// If you are testing on a physical iPhone/iPad, pass the laptop IP
   /// explicitly with `--dart-define` because `localhost` points to the device
@@ -67,20 +70,17 @@ class BackendConfig {
         case TargetPlatform.windows:
         case TargetPlatform.macOS:
         case TargetPlatform.linux:
-          return 'http://localhost:3000/api';
         case TargetPlatform.android:
-          // Physical Android devices should use the laptop LAN IP.
-          // Override with BACKEND_API_BASE_URL if you are using an emulator
-          // or a different backend host.
-          return 'http://192.168.1.9:3000/api';
         case TargetPlatform.iOS:
-          return 'http://localhost:3000/api';
         case TargetPlatform.fuchsia:
-          break;
+          // Default to the deployed Droplet so physical devices can connect
+          // immediately. Override with BACKEND_API_BASE_URL when developing
+          // against a local backend or a different server.
+          return _defaultDropletApiBaseUrl;
       }
     }
 
-    return 'http://localhost:3000/api';
+    return _defaultDropletApiBaseUrl;
   }
 
   static String get apiBaseUrl {
