@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'dart:async';
 import '../models/product.dart';
+import '../models/shoe_size.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
 import '../models/purchase_order.dart';
@@ -522,6 +523,7 @@ class SupabaseSyncService extends ChangeNotifier {
       final users = userService.users;
       final entries = <Map<String, dynamic>>[];
       final leaves = <Map<String, dynamic>>[];
+      final archives = <Map<String, dynamic>>[];
       final attendance = AttendanceService.instance;
 
       for (final user in users) {
@@ -549,6 +551,21 @@ class SupabaseSyncService extends ChangeNotifier {
             'updated_at': DateTime.now().toIso8601String(),
           });
         });
+
+        final userArchive = await attendance.loadArchive(user.id);
+        userArchive.forEach((dateKey, archivedEntries) {
+          archives.add({
+            'id': null,
+            'business_id': _businessId,
+            'user_id': user.id,
+            'date_key': dateKey,
+            'entries': jsonEncode(
+              archivedEntries.map((entry) => entry.toJson()).toList(),
+            ),
+            'created_at': DateTime.now().toIso8601String(),
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+        });
       }
 
       final schedule = await attendance.loadSchedule();
@@ -565,11 +582,13 @@ class SupabaseSyncService extends ChangeNotifier {
       if (leaves.isNotEmpty) {
         body['attendanceLeaves'] = leaves;
       }
+      body['attendanceArchive'] = archives;
       body['attendanceSchedule'] = schedulePayload;
 
       await _api.postJson('sync/push', body: body);
       _syncStats['attendance_entries_pushed'] = entries.length;
       _syncStats['attendance_leaves_pushed'] = leaves.length;
+      _syncStats['attendance_archive_pushed'] = archives.length;
       _syncStats['attendance_schedule_pushed'] = 1;
       debugPrint(
         '✅ Pushed ${entries.length} attendance entries and ${leaves.length} leaves',
@@ -644,11 +663,17 @@ class SupabaseSyncService extends ChangeNotifier {
               'business_id': _businessId,
               'name': p.name,
               'barcode': p.barcode,
+              'description': p.description,
+              'buying_price': p.buyingPrice,
               'category': p.category,
               'selling_price': p.sellingPrice,
               'quantity': p.quantity,
               'image_path': p.imagePath,
               'low_stock_threshold': p.reorderLevel,
+              'shoe_sizes': p.shoeSizes != null
+                  ? jsonEncode(p.shoeSizes!.map((s) => s.toMap()).toList())
+                  : null,
+              'size_type': p.sizeType,
               'created_at': p.createdAt.toIso8601String(),
               'updated_at': DateTime.now().toIso8601String(),
             },
@@ -688,7 +713,8 @@ class SupabaseSyncService extends ChangeNotifier {
               'business_id': _businessId,
               'cashier_id': _resolveCashierId(s.cashierName, users),
               'cashier_name': s.cashierName,
-              'customer_name': null,
+              'customer_name': s.customerName,
+              'customer_id': s.customerId,
               'payment_method': s.paymentMethod,
               'status': s.status.toString().split('.').last,
               'subtotal': s.subtotal,
@@ -699,6 +725,17 @@ class SupabaseSyncService extends ChangeNotifier {
               'item_count': s.itemCount,
               'datetime': s.saleDate.toIso8601String(),
               'notes': s.notes,
+              'reference_code': s.referenceCode,
+              'image_path': s.imagePath,
+              'cancelled_reason': s.cancelledReason,
+              'cancelled_by': s.cancelledBy,
+              'cancelled_at': s.cancelledAt?.toIso8601String(),
+              'transaction_type': s.transactionType.toString().split('.').last,
+              'reservation_fee': s.reservationFee,
+              'courier': s.courier,
+              'delivery_status': s.deliveryStatus?.toString().split('.').last,
+              'loyalty_points_earned': s.loyaltyPointsEarned,
+              'loyalty_points_redeemed': s.loyaltyPointsRedeemed,
               'created_at': s.saleDate.toIso8601String(),
             },
           )
@@ -757,6 +794,7 @@ class SupabaseSyncService extends ChangeNotifier {
             'unit_price': item.unitPrice,
             'discount': item.discount,
             'subtotal': item.subtotal,
+            'shoe_size': item.shoeSize,
             'created_at': DateTime.now().toIso8601String(),
           });
         }
@@ -1181,6 +1219,9 @@ class SupabaseSyncService extends ChangeNotifier {
       final leavesResponse = payload['attendanceLeaves'] is List
           ? List<Map<String, dynamic>>.from(payload['attendanceLeaves'] as List)
           : <Map<String, dynamic>>[];
+      final archiveResponse = payload['attendanceArchive'] is List
+          ? List<Map<String, dynamic>>.from(payload['attendanceArchive'] as List)
+          : <Map<String, dynamic>>[];
       final scheduleResponse = payload['attendanceSchedule'];
 
       final groupedEntries = <String, List<AttendanceEntry>>{};
@@ -1220,6 +1261,48 @@ class SupabaseSyncService extends ChangeNotifier {
         }
       }
 
+      final archivesByUser = <String, Map<String, List<AttendanceEntry>>>{};
+      for (final data in archiveResponse) {
+        final userId = data['user_id']?.toString() ?? '';
+        final dateKey = data['date_key']?.toString() ?? '';
+        if (userId.isEmpty || dateKey.isEmpty) continue;
+        final rawEntries = data['entries'];
+        final decodedEntries = <AttendanceEntry>[];
+        if (rawEntries is String && rawEntries.isNotEmpty) {
+          try {
+            final list = jsonDecode(rawEntries) as List<dynamic>;
+            decodedEntries.addAll(
+              list.map(
+                (e) => AttendanceEntry.fromJson(
+                  Map<String, dynamic>.from(e as Map),
+                ),
+              ),
+            );
+          } catch (_) {}
+        } else if (rawEntries is List) {
+          decodedEntries.addAll(
+            rawEntries
+                .map(
+                  (e) => AttendanceEntry.fromJson(
+                    Map<String, dynamic>.from(e as Map),
+                  ),
+                )
+                .toList(),
+          );
+        }
+        archivesByUser.putIfAbsent(userId, () => <String, List<AttendanceEntry>>{});
+        archivesByUser[userId]![dateKey] = decodedEntries;
+      }
+
+      final userService = UserService();
+      await userService.initialize();
+      for (final user in userService.users) {
+        await AttendanceService.instance.replaceArchive(
+          user.id,
+          archivesByUser[user.id] ?? <String, List<AttendanceEntry>>{},
+        );
+      }
+
       if (scheduleResponse != null) {
         Map<String, dynamic>? schedule;
         if (scheduleResponse is Map<String, dynamic>) {
@@ -1256,6 +1339,7 @@ class SupabaseSyncService extends ChangeNotifier {
 
       _syncStats['attendance_entries_pulled'] = entriesResponse.length;
       _syncStats['attendance_leaves_pulled'] = leavesResponse.length;
+      _syncStats['attendance_archive_pulled'] = archiveResponse.length;
       _syncStats['attendance_schedule_pulled'] = scheduleResponse == null ? 0 : 1;
       debugPrint(
         '✅ Pulled ${entriesResponse.length} attendance entries and ${leavesResponse.length} leaves',
@@ -1313,14 +1397,16 @@ class SupabaseSyncService extends ChangeNotifier {
           id: _asInt(data['id']),
           barcode: data['barcode'] ?? '',
           name: data['name'],
-          description: null,
-          buyingPrice: 0.0, // Not in cloud schema
+          description: data['description']?.toString(),
+          buyingPrice: _asDouble(data['buying_price']),
           sellingPrice: _asDouble(data['selling_price']),
           quantity: _asInt(data['quantity']),
           reorderLevel: _asInt(data['low_stock_threshold'], fallback: 5),
           category: data['category'] ?? 'General',
           imagePath: data['image_path'],
           createdAt: _asDateTime(data['created_at']),
+          shoeSizes: _parseShoeSizes(data['shoe_sizes']),
+          sizeType: data['size_type']?.toString(),
         );
       }).toList();
 
@@ -1370,6 +1456,7 @@ class SupabaseSyncService extends ChangeNotifier {
             unitPrice: unitPrice,
             discount: discount,
             subtotal: unitPrice * quantity,
+            shoeSize: itemData['shoe_size']?.toString(),
           );
         }).toList();
 
@@ -1386,6 +1473,32 @@ class SupabaseSyncService extends ChangeNotifier {
           notes: data['notes'],
           cashierName: data['cashier_name'],
           saleDate: _asDateTime(data['datetime']),
+          referenceCode: data['reference_code']?.toString(),
+          imagePath: data['image_path']?.toString(),
+          cancelledReason: data['cancelled_reason']?.toString(),
+          cancelledBy: data['cancelled_by']?.toString(),
+          cancelledAt: data['cancelled_at'] == null
+              ? null
+              : _asDateTime(data['cancelled_at']),
+          transactionType: data['transaction_type']?.toString() == 'delivery'
+              ? TransactionType.delivery
+              : TransactionType.pos,
+          reservationFee: _asDouble(data['reservation_fee'], fallback: 0.0),
+          courier: data['courier']?.toString(),
+          deliveryStatus: data['delivery_status'] == null
+              ? null
+              : DeliveryStatus.values.firstWhere(
+                  (e) =>
+                      e.toString().split('.').last ==
+                      data['delivery_status'].toString(),
+                  orElse: () => DeliveryStatus.pending,
+                ),
+          customerId: _asInt(data['customer_id'], fallback: 0) == 0
+              ? null
+              : _asInt(data['customer_id']),
+          customerName: data['customer_name']?.toString(),
+          loyaltyPointsEarned: _asInt(data['loyalty_points_earned']),
+          loyaltyPointsRedeemed: _asInt(data['loyalty_points_redeemed']),
         );
       }).toList();
 
@@ -1560,8 +1673,9 @@ class SupabaseSyncService extends ChangeNotifier {
           : <Map<String, dynamic>>[];
 
       final reports = response.map((data) {
-        final quantity = data['quantity'] as int;
+        final quantity = _asInt(data['quantity']);
         final unitPrice = 0.0; // Not stored in cloud, would need product lookup
+        final status = data['status']?.toString();
         return DamageReport(
           id: _asInt(data['id']),
           productId: _asInt(data['product_id']),
@@ -1569,9 +1683,13 @@ class SupabaseSyncService extends ChangeNotifier {
           quantity: quantity,
           unitPrice: unitPrice,
           totalValue: unitPrice * quantity,
-          reason: data['damage_type'] ?? 'unknown',
-          reportedBy: data['reported_by'] ?? 'unknown',
+          reason: data['damage_type']?.toString() ??
+              data['description']?.toString() ??
+              'unknown',
+          reportedBy: data['reported_by']?.toString() ?? 'unknown',
           reportDate: _asDateTime(data['reported_at']),
+          returnStatus: status,
+          responsiblePerson: data['resolution_notes']?.toString(),
         );
       }).toList();
 
@@ -1637,6 +1755,19 @@ class SupabaseSyncService extends ChangeNotifier {
         return SaleStatus.returned;
       default:
         return SaleStatus.completed;
+    }
+  }
+
+  List<ShoeSize> _parseShoeSizes(dynamic value) {
+    if (value == null) return const <ShoeSize>[];
+    try {
+      final decoded = value is String ? jsonDecode(value) : value;
+      if (decoded is! List) return const <ShoeSize>[];
+      return decoded
+          .map((entry) => ShoeSize.fromMap(Map<String, dynamic>.from(entry as Map)))
+          .toList();
+    } catch (_) {
+      return const <ShoeSize>[];
     }
   }
 

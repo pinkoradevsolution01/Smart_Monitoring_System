@@ -100,9 +100,49 @@ async function ensureUsersTableColumns() {
 }
 
 async function ensureSalesAndCustomerRelations() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS attendance_archive (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      business_id VARCHAR(64) NOT NULL,
+      user_id VARCHAR(64) NOT NULL,
+      date_key VARCHAR(16) NOT NULL,
+      entries LONGTEXT NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_attendance_archive_business (business_id),
+      KEY idx_attendance_archive_user (user_id),
+      UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key),
+      CONSTRAINT fk_attendance_archive_business
+        FOREIGN KEY (business_id) REFERENCES businesses(id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
+
   await ensureColumn('sales', 'customer_id', 'BIGINT NULL');
   await ensureColumn('damage_reports', 'product_id', 'VARCHAR(64) NULL');
   await ensureColumn('customers', 'business_id', 'VARCHAR(64) NULL');
+  await ensureColumn('products', 'description', 'TEXT NULL');
+  await ensureColumn('products', 'buying_price', 'DECIMAL(12, 2) NOT NULL DEFAULT 0.00');
+  await ensureColumn('sales', 'reference_code', 'VARCHAR(255) NULL');
+  await ensureColumn('sales', 'image_path', 'TEXT NULL');
+  await ensureColumn('sales', 'cancelled_reason', 'TEXT NULL');
+  await ensureColumn('sales', 'cancelled_by', 'VARCHAR(255) NULL');
+  await ensureColumn('sales', 'cancelled_at', 'DATETIME NULL');
+  await ensureColumn('sales', 'transaction_type', "VARCHAR(32) NOT NULL DEFAULT 'pos'");
+  await ensureColumn('sales', 'reservation_fee', 'DECIMAL(12, 2) NULL');
+  await ensureColumn('sales', 'courier', 'VARCHAR(255) NULL');
+  await ensureColumn('sales', 'delivery_status', 'VARCHAR(64) NULL');
+  await ensureColumn('sales', 'loyalty_points_earned', 'INT NOT NULL DEFAULT 0');
+  await ensureColumn('sales', 'loyalty_points_redeemed', 'INT NOT NULL DEFAULT 0');
+  await ensureColumn('sales', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
+  await ensureColumn('sale_items', 'shoe_size', 'VARCHAR(32) NULL');
+  await ensureColumn('attendance_archive', 'business_id', 'VARCHAR(64) NOT NULL');
+  await ensureColumn('attendance_archive', 'user_id', 'VARCHAR(64) NOT NULL');
+  await ensureColumn('attendance_archive', 'date_key', 'VARCHAR(16) NOT NULL');
+  await ensureColumn('attendance_archive', 'entries', 'LONGTEXT NOT NULL');
+  await ensureColumn('attendance_archive', 'created_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP');
+  await ensureColumn('attendance_archive', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
 
   const customerIndexes = await getUniqueIndexes('customers');
   for (const index of customerIndexes) {
@@ -138,6 +178,18 @@ async function ensureSalesAndCustomerRelations() {
   if (!(await constraintExists('damage_reports', 'fk_damage_reports_product'))) {
     await pool.execute(
       'ALTER TABLE damage_reports ADD CONSTRAINT fk_damage_reports_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE',
+    );
+  }
+
+  if (!(await uniqueIndexExists('attendance_archive', 'uq_attendance_archive_business_user_date'))) {
+    await pool.execute(
+      'ALTER TABLE attendance_archive ADD UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key)',
+    );
+  }
+
+  if (!(await constraintExists('attendance_archive', 'fk_attendance_archive_business'))) {
+    await pool.execute(
+      'ALTER TABLE attendance_archive ADD CONSTRAINT fk_attendance_archive_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE ON UPDATE CASCADE',
     );
   }
 

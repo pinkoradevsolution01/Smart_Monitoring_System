@@ -13,6 +13,7 @@ router.post('/push', async (req, res) => {
     attendanceEntries,
     attendanceLeaves,
     attendanceSchedule,
+    attendanceArchive,
     activityLogs,
     products,
     suppliers,
@@ -43,6 +44,7 @@ router.post('/push', async (req, res) => {
       attendanceEntries: 0,
       attendanceLeaves: 0,
       attendanceSchedule: 0,
+      attendanceArchive: 0,
       activityLogs: 0,
       products: 0,
       suppliers: 0,
@@ -268,6 +270,34 @@ router.post('/push', async (req, res) => {
       }
     }
 
+    if (Array.isArray(attendanceArchive)) {
+      await connection.execute(
+        'DELETE FROM attendance_archive WHERE business_id = ?',
+        [resolvedBusinessId],
+      );
+
+      for (const archiveRow of attendanceArchive) {
+        await connection.execute(
+          `INSERT INTO attendance_archive
+            (id, business_id, user_id, date_key, entries, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              entries = VALUES(entries),
+              updated_at = VALUES(updated_at)`,
+          [
+            archiveRow.id,
+            resolvedBusinessId,
+            archiveRow.user_id,
+            archiveRow.date_key,
+            archiveRow.entries,
+            archiveRow.created_at,
+            archiveRow.updated_at,
+          ],
+        );
+        stats.attendanceArchive += 1;
+      }
+    }
+
     if (attendanceSchedule && typeof attendanceSchedule === 'object') {
       const scheduleRows = Array.isArray(attendanceSchedule)
         ? attendanceSchedule
@@ -320,27 +350,35 @@ router.post('/push', async (req, res) => {
       for (const product of products) {
         await connection.execute(
           `INSERT INTO products
-            (id, business_id, barcode, name, category, selling_price, quantity, image_path, low_stock_threshold, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, business_id, barcode, name, description, buying_price, category, selling_price, quantity, image_path, low_stock_threshold, shoe_sizes, size_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               barcode = VALUES(barcode),
               name = VALUES(name),
+              description = VALUES(description),
+              buying_price = VALUES(buying_price),
               category = VALUES(category),
               selling_price = VALUES(selling_price),
               quantity = VALUES(quantity),
               image_path = VALUES(image_path),
               low_stock_threshold = VALUES(low_stock_threshold),
+              shoe_sizes = VALUES(shoe_sizes),
+              size_type = VALUES(size_type),
               updated_at = VALUES(updated_at)`,
           [
             product.id,
             resolvedBusinessId,
             product.barcode,
             product.name,
+            product.description,
+            product.buying_price,
             product.category,
             product.selling_price,
             product.quantity,
             product.image_path,
             product.low_stock_threshold,
+            product.shoe_sizes,
+            product.size_type,
             product.created_at,
             product.updated_at,
           ],
@@ -386,8 +424,8 @@ router.post('/push', async (req, res) => {
         const saleId = sale.id || sale.sale_number || sale.saleNumber || null;
         await connection.execute(
           `INSERT INTO sales
-            (id, business_id, cashier_id, cashier_name, customer_name, customer_id, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, business_id, cashier_id, cashier_name, customer_name, customer_id, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, reference_code, image_path, cancelled_reason, cancelled_by, cancelled_at, transaction_type, reservation_fee, courier, delivery_status, loyalty_points_earned, loyalty_points_redeemed, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               cashier_name = VALUES(cashier_name),
               customer_name = VALUES(customer_name),
@@ -401,7 +439,19 @@ router.post('/push', async (req, res) => {
               change_amount = VALUES(change_amount),
               item_count = VALUES(item_count),
               datetime = VALUES(datetime),
-              notes = VALUES(notes)`,
+              notes = VALUES(notes),
+              reference_code = VALUES(reference_code),
+              image_path = VALUES(image_path),
+              cancelled_reason = VALUES(cancelled_reason),
+              cancelled_by = VALUES(cancelled_by),
+              cancelled_at = VALUES(cancelled_at),
+              transaction_type = VALUES(transaction_type),
+              reservation_fee = VALUES(reservation_fee),
+              courier = VALUES(courier),
+              delivery_status = VALUES(delivery_status),
+              loyalty_points_earned = VALUES(loyalty_points_earned),
+              loyalty_points_redeemed = VALUES(loyalty_points_redeemed),
+              updated_at = VALUES(updated_at)`,
           [
             saleId,
             resolvedBusinessId,
@@ -419,7 +469,18 @@ router.post('/push', async (req, res) => {
             sale.item_count,
             sale.datetime,
             sale.notes,
-            sale.created_at,
+            sale.reference_code ?? sale.referenceCode ?? null,
+            sale.image_path ?? sale.imagePath ?? null,
+            sale.cancelled_reason ?? sale.cancelledReason ?? null,
+            sale.cancelled_by ?? sale.cancelledBy ?? null,
+            sale.cancelled_at ?? sale.cancelledAt ?? null,
+            sale.transaction_type ?? sale.transactionType ?? 'pos',
+            sale.reservation_fee ?? sale.reservationFee ?? null,
+            sale.courier ?? sale.courier ?? null,
+            sale.delivery_status ?? sale.deliveryStatus ?? null,
+            sale.loyalty_points_earned ?? sale.loyaltyPointsEarned ?? 0,
+            sale.loyalty_points_redeemed ?? sale.loyaltyPointsRedeemed ?? 0,
+            sale.updated_at ?? sale.updatedAt ?? sale.created_at,
           ],
         );
         stats.sales += 1;
@@ -432,14 +493,15 @@ router.post('/push', async (req, res) => {
         const refSaleId = item.sale_id || item.saleId || item.sale_number || item.saleNumber || null;
         await connection.execute(
           `INSERT INTO sale_items
-            (sale_id, business_id, product_id, product_name, quantity, unit_price, discount, subtotal, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (sale_id, business_id, product_id, product_name, quantity, unit_price, discount, subtotal, shoe_size, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               product_name = VALUES(product_name),
               quantity = VALUES(quantity),
               unit_price = VALUES(unit_price),
               discount = VALUES(discount),
-              subtotal = VALUES(subtotal)`,
+              subtotal = VALUES(subtotal),
+              shoe_size = VALUES(shoe_size)`,
           [
             refSaleId,
             resolvedBusinessId,
@@ -449,6 +511,7 @@ router.post('/push', async (req, res) => {
             item.unit_price,
             item.discount,
             item.subtotal,
+            item.shoe_size,
             item.created_at,
           ],
         );
@@ -611,6 +674,7 @@ router.get('/pull', async (req, res) => {
       attendanceEntries,
       attendanceLeaves,
       attendanceSchedule,
+      attendanceArchive,
       activityLogs,
       products,
       suppliers,
@@ -629,6 +693,7 @@ router.get('/pull', async (req, res) => {
       query('SELECT * FROM attendance_entries WHERE business_id = ?', [businessId]),
       query('SELECT * FROM attendance_leaves WHERE business_id = ?', [businessId]),
       query('SELECT * FROM attendance_schedule WHERE business_id = ?', [businessId]),
+      query('SELECT * FROM attendance_archive WHERE business_id = ?', [businessId]),
       query('SELECT * FROM activity_logs WHERE business_id = ?', [businessId]),
       query('SELECT * FROM products WHERE business_id = ?', [businessId]),
       query('SELECT * FROM suppliers WHERE business_id = ?', [businessId]),
@@ -652,6 +717,7 @@ router.get('/pull', async (req, res) => {
       attendanceEntries,
       attendanceLeaves,
       attendanceSchedule,
+      attendanceArchive,
       activityLogs,
       products,
       suppliers,

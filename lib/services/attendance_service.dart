@@ -193,6 +193,15 @@ class AttendanceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Replace a user's archive from an external source.
+  /// Used by cloud sync restore paths.
+  Future<void> replaceArchive(
+    String userId,
+    Map<String, List<AttendanceEntry>> archive,
+  ) async {
+    await _saveArchive(userId, archive);
+  }
+
   // Leaves: per-user map date(yyyy-MM-dd) -> {authorized: bool, minutes: int, reason: String}
   Future<Map<String, dynamic>> loadLeaves(String userId) async {
     final prefs = await SharedPreferences.getInstance();

@@ -192,6 +192,8 @@ CREATE TABLE IF NOT EXISTS products (
   business_id VARCHAR(64) NOT NULL,
   barcode VARCHAR(255),
   name VARCHAR(255) NOT NULL,
+  description TEXT,
+  buying_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
   category VARCHAR(128),
   selling_price DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
   quantity INT NOT NULL DEFAULT 0,
@@ -246,7 +248,19 @@ CREATE TABLE IF NOT EXISTS sales (
   item_count INT NOT NULL DEFAULT 0,
   datetime DATETIME NOT NULL,
   notes TEXT,
+  reference_code VARCHAR(255),
+  image_path TEXT,
+  cancelled_reason TEXT,
+  cancelled_by VARCHAR(255),
+  cancelled_at DATETIME NULL,
+  transaction_type VARCHAR(32) NOT NULL DEFAULT 'pos',
+  reservation_fee DECIMAL(12, 2) NULL,
+  courier VARCHAR(255),
+  delivery_status VARCHAR(64),
+  loyalty_points_earned INT NOT NULL DEFAULT 0,
+  loyalty_points_redeemed INT NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_sales_business (business_id),
   KEY idx_sales_business_datetime (business_id, datetime),
   KEY idx_sales_cashier (cashier_id),
@@ -272,6 +286,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
   unit_price DECIMAL(12, 2) NOT NULL,
   discount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
   subtotal DECIMAL(12, 2) NOT NULL,
+  shoe_size VARCHAR(32) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY idx_sale_items_sale (sale_id),
   KEY idx_sale_items_business (business_id),
@@ -500,6 +515,23 @@ CREATE TABLE IF NOT EXISTS attendance_schedule (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (business_id, `key`),
   CONSTRAINT fk_attendance_schedule_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS attendance_archive (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  user_id VARCHAR(64) NOT NULL,
+  date_key VARCHAR(16) NOT NULL,
+  entries LONGTEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_attendance_archive_business (business_id),
+  KEY idx_attendance_archive_user (user_id),
+  UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key),
+  CONSTRAINT fk_attendance_archive_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
     ON UPDATE CASCADE
