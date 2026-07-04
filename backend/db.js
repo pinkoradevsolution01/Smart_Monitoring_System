@@ -111,11 +111,7 @@ async function ensureSalesAndCustomerRelations() {
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_attendance_archive_business (business_id),
       KEY idx_attendance_archive_user (user_id),
-      UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key),
-      CONSTRAINT fk_attendance_archive_business
-        FOREIGN KEY (business_id) REFERENCES businesses(id)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE
+      UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key)
     ) ENGINE=InnoDB
   `);
 
@@ -184,12 +180,6 @@ async function ensureSalesAndCustomerRelations() {
   if (!(await uniqueIndexExists('attendance_archive', 'uq_attendance_archive_business_user_date'))) {
     await pool.execute(
       'ALTER TABLE attendance_archive ADD UNIQUE KEY uq_attendance_archive_business_user_date (business_id, user_id, date_key)',
-    );
-  }
-
-  if (!(await constraintExists('attendance_archive', 'fk_attendance_archive_business'))) {
-    await pool.execute(
-      'ALTER TABLE attendance_archive ADD CONSTRAINT fk_attendance_archive_business FOREIGN KEY (business_id) REFERENCES businesses(id) ON DELETE CASCADE ON UPDATE CASCADE',
     );
   }
 
