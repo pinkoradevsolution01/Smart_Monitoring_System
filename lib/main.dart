@@ -558,16 +558,17 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
                     ),
                   },
                   builder: (context, child) {
-                    // Add global overflow protection
+                    final media = MediaQuery.of(context);
                     return MediaQuery(
-                      data: MediaQuery.of(context).copyWith(
+                      data: media.copyWith(
                         textScaler: TextScaler.linear(
-                          MediaQuery.of(
-                            context,
-                          ).textScaler.scale(1.0).clamp(0.8, 1.3),
+                          media.textScaler.scale(1.0).clamp(0.8, 1.3),
                         ),
                       ),
-                      child: child ?? const SizedBox(),
+                      child: SafeArea(
+                        minimum: const EdgeInsets.all(0),
+                        child: child ?? const SizedBox(),
+                      ),
                     );
                   },
                 );

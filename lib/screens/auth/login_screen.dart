@@ -12,6 +12,7 @@ import '../../services/otp_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../widgets/ai_help_button.dart';
+import '../../utils/responsive_utils.dart';
 import '../owner/owner_dashboard.dart';
 import '../cashier/cashier_dashboard.dart';
 import '../manager/manager_dashboard.dart';
@@ -399,11 +400,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
     final inputStyle = const TextStyle(fontSize: 16, color: Colors.black87);
     final fieldDecoration = InputDecoration(
       filled: true,
       fillColor: Colors.white.withAlpha((0.9 * 255).round()),
-      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+      contentPadding: EdgeInsets.symmetric(
+        vertical: ResponsiveUtils.isMobile(context) ? 12 : 14,
+        horizontal: 12,
+      ),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
     );
 
@@ -423,16 +428,16 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(ResponsiveUtils.responsivePadding(width).left),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
+            constraints: BoxConstraints(maxWidth: width < 600 ? double.infinity : 480),
             child: Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
               elevation: 6,
               child: Padding(
-                padding: const EdgeInsets.all(28),
+                padding: EdgeInsets.all(ResponsiveUtils.isMobile(context) ? 20 : 28),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,

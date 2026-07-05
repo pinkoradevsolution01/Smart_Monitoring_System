@@ -8,6 +8,7 @@ import 'ewallet_transfer_screen.dart';
 import '../../models/user.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
+import '../../utils/responsive_utils.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import '../../services/attendance_service.dart';
 
@@ -51,7 +52,7 @@ class CashierDashboard extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: EdgeInsets.all(ResponsiveUtils.spacingForWidth(MediaQuery.sizeOf(context).width)),
               child: ListView(
                 children: [
                   // Dashboard welcome section
@@ -76,14 +77,7 @@ class CashierDashboard extends StatelessWidget {
                   ),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      int cols = 1;
-                      if (constraints.maxWidth >= 1000) {
-                        cols = 4;
-                      } else if (constraints.maxWidth >= 800) {
-                        cols = 3;
-                      } else if (constraints.maxWidth >= 600) {
-                        cols = 2;
-                      }
+                      final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
 
                       final items = <Widget>[
                         if (packageService.hasAttendanceAccess)
@@ -200,7 +194,7 @@ class CashierDashboard extends StatelessWidget {
                           crossAxisCount: cols,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: 1,
+                          childAspectRatio: ResponsiveUtils.isMobile(context) ? 1.05 : 1,
                         ),
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
