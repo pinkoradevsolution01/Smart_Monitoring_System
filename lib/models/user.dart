@@ -83,19 +83,30 @@ class User {
         parsedRole = UserRole.staff;
     }
 
+    final createdAtValue =
+        map['createdAt'] ?? map['created_at'] ?? DateTime.now().toIso8601String();
+    final isActiveValue = map['isActive'] ?? map['is_active'] ?? true;
+    final authMethodValue = map['authMethod'] ?? map['auth_method'] ?? 'password';
+    final isActive = isActiveValue is bool
+        ? isActiveValue
+        : isActiveValue is num
+        ? isActiveValue == 1
+        : isActiveValue.toString() == '1' ||
+            isActiveValue.toString().toLowerCase() == 'true';
+
     return User(
       id: map['id'] ?? '',
-      name: map['name'] ?? '',
+      name: map['name'] ?? map['full_name'] ?? '',
       email: map['email'] ?? '',
-      password: map['password'] ?? '',
-      pin: map['pin'],
+      password: map['password'] ?? map['password_hash'] ?? '',
+      pin: map['pin'] ?? map['contact_number'],
       role: parsedRole,
-      businessId: map['businessId'],
-      createdAt: map['createdAt'] is String
-          ? DateTime.parse(map['createdAt'])
-          : (map['createdAt'] as DateTime? ?? DateTime.now()),
-      isActive: (map['isActive'] as int?) == 1,
-      authMethod: (map['authMethod'] as String?) ?? 'password',
+      businessId: map['businessId'] ?? map['business_id'],
+      createdAt: createdAtValue is String
+          ? DateTime.parse(createdAtValue)
+          : (createdAtValue as DateTime? ?? DateTime.now()),
+      isActive: isActive,
+      authMethod: authMethodValue.toString(),
     );
   }
 

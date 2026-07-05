@@ -1036,9 +1036,9 @@ class SupabaseSyncService extends ChangeNotifier {
       }).toList();
 
       final userService = UserService();
-      await userService.clearAllUsers();
+      await userService.clearAllUsers(queueCloudSync: false);
       for (final user in users) {
-        await userService.addUser(user);
+        await userService.addUser(user, queueCloudSync: false);
       }
 
       _syncStats['users_pulled'] = users.length;

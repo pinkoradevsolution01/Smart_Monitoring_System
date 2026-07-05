@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'subscriber_service.dart';
-import 'package:get_it/get_it.dart';
 import '../services/package_service.dart';
 import '../models/pricing_package.dart';
 import '../models/user.dart';
+import 'supabase_sync_service.dart';
 
 /// Service to manage user accounts (owners and cashiers).
 /// Persists to SharedPreferences for persistent storage across app sessions.
@@ -31,6 +32,12 @@ class UserService extends ChangeNotifier {
     if (_isInitialized) return;
     await _initializeDefaults();
     _isInitialized = true;
+  }
+
+  @visibleForTesting
+  Future<void> resetForTesting() async {
+    _users.clear();
+    _isInitialized = false;
   }
 
   /// Initialize with default demo accounts
@@ -95,8 +102,25 @@ class UserService extends ChangeNotifier {
     }
   }
 
+  SupabaseSyncService? _maybeSyncService() {
+    try {
+      return GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>()
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _queueCloudSync() {
+    final sync = _maybeSyncService();
+    if (sync != null && sync.isConfigured) {
+      sync.queuePushAllData();
+    }
+  }
+
   /// Add a new user
-  Future<bool> addUser(User user) async {
+  Future<bool> addUser(User user, {bool queueCloudSync = true}) async {
     // Check if email already exists
     if (_users.values.any((u) => u.email == user.email && u.id != user.id)) {
       return false;
@@ -123,11 +147,14 @@ class UserService extends ChangeNotifier {
     }
 
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
     return true;
   }
 
   /// Update an existing user
-  Future<bool> updateUser(User user) async {
+  Future<bool> updateUser(User user, {bool queueCloudSync = true}) async {
     if (!_users.containsKey(user.id)) {
       return false;
     }
@@ -138,11 +165,14 @@ class UserService extends ChangeNotifier {
     _users[user.id] = user;
     await _saveToPreferences();
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
     return true;
   }
 
   /// Remove a user (soft delete via isActive flag)
-  Future<bool> removeUser(String userId) async {
+  Future<bool> removeUser(String userId, {bool queueCloudSync = true}) async {
     if (!_users.containsKey(userId)) {
       return false;
     }
@@ -150,17 +180,26 @@ class UserService extends ChangeNotifier {
     _users[userId] = user.copyWith(isActive: false);
     await _saveToPreferences();
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
     return true;
   }
 
   /// Hard delete a user (completely remove)
-  Future<bool> deleteUserPermanently(String userId) async {
+  Future<bool> deleteUserPermanently(
+    String userId, {
+    bool queueCloudSync = true,
+  }) async {
     if (!_users.containsKey(userId)) {
       return false;
     }
     _users.remove(userId);
     await _saveToPreferences();
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
     return true;
   }
 
@@ -194,7 +233,7 @@ class UserService extends ChangeNotifier {
   }
 
   /// Reactivate a soft-deleted user
-  Future<bool> reactivateUser(String userId) async {
+  Future<bool> reactivateUser(String userId, {bool queueCloudSync = true}) async {
     if (!_users.containsKey(userId)) {
       return false;
     }
@@ -202,6 +241,9 @@ class UserService extends ChangeNotifier {
     _users[userId] = user.copyWith(isActive: true);
     await _saveToPreferences();
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
     return true;
   }
 
@@ -253,9 +295,12 @@ class UserService extends ChangeNotifier {
   }
 
   /// Clear all users from the system
-  Future<void> clearAllUsers() async {
+  Future<void> clearAllUsers({bool queueCloudSync = true}) async {
     _users.clear();
     await _saveToPreferences();
     notifyListeners();
+    if (queueCloudSync) {
+      _queueCloudSync();
+    }
   }
 }

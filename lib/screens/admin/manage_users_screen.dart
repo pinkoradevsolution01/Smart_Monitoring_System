@@ -279,7 +279,7 @@ class _ManageUsersState extends State<ManageUsers> {
 class _UserFormDialog extends StatefulWidget {
   final String title;
   final User? initialUser;
-  final Function(User) onSave;
+  final Future<void> Function(User) onSave;
 
   const _UserFormDialog({
     required this.title,
@@ -338,7 +338,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         _passwordController.text.length >= 6;
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_isValidForm()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -364,7 +364,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       isActive: true,
     );
 
-    widget.onSave(user);
+    await widget.onSave(user);
   }
 
   @override

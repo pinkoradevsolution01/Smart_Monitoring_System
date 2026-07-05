@@ -5,6 +5,7 @@ import 'package:get_it/get_it.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
@@ -2163,6 +2164,7 @@ class DatabaseService {
       // Copy database file to backup location
       final dbFile = File(dbPath);
       await dbFile.copy(backupPath);
+      await _writeUsersBackupFile(backupPath);
 
       debugPrint('✅ Backup created: $backupPath');
       return backupPath;
@@ -2222,6 +2224,7 @@ class DatabaseService {
       // Copy database file to selected location
       final dbFile = File(dbPath);
       await dbFile.copy(backupPath);
+      await _writeUsersBackupFile(backupPath);
 
       debugPrint('✅ Backup created at selected folder: $backupPath');
       return backupPath;
@@ -2256,6 +2259,7 @@ class DatabaseService {
       final destinationPath = join(backupDir, sourceFileName);
 
       if (normalize(sourceFile.path) == normalize(destinationPath)) {
+        await _copyUsersBackupFile(sourcePath, destinationPath);
         return sourceFile.path;
       }
 
@@ -2274,6 +2278,7 @@ class DatabaseService {
       }
 
       await sourceFile.copy(finalDestinationPath);
+      await _copyUsersBackupFile(sourcePath, finalDestinationPath);
       debugPrint('✅ Backup copied to app folder: $finalDestinationPath');
       return finalDestinationPath;
     } catch (e) {
@@ -2300,6 +2305,7 @@ class DatabaseService {
       }
 
       await backupFile.copy(dbPath);
+      await _restoreUsersFromBackup(backupPath);
 
       debugPrint('✅ Database restored from: $backupPath');
 
@@ -2386,6 +2392,7 @@ class DatabaseService {
 
       final dbFile = File(dbPath);
       await dbFile.copy(destinationPath);
+      await _copyUsersBackupFile(dbPath, destinationPath);
 
       debugPrint('✅ Database exported to: $destinationPath');
       return destinationPath;
@@ -2445,6 +2452,59 @@ class DatabaseService {
     } catch (e) {
       debugPrint('❌ Import failed: $e');
       rethrow;
+    }
+  }
+
+  String _usersBackupPath(String backupPath) {
+    final dir = dirname(backupPath);
+    final baseName = basenameWithoutExtension(backupPath);
+    return join(dir, '${baseName}_users.json');
+  }
+
+  Future<void> _writeUsersBackupFile(String backupPath) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final usersJson = prefs.getString('users_data') ?? '[]';
+      final usersFile = File(_usersBackupPath(backupPath));
+      await usersFile.writeAsString(usersJson);
+      debugPrint('✅ Users backup written: ${usersFile.path}');
+    } catch (e) {
+      debugPrint('⚠️ Failed to write users backup file: $e');
+    }
+  }
+
+  Future<void> _copyUsersBackupFile(
+    String sourceBackupPath,
+    String destinationBackupPath,
+  ) async {
+    try {
+      final sourceUsersFile = File(_usersBackupPath(sourceBackupPath));
+      if (!await sourceUsersFile.exists()) {
+        return;
+      }
+
+      final destinationUsersFile = File(_usersBackupPath(destinationBackupPath));
+      await sourceUsersFile.copy(destinationUsersFile.path);
+      debugPrint('✅ Users backup copied: ${destinationUsersFile.path}');
+    } catch (e) {
+      debugPrint('⚠️ Failed to copy users backup file: $e');
+    }
+  }
+
+  Future<void> _restoreUsersFromBackup(String backupPath) async {
+    try {
+      final usersFile = File(_usersBackupPath(backupPath));
+      if (!await usersFile.exists()) {
+        debugPrint('ℹ️ No users backup found for: $backupPath');
+        return;
+      }
+
+      final usersJson = await usersFile.readAsString();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('users_data', usersJson);
+      debugPrint('✅ Users restored from: ${usersFile.path}');
+    } catch (e) {
+      debugPrint('⚠️ Failed to restore users backup file: $e');
     }
   }
 
