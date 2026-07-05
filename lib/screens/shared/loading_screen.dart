@@ -157,7 +157,7 @@ class _LoadingScreenState extends State<LoadingScreen>
                                       ).colorScheme.onPrimary,
                                     )
                                   : Image.asset(
-                                      'sms_logo1.png',
+                                      'SMS_LOGO_NBG.png',
                                       width: 240,
                                       height: 240,
                                       fit: BoxFit.contain,

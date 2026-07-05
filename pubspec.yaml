@@ -128,7 +128,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - sms_logo1.png
+    - SMS_LOGO_NBG.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
@@ -160,19 +160,19 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "sms_logo1.png"
+  image_path: "SMS_LOGO_NBG.png"
   windows:
     generate: true
-    image_path: "sms_logo1.png"
+    image_path: "SMS_LOGO_NBG.png"
     icon_size: 48
   macos:
     generate: true
-    image_path: "sms_logo1.png"
+    image_path: "SMS_LOGO_NBG.png"
   linux:
     generate: true
-    image_path: "sms_logo1.png"
+    image_path: "SMS_LOGO_NBG.png"
   web:
     generate: true
-    image_path: "sms_logo1.png"
+    image_path: "SMS_LOGO_NBG.png"
     background_color: "#ffffff"
     theme_color: "#ffffff"

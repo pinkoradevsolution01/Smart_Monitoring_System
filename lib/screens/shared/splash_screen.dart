@@ -285,7 +285,7 @@ class _SplashScreenState extends State<SplashScreen>
                             height: 250,
                             child: Center(
                               child: Image.asset(
-                                'sms_logo1.png',
+                                'SMS_LOGO_NBG.png',
                                 width: 240,
                                 height: 240,
                                 fit: BoxFit.contain,

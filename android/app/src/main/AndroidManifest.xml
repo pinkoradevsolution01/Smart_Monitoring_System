@@ -15,7 +15,7 @@
         android:maxSdkVersion="32" />
     
     <application
-        android:label="smart_monitoring_system"
+        android:label="Smart M' System"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
