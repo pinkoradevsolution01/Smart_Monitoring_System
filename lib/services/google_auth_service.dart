@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpRequest, HttpServer, Platform, Process;
+import 'dart:io' show Platform, Process;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -26,7 +26,6 @@ class GoogleAuthService {
   factory GoogleAuthService() => _instance;
   GoogleAuthService._internal();
 
-  static const int _callbackPort = 54321;
   static const String _sessionTokenKey = 'backend_access_token';
   static const String _sessionUserKey = 'backend_user';
 
@@ -38,7 +37,7 @@ class GoogleAuthService {
   bool get _isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  String get _callbackUrl => 'http://localhost:$_callbackPort/auth/callback';
+  String get _backendCallbackUrl => '${BackendConfig.apiBaseUrl}/auth/google/callback';
 
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isSignedIn => _accessToken != null && _currentUser != null;
@@ -84,44 +83,14 @@ class GoogleAuthService {
   Future<Map<String, dynamic>?> _signInWithBackendBrowserFlow({
     required GoogleAuthProfile profile,
   }) async {
-    HttpServer? callbackServer;
-    final completer = Completer<String>();
+    final state = DateTime.now().millisecondsSinceEpoch.toString();
+    final callbackUrl = _backendCallbackUrl;
 
     try {
       await _api.getJson('health');
-      callbackServer = await HttpServer.bind('localhost', _callbackPort);
-      debugPrint('OK: Local callback server started on port $_callbackPort');
-
-      callbackServer.listen((HttpRequest request) async {
-        final uri = request.uri;
-        request.response.headers.set(
-          'Content-Type',
-          'text/html; charset=utf-8',
-        );
-        request.response.write('''
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta charset="UTF-8">
-            <title>Authentication Successful</title>
-          </head>
-          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-            <h1 style="color: #4CAF50;">Authentication Successful!</h1>
-            <p>You can close this window and return to the app.</p>
-          </body>
-          </html>
-        ''');
-        await request.response.close();
-
-        final code = uri.queryParameters['code'];
-        if (code != null && !completer.isCompleted) {
-          completer.complete(code);
-        }
-      });
-
       final authUrlResponse = await _api.getJson(
         'auth/google/url',
-        queryParameters: {'redirectUri': _callbackUrl},
+        queryParameters: {'redirectUri': callbackUrl, 'state': state},
       );
       final authUrl = authUrlResponse is Map<String, dynamic>
           ? authUrlResponse['authUrl']?.toString()
@@ -135,26 +104,30 @@ class GoogleAuthService {
       await _openUrlInBrowser(authUrl);
       debugPrint('WAITING: Browser opened. Please complete authentication...');
 
-      final code = await completer.future.timeout(
-        const Duration(minutes: 2),
-        onTimeout: () => throw TimeoutException('OAuth callback timeout'),
-      );
+      final deadline = DateTime.now().add(const Duration(minutes: 2));
+      while (DateTime.now().isBefore(deadline)) {
+        final statusResponse = await _api.getJson(
+          'auth/google/status',
+          queryParameters: {'state': state},
+        );
 
-      final exchangeResponse = await _api.postJson(
-        'auth/google/exchange',
-        body: {'code': code, 'redirectUri': _callbackUrl},
-      );
+        if (statusResponse is Map<String, dynamic> &&
+            statusResponse['success'] == true &&
+            statusResponse['status'] == 'complete') {
+          return _storeBackendSession(statusResponse);
+        }
 
-      return _storeBackendSession(exchangeResponse);
+        await Future.delayed(const Duration(seconds: 1));
+      }
+
+      throw TimeoutException('OAuth callback timeout');
     } on http.ClientException catch (e) {
       debugPrint(
         'ERROR: Failed to contact backend during Google code exchange: $e\n'
-        'This usually means the phone cannot reach the laptop backend at '
+        'This usually means the Windows app cannot reach the droplet backend at '
         '${BackendConfig.apiBaseUrl}.',
       );
       return null;
-    } finally {
-      await callbackServer?.close(force: true);
     }
   }
 

@@ -8,7 +8,12 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const GOOGLE_DEFAULT_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
+const GOOGLE_DEFAULT_REDIRECT_URI =
+  process.env.GOOGLE_BACKEND_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || '';
+const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';
+const OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
+const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 1000;
+const oauthStateStore = new Map();
 
 function normalizeRedirectUri(value) {
   return String(value || '')
@@ -139,6 +144,17 @@ function issueAppSession(profile) {
     },
   };
 }
+
+function pruneOauthStateStore() {
+  const now = Date.now();
+  for (const [state, entry] of oauthStateStore.entries()) {
+    if (now - entry.createdAt > OAUTH_STATE_TTL_MS) {
+      oauthStateStore.delete(state);
+    }
+  }
+}
+
+setInterval(pruneOauthStateStore, OAUTH_STATE_CLEANUP_INTERVAL_MS);
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -454,7 +470,7 @@ router.get('/google/url', async (req, res) => {
   const { redirectUri, state } = req.query;
   try {
     const resolvedRedirectUri = normalizeRedirectUri(
-      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI,
+      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
     );
     if (!resolvedRedirectUri) {
       return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
@@ -471,6 +487,64 @@ router.get('/google/url', async (req, res) => {
       success: false,
       message: `Failed to build Google auth URL: ${error.message}`,
     });
+  }
+});
+
+router.get('/google/status', async (req, res) => {
+  const state = req.query.state?.toString();
+  if (!state) {
+    return res.status(400).json({ success: false, message: 'OAuth state is required.' });
+  }
+
+  const entry = oauthStateStore.get(state);
+  if (!entry) {
+    return res.json({ success: false, status: 'pending' });
+  }
+
+  oauthStateStore.delete(state);
+  return res.json({ success: true, status: 'complete', token: entry.token, user: entry.user });
+});
+
+router.get('/google/callback', async (req, res) => {
+  const { code, state } = req.query;
+  if (!code) {
+    return res.status(400).send('Missing authorization code.');
+  }
+
+  try {
+    const resolvedRedirectUri = normalizeRedirectUri(
+      GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
+    );
+    if (!resolvedRedirectUri) {
+      return res.status(400).send('Redirect URI is not configured.');
+    }
+
+    const tokenResponse = await exchangeGoogleCode(code.toString(), resolvedRedirectUri);
+    const idToken = tokenResponse.id_token;
+    if (!idToken) {
+      return res.status(401).send('Google did not return an ID token.');
+    }
+
+    const profile = await verifyGoogleIdToken(idToken);
+    const authResponse = issueAppSession(profile);
+
+    if (state && typeof state === 'string') {
+      oauthStateStore.set(state, { ...authResponse, createdAt: Date.now() });
+    }
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="UTF-8"><title>Authentication Successful</title></head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 40px;">
+        <h1>Authentication Successful</h1>
+        <p>You may now return to the app.</p>
+      </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Auth /google/callback error:', error);
+    return res.status(500).send('Google login failed. Please try again.');
   }
 });
 
