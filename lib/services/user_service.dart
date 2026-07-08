@@ -3,6 +3,8 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'subscriber_service.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 import '../services/package_service.dart';
 import '../models/pricing_package.dart';
 import '../models/user.dart';
@@ -12,6 +14,7 @@ import 'supabase_sync_service.dart';
 /// Persists to SharedPreferences for persistent storage across app sessions.
 class UserService extends ChangeNotifier {
   static final UserService _instance = UserService._internal();
+  final ApiClient _api = ApiClient();
 
   factory UserService() {
     return _instance;
@@ -119,6 +122,14 @@ class UserService extends ChangeNotifier {
     }
   }
 
+  String? _currentBusinessId() {
+    try {
+      return _maybeSyncService()?.businessId;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Add a new user
   Future<bool> addUser(User user, {bool queueCloudSync = true}) async {
     // Check if email already exists
@@ -179,6 +190,15 @@ class UserService extends ChangeNotifier {
     final user = _users[userId]!;
     _users[userId] = user.copyWith(isActive: false);
     await _saveToPreferences();
+    if (BackendConfig.useRestBackend) {
+      final businessId = _currentBusinessId();
+      if (businessId != null && businessId.isNotEmpty) {
+        await _api.patchJson(
+          'auth/users/${Uri.encodeComponent(userId)}',
+          body: {'businessId': businessId, 'isActive': false},
+        );
+      }
+    }
     notifyListeners();
     if (queueCloudSync) {
       _queueCloudSync();
@@ -193,6 +213,15 @@ class UserService extends ChangeNotifier {
   }) async {
     if (!_users.containsKey(userId)) {
       return false;
+    }
+    if (BackendConfig.useRestBackend) {
+      final businessId = _currentBusinessId();
+      if (businessId != null && businessId.isNotEmpty) {
+        await _api.deleteJson(
+          'auth/users/${Uri.encodeComponent(userId)}',
+          queryParameters: {'businessId': businessId},
+        );
+      }
     }
     _users.remove(userId);
     await _saveToPreferences();

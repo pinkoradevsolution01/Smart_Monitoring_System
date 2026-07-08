@@ -20,6 +20,7 @@ class LicenseService extends ChangeNotifier {
   static const String _usedCodesKey =
       'used_activation_codes'; // One-time code tracking (legacy - now uses Supabase)
   static const String _deviceIdKey = 'device_id'; // Store device ID locally
+  static const String _activatedPackageNameKey = 'activated_package_name';
 
   final ApiClient _api = ApiClient();
 
@@ -405,6 +406,7 @@ class LicenseService extends ChangeNotifier {
       await prefs.setBool(_activationStatusKey, true);
       await prefs.setString(_subscriptionModeKey, 'activated');
       await prefs.setString(_activationDateKey, now.toIso8601String());
+      await prefs.setString(_activatedPackageNameKey, packageName);
       await prefs.setString(
         _subscriptionExpiresKey,
         subscriptionExpires.toIso8601String(),

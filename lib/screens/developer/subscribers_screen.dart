@@ -1,9 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:get_it/get_it.dart';
 import '../../services/subscriber_service.dart';
-import '../../services/user_service.dart';
-import '../../services/pos_service.dart';
-import '../../services/package_service.dart';
 import '../../services/cloud_subscription_service.dart';
 import '../../models/subscriber.dart';
 
@@ -13,14 +10,16 @@ class SubscribersScreen extends StatefulWidget {
   @override
   State<SubscribersScreen> createState() => _SubscribersScreenState();
 }
-
-class _SubscribersScreenState extends State<SubscribersScreen> {
+class _SubscribersScreenState extends State<SubscribersScreen>
+    with WidgetsBindingObserver {
   final SubscriberService _svc = SubscriberService();
   bool _isSyncing = false;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _svc.addListener(_onChange);
     // Auto-sync when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -28,6 +27,11 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
       debugPrint('📊 SUBSCRIBERS SCREEN OPENED - AUTO-SYNCING');
       debugPrint('=============================================================');
       _syncSubscribers();
+    });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (mounted && !_isSyncing) {
+        _syncSubscribers();
+      }
     });
   }
 
@@ -37,8 +41,17 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _svc.removeListener(_onChange);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted && !_isSyncing) {
+      _syncSubscribers();
+    }
   }
 
   Future<void> _syncSubscribers() async {
@@ -153,7 +166,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
                             const Text('No subscribers yet'),
                             const SizedBox(height: 8),
                             Text(
-                              'Subscribers are synced from local owners and cloud subscriptions',
+                              'Subscribers are synced from local cache and cloud subscriptions',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey[600],
@@ -219,10 +232,10 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '• Local owner accounts (from this device)\n'
+                '• Local cached subscribers (from this device)\n'
                 '• Cloud subscription records (from Supabase)\n'
                 '• Automatically synced when you open this screen\n\n'
-                '💡 Note: The subscriber name comes from the business owner who activated the subscription, not the device platform.',
+                '💡 Note: The subscriber name comes from the activation request or the business name tied to the code.',
                 style: TextStyle(fontSize: 13, color: Colors.grey[700]),
               ),
               const SizedBox(height: 16),
@@ -233,7 +246,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
               const SizedBox(height: 8),
               Text(
                 'Tap the sync icon (🔄) to fetch the latest subscribers from both local database and cloud. '
-                'This ensures you have a complete list of all owners across all devices.',
+                'This ensures you have a complete list of subscribers across all devices.',
                 style: TextStyle(fontSize: 13, color: Colors.grey[700]),
               ),
               const SizedBox(height: 16),
@@ -524,20 +537,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
     );
 
     try {
-      // Remove subscriber
-      await _svc.removeSubscriber(s.id);
-
-      // Clear all user data
-      final userService = GetIt.I<UserService>();
-      await userService.clearAllUsers();
-
-      // Clear all POS data (products, sales, inventory)
-      final posService = GetIt.I<POSService>();
-      await posService.clearAllData();
-
-      // Reset package selection
-      final packageService = GetIt.I<PackageService>();
-      await packageService.resetSetup();
+      await _svc.purgeSubscriberData(s);
 
       if (!mounted) return;
 
@@ -552,8 +552,7 @@ class _SubscribersScreenState extends State<SubscribersScreen> {
         ),
       );
 
-      // Navigate back to root and force restart to owner registration
-      Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+      await _syncSubscribers();
     } catch (e) {
       if (!mounted) return;
 

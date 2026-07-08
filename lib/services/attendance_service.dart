@@ -1,8 +1,12 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database_service.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
+import 'supabase_sync_service.dart';
 
 class AttendanceEntry {
   final DateTime time;
@@ -25,11 +29,83 @@ class AttendanceService extends ChangeNotifier {
   AttendanceService._();
 
   static final AttendanceService instance = AttendanceService._();
+  final ApiClient _api = ApiClient();
 
   static const String _kKeyPrefix = 'attendance_entries_';
   static const String _kArchivePrefix = 'attendance_archive_';
   static const String _kScheduleKey = 'attendance_schedule';
   static const String _kLeavesPrefix = 'attendance_leaves_';
+
+  String? _currentBusinessId() {
+    try {
+      return GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>().businessId
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteRemoteRows(
+    String resource, {
+    required String userId,
+    DateTime? date,
+    String? dateKey,
+  }) async {
+    if (!BackendConfig.useRestBackend) return;
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty) return;
+
+    final response = await _api.getJson(
+      resource,
+      queryParameters: {
+        'businessId': businessId,
+        'userId': userId,
+      },
+    );
+    final rows = response is Map<String, dynamic> && response['data'] is List
+        ? List<Map<String, dynamic>>.from(response['data'] as List)
+        : const <Map<String, dynamic>>[];
+
+    for (final row in rows) {
+      final id = row['id'];
+      if (id == null) continue;
+
+      if (date != null) {
+        if (resource == 'attendance-archive') {
+          final remoteDateKey = row['date_key']?.toString();
+          final expectedDateKey =
+              '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+          if (remoteDateKey != expectedDateKey) {
+            continue;
+          }
+        }
+
+        final timeValue = row['time']?.toString();
+        final parsed = timeValue != null ? DateTime.tryParse(timeValue) : null;
+        if (resource != 'attendance-archive') {
+          if (parsed == null ||
+              parsed.year != date.year ||
+              parsed.month != date.month ||
+              parsed.day != date.day) {
+            continue;
+          }
+        }
+      }
+
+      if (dateKey != null) {
+        final remoteDateKey = row['date_key']?.toString();
+        if (remoteDateKey != dateKey) {
+          continue;
+        }
+      }
+
+      await _api.deleteJson(
+        '$resource/$id',
+        queryParameters: {'businessId': businessId},
+      );
+    }
+  }
 
   Future<List<AttendanceEntry>> loadEntries(String userId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -272,6 +348,11 @@ class AttendanceService extends ChangeNotifier {
       } catch (e) {
         // ignore
       }
+      await _deleteRemoteRows(
+        'attendance-leaves',
+        userId: userId,
+        dateKey: dateKey,
+      );
       notifyListeners();
     } catch (e) {
       return;
@@ -413,6 +494,18 @@ class AttendanceService extends ChangeNotifier {
     } catch (e) {
       // ignore
     }
+
+    await _deleteRemoteRows(
+      'attendance-entries',
+      userId: userId,
+      date: date,
+    );
+
+    await _deleteRemoteRows(
+      'attendance-archive',
+      userId: userId,
+      date: date,
+    );
 
     notifyListeners();
   }

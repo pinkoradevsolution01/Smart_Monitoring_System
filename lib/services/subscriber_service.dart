@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:get_it/get_it.dart';
 import '../models/subscriber.dart';
 import '../models/subscription_record.dart';
-import '../models/user.dart';
+import 'backend_config.dart';
 import 'backend_api_service.dart';
 import 'cloud_subscription_service.dart';
 import 'admin_service.dart';
@@ -63,19 +63,6 @@ class SubscriberService extends ChangeNotifier {
         return; // Services not ready yet, skip cleanup
       }
       
-      // Get owner emails to filter
-      final Set<String> ownerEmails = {};
-      try {
-        final userService = GetIt.I.get<UserService>();
-        final owners = userService.getUsersByRole(UserRole.owner);
-        for (var owner in owners) {
-          ownerEmails.add(owner.email.toLowerCase());
-        }
-      } catch (e) {
-        debugPrint('[SubscriberService] Could not get owner emails: $e');
-        return; // Services not ready yet, skip cleanup
-      }
-      
       int removed = 0;
       final idsToRemove = <String>[];
       
@@ -85,12 +72,6 @@ class SubscriberService extends ChangeNotifier {
         // Mark admin accounts for removal
         if (adminEmail != null && emailLower == adminEmail) {
           debugPrint('[SubscriberService] ⏭️  Removing cached admin subscriber: ${entry.value.email}');
-          idsToRemove.add(entry.key);
-          removed++;
-        }
-        // Remove non-owner accounts
-        else if (ownerEmails.isNotEmpty && !ownerEmails.contains(emailLower)) {
-          debugPrint('[SubscriberService] ⏭️  Removing cached non-owner subscriber: ${entry.value.email}');
           idsToRemove.add(entry.key);
           removed++;
         }
@@ -104,7 +85,7 @@ class SubscriberService extends ChangeNotifier {
       if (removed > 0) {
         await _save();
         notifyListeners();
-        debugPrint('[SubscriberService] Removed $removed admin/non-owner account(s) from cache');
+        debugPrint('[SubscriberService] Removed $removed admin account(s) from cache');
       }
     } catch (e) {
       debugPrint('[SubscriberService] Error removing admin accounts from cache: $e');
@@ -160,6 +141,120 @@ class SubscriberService extends ChangeNotifier {
     notifyListeners();
   }
 
+  SubscriptionRecord? _findMatchingSubscription(Subscriber subscriber) {
+    try {
+      final cloudService = CloudSubscriptionService();
+      final targetEmail = subscriber.email.toLowerCase();
+      final targetName = subscriber.name.toLowerCase();
+      return cloudService.subscriptions.firstWhere((subscription) {
+        return subscription.deviceId == subscriber.id ||
+            (subscription.deviceName?.toLowerCase() == targetEmail) ||
+            (subscription.deviceName?.toLowerCase() == targetName);
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Purge a subscriber from local storage and the MySQL backend.
+  Future<void> purgeSubscriberData(Subscriber subscriber) async {
+    final userService = GetIt.I<UserService>();
+    final localUser = userService.getUserByEmail(subscriber.email);
+    final cloudService = CloudSubscriptionService();
+
+    // Always refresh cloud subscriptions before resolving identifiers.
+    try {
+      await cloudService.refresh();
+    } catch (_) {
+      // Continue with local hints if cloud refresh fails.
+    }
+
+    final matchingSubscription = _findMatchingSubscription(subscriber);
+    final normalizedEmail = subscriber.email.trim().toLowerCase();
+    final normalizedName = subscriber.name.trim().toLowerCase();
+
+    if (!BackendConfig.useRestBackend) {
+      throw Exception('Backend deactivation is unavailable in offline mode.');
+    }
+
+    final queryParameters = <String, String>{};
+    if (normalizedEmail.contains('@')) {
+      queryParameters['ownerEmail'] = subscriber.email.trim();
+    }
+
+    if ((localUser?.businessId ?? '').isNotEmpty) {
+      queryParameters['businessId'] = localUser!.businessId!;
+    }
+
+    if ((localUser?.id ?? '').isNotEmpty) {
+      queryParameters['ownerId'] = localUser!.id;
+    }
+
+    // Use cloud subscription/device hints to target exact subscriber records.
+    if ((matchingSubscription?.deviceId ?? '').isNotEmpty) {
+      queryParameters['deviceId'] = matchingSubscription!.deviceId;
+    } else if (subscriber.id.trim().isNotEmpty) {
+      queryParameters['deviceId'] = subscriber.id.trim();
+    }
+
+    if ((matchingSubscription?.activationCode ?? '').isNotEmpty) {
+      queryParameters['activationCode'] = matchingSubscription!.activationCode;
+    }
+
+    // Add a fallback match by scanning subscriptions when this subscriber was
+    // resolved via business name/email mapping.
+    final fallbackSubscription = cloudService.subscriptions.cast<SubscriptionRecord?>().firstWhere(
+      (subscription) {
+        if (subscription == null) return false;
+        final deviceName = subscription.deviceName?.trim().toLowerCase();
+        return deviceName == normalizedEmail || deviceName == normalizedName;
+      },
+      orElse: () => null,
+    );
+
+    if (fallbackSubscription != null) {
+      queryParameters['deviceId'] = fallbackSubscription.deviceId;
+      queryParameters['activationCode'] = fallbackSubscription.activationCode;
+    }
+
+    if (!queryParameters.containsKey('ownerEmail') &&
+        !queryParameters.containsKey('ownerId') &&
+        !queryParameters.containsKey('businessId') &&
+        !queryParameters.containsKey('deviceId') &&
+        !queryParameters.containsKey('activationCode')) {
+      throw Exception(
+        'Unable to resolve subscriber identity for deactivation. Try syncing first.',
+      );
+    }
+
+    final result = await _api.deleteJson(
+      'business/purge',
+      queryParameters: queryParameters,
+    );
+
+    if (result is Map<String, dynamic> && result['success'] == false) {
+      throw Exception(result['message']?.toString() ?? 'Failed to purge subscriber.');
+    }
+
+    // Remove locally cached entry, then refresh from cloud to ensure list is accurate.
+    _subs.remove(subscriber.id);
+    await _save();
+    notifyListeners();
+
+    await syncFromAllSources();
+
+    final stillExists = _subs.values.any(
+      (s) => s.id == subscriber.id || s.email.trim().toLowerCase() == normalizedEmail,
+    );
+    if (stillExists) {
+      throw Exception(
+        'Deactivation request sent but subscriber still exists in cloud records. Please sync again.',
+      );
+    }
+
+    debugPrint('[SubscriberService] Purged subscriber data for ${subscriber.email}');
+  }
+
   /// Clear all subscribers
   Future<void> clearAllSubscribers() async {
     _subs.clear();
@@ -168,7 +263,7 @@ class SubscriberService extends ChangeNotifier {
   }
 
   /// Sync subscribers from all sources (local owners + cloud subscriptions)
-  /// This consolidates subscribers from both local database and Supabase
+  /// This consolidates subscribers from both local database and Supabase.
   Future<int> syncFromAllSources() async {
     int newCount = 0;
     
@@ -180,20 +275,16 @@ class SubscriberService extends ChangeNotifier {
       try {
         final cloudService = CloudSubscriptionService();
         
-        // Fetch subscriptions if empty
-        debugPrint('[SubscriberService] Cloud subscriptions before fetch: ${cloudService.subscriptions.length}');
+        // Always refresh the cloud list so new activations show up immediately.
+        debugPrint('[SubscriberService] Refreshing subscriptions from backend...');
+        await cloudService.refresh();
+        debugPrint('[SubscriberService] Cloud subscriptions after refresh: ${cloudService.subscriptions.length}');
         
         if (cloudService.subscriptions.isEmpty) {
-          debugPrint('[SubscriberService] Fetching subscriptions from Supabase...');
-          await cloudService.fetchSubscriptions();
-          debugPrint('[SubscriberService] Cloud subscriptions after fetch: ${cloudService.subscriptions.length}');
+          debugPrint('[SubscriberService] ⚠️ No subscriptions found in cloud database, using local cached subscribers only');
         }
         
-        if (cloudService.subscriptions.isEmpty) {
-          debugPrint('[SubscriberService] ⚠️ No subscriptions found in cloud database, using local owners only');
-        }
-        
-        // DON'T clear local owners - they should always be visible
+        // DON'T clear local cached subscribers - they should always be visible
         // Just add/update cloud subscriptions separately
         
         // Platform names that should be filtered out (not actual owner names)
@@ -231,20 +322,9 @@ class SubscriberService extends ChangeNotifier {
           debugPrint('[SubscriberService] ⚠️ Could not get admin email: $e');
         }
         
-        // Get all owner emails to only sync owners (not admins or other roles)
-        final Set<String> ownerEmails = {};
-        try {
-          final userService = GetIt.I.get<UserService>();
-          final owners = userService.getUsersByRole(UserRole.owner);
-          for (var owner in owners) {
-            ownerEmails.add(owner.email.toLowerCase());
-          }
-          debugPrint('[SubscriberService] Found ${ownerEmails.length} owner email(s): $ownerEmails');
-        } catch (e) {
-          debugPrint('[SubscriberService] ⚠️ Could not get owner emails: $e');
-        }
-        
-        // Add each unique device as a subscriber (cloud subscriptions ONLY - owners only)
+        // Add each unique device as a subscriber.
+        // We keep all real cloud activations here so the dashboard reflects
+        // actual customer subscriptions instead of only local owner accounts.
         for (var entry in uniqueDevices.entries) {
           final deviceId = entry.key;
           final subscription = entry.value;
@@ -274,16 +354,9 @@ class SubscriberService extends ChangeNotifier {
             debugPrint('[SubscriberService] ❌ Error looking up email for $subscriberName: $e');
           }
           
-          // Filter out admin accounts - only keep owner accounts
           final emailLower = customerEmail.toLowerCase();
           if (adminEmail != null && emailLower == adminEmail.toLowerCase()) {
             debugPrint('[SubscriberService] ⏭️  Skipping admin account: $customerEmail');
-            continue;
-          }
-          
-          // Only sync if they are an owner (or if we can't determine ownership, include them)
-          if (ownerEmails.isNotEmpty && !ownerEmails.contains(emailLower)) {
-            debugPrint('[SubscriberService] ⏭️  Skipping non-owner account: $customerEmail');
             continue;
           }
           

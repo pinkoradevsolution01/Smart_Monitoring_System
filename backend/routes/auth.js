@@ -300,7 +300,7 @@ router.post('/google/register-owner', async (req, res) => {
 
 router.patch('/users/:id', async (req, res) => {
   const { id } = req.params;
-  const { fullName, email, contactNumber, role } = req.body || {};
+  const { fullName, email, contactNumber, role, isActive } = req.body || {};
   const businessId = resolveBusinessId(req, req.body || {});
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
 
@@ -328,13 +328,14 @@ router.patch('/users/:id', async (req, res) => {
 
     await query(
       `UPDATE users
-       SET full_name = ?, email = ?, contact_number = ?, role = ?
+       SET full_name = ?, email = ?, contact_number = ?, role = ?, is_active = COALESCE(?, is_active)
        WHERE id = ?`,
       [
         fullName || existing.full_name || existing.email.split('@')[0],
         normalizedEmail || existing.email,
         contactNumber !== undefined ? contactNumber : existing.contact_number || null,
         role || existing.role,
+        typeof isActive === 'boolean' ? (isActive ? 1 : 0) : null,
         id,
       ],
     );
@@ -423,8 +424,25 @@ router.delete('/users/:id', async (req, res) => {
     } else {
       await query('DELETE FROM users WHERE id = ?', [id]);
     }
-    return res.json({ success: true });
+    return res.json({ success: true, message: 'User deleted successfully.' });
   } catch (error) {
+    if (error && (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451)) {
+      try {
+        if (businessId) {
+          await query('UPDATE users SET is_active = 0 WHERE id = ? AND business_id = ?', [id, businessId]);
+        } else {
+          await query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
+        }
+        return res.json({
+          success: true,
+          message: 'User deactivated because related sales records already exist.',
+        });
+      } catch (deactivationError) {
+        console.error('Auth /users/:id deactivate error:', deactivationError);
+        return res.status(500).json({ success: false, message: 'Failed to deactivate user.' });
+      }
+    }
+
     console.error('Auth /users/:id delete error:', error);
     return res.status(500).json({ success: false, message: 'Failed to delete user.' });
   }

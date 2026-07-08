@@ -12,6 +12,8 @@ import '../models/purchase_order.dart';
 import '../models/inventory_movement.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 import 'supabase_sync_service.dart';
 
 /// A lightweight web-backed DatabaseService that persists to window.localStorage.
@@ -21,6 +23,7 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
   bool _suppressCloudSync = false;
+  final ApiClient _api = ApiClient();
 
   static const _storageKey = 'pos_system_db_v1';
 
@@ -67,6 +70,26 @@ class DatabaseService {
     if (sync != null && sync.isConfigured) {
       sync.queuePushAllData();
     }
+  }
+
+  String? _currentBusinessId() {
+    try {
+      return GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>().businessId
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteRemoteRecord(String resource, dynamic id) async {
+    if (!BackendConfig.useRestBackend) return;
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty) return;
+    await _api.deleteJson(
+      '$resource/$id',
+      queryParameters: {'businessId': businessId},
+    );
   }
 
   Future<T> runWithoutCloudSync<T>(Future<T> Function() action) async {
@@ -230,6 +253,7 @@ class DatabaseService {
     products.removeWhere((m) => m['id'] == id);
     _store['products'] = products;
     await _save();
+    await _deleteRemoteRecord('products', id);
     _queueCloudSync();
     return before - products.length;
   }
@@ -375,6 +399,7 @@ class DatabaseService {
         .where((item) => (item['id'] as int?) != id)
         .toList();
     await _save();
+      await _deleteRemoteRecord('customers', id);
     _queueCloudSync();
   }
 
@@ -992,6 +1017,7 @@ class DatabaseService {
     cameras.removeWhere((c) => c['id'] == id);
     _store['cameras'] = cameras;
     await _save();
+    await _deleteRemoteRecord('cameras', id);
     _queueCloudSync();
     return 1;
   }

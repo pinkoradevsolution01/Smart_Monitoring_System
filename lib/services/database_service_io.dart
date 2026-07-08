@@ -16,6 +16,8 @@ import '../models/restock_record.dart';
 import '../models/purchase_order.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 import 'supabase_sync_service.dart';
 
 /// DatabaseService provides a singleton pattern for database operations.
@@ -25,6 +27,7 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   static Database? _database;
   bool _suppressCloudSync = false;
+  final ApiClient _api = ApiClient();
 
   factory DatabaseService() {
     return _instance;
@@ -49,6 +52,48 @@ class DatabaseService {
     final sync = _maybeSyncService();
     if (sync != null && sync.isConfigured) {
       sync.queuePushAllData();
+    }
+  }
+
+  String? _currentBusinessId() {
+    try {
+      return _maybeSyncService()?.businessId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _deleteRemoteRecord(String resource, dynamic id) async {
+    if (!BackendConfig.useRestBackend) return;
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty) return;
+    await _api.deleteJson(
+      '$resource/$id',
+      queryParameters: {'businessId': businessId},
+    );
+  }
+
+  Future<void> _deleteAllRemoteRecords(String resource) async {
+    if (!BackendConfig.useRestBackend) return;
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty) return;
+
+    final response = await _api.getJson(
+      resource,
+      queryParameters: {'businessId': businessId},
+    );
+    final rows = response is Map<String, dynamic> && response['data'] is List
+        ? List<Map<String, dynamic>>.from(response['data'] as List)
+        : const <Map<String, dynamic>>[];
+
+    for (final row in rows) {
+      final id = row['id'];
+      if (id != null) {
+        await _api.deleteJson(
+          '$resource/$id',
+          queryParameters: {'businessId': businessId},
+        );
+      }
     }
   }
 
@@ -1041,6 +1086,7 @@ class DatabaseService {
   Future<int> deleteProduct(int id) async {
     final db = await database;
     final rows = await db.delete('products', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('products', id);
     _queueCloudSync();
     return rows;
   }
@@ -1194,6 +1240,7 @@ class DatabaseService {
       );
       await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
     });
+    await _deleteRemoteRecord('customers', id);
     _queueCloudSync();
   }
 
@@ -1785,7 +1832,9 @@ class DatabaseService {
   /// Delete a damage report
   Future<int> deleteDamageReport(int id) async {
     final db = await database;
-    return await db.delete('damage_reports', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('damage_reports', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('damage-reports', id);
+    return rows;
   }
 
   /// Update damage report with return information
@@ -1874,6 +1923,7 @@ class DatabaseService {
   Future<int> deleteCCTVTimestamp(int id) async {
     final db = await database;
     final rows = await db.delete('cctv_timestamps', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('cctv-timestamps', id);
     _queueCloudSync();
     return rows;
   }
@@ -1895,6 +1945,7 @@ class DatabaseService {
   Future<int> deleteAllCCTVTimestamps() async {
     final db = await database;
     final rows = await db.delete('cctv_timestamps');
+    await _deleteAllRemoteRecords('cctv-timestamps');
     _queueCloudSync();
     return rows;
   }
@@ -1950,6 +2001,7 @@ class DatabaseService {
   Future<int> deleteCamera(int id) async {
     final db = await database;
     final rows = await db.delete('cameras', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('cameras', id);
     _queueCloudSync();
     return rows;
   }
@@ -2677,6 +2729,7 @@ class DatabaseService {
   Future<int> deleteSupplier(int id) async {
     final db = await database;
     final rows = await db.delete('suppliers', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('suppliers', id);
     _queueCloudSync();
     return rows;
   }
@@ -2754,7 +2807,9 @@ class DatabaseService {
   /// Delete a restock record
   Future<int> deleteRestockRecord(int id) async {
     final db = await database;
-    return db.delete('restock_records', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('restock_records', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('restock-records', id);
+    return rows;
   }
 
   // ======================== PURCHASE ORDER OPERATIONS ========================
@@ -2996,7 +3051,9 @@ class DatabaseService {
   Future<int> deletePurchaseOrder(int id) async {
     final db = await database;
     // Items will be deleted automatically due to ON DELETE CASCADE
-    return db.delete('purchase_orders', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete('purchase_orders', where: 'id = ?', whereArgs: [id]);
+    await _deleteRemoteRecord('purchase-orders', id);
+    return rows;
   }
 
   /// Get purchase order statistics

@@ -147,6 +147,16 @@ const RESOURCE_CONFIG = {
     datetimeColumns: ['created_at', 'updated_at'],
     jsonColumns: ['payload'],
   },
+  'attendance-archive': {
+    table: 'attendance_archive',
+    pk: 'id',
+    autoIncrement: true,
+    businessScoped: true,
+    defaultOrder: 'date_key DESC',
+    columns: ['id', 'business_id', 'user_id', 'date_key', 'entries', 'created_at', 'updated_at'],
+    requiredOnCreate: ['user_id', 'date_key', 'entries'],
+    datetimeColumns: ['created_at', 'updated_at'],
+  },
   'attendance-schedule': {
     table: 'attendance_schedule',
     pk: 'key',

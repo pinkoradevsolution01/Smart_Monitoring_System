@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pricing_package.dart';
+import 'backend_api_service.dart';
+import 'backend_config.dart';
 
 class PackageService extends ChangeNotifier {
   static const String _packageKey = 'selected_package';
   static const String _setupCompleteKey = 'setup_complete';
+  static const String _activationStatusKey = 'activation_status';
+  static const String _activationCodeKey = 'activation_code';
+  static const String _activatedPackageNameKey = 'activated_package_name';
 
   PricingPackage? _selectedPackage;
   bool _setupComplete = false;
+  final ApiClient _api = ApiClient();
 
   PricingPackage? get selectedPackage => _selectedPackage;
   bool get setupComplete => _setupComplete;
@@ -77,7 +83,81 @@ class PackageService extends ChangeNotifier {
       }
     }
 
+    // Recovery path: if package prefs were cleared but license is still activated,
+    // rebuild package selection from stored activation details/backend.
+    if (!_setupComplete || _selectedPackage == null) {
+      await _recoverPackageFromActivation(prefs);
+    }
+
     notifyListeners();
+  }
+
+  Future<void> _recoverPackageFromActivation(SharedPreferences prefs) async {
+    final savedPackageName = prefs.getString(_activatedPackageNameKey);
+    final savedPackage = _findPackageByName(savedPackageName);
+    if (savedPackage != null) {
+      await _persistRecoveredPackage(savedPackage, prefs);
+      debugPrint('✅ PackageService: recovered package from local activation info (${savedPackage.name})');
+      return;
+    }
+
+    final isActivated = prefs.getBool(_activationStatusKey) ?? false;
+    if (!isActivated) return;
+
+    final activationCode = prefs.getString(_activationCodeKey);
+    if (activationCode != null &&
+        activationCode.isNotEmpty &&
+        BackendConfig.useRestBackend) {
+      try {
+        final response = await _api.getJson('license/code/$activationCode');
+        String? packageName;
+
+        if (response is Map<String, dynamic>) {
+          packageName = response['package_name'] as String?;
+          if (packageName == null && response['code'] is Map) {
+            packageName =
+                (response['code'] as Map<String, dynamic>)['package_name']
+                    as String?;
+          }
+        }
+
+        final recovered = _findPackageByName(packageName);
+        if (recovered != null) {
+          await _persistRecoveredPackage(recovered, prefs);
+          debugPrint('✅ PackageService: recovered package from backend (${recovered.name})');
+          return;
+        }
+      } catch (e) {
+        debugPrint('⚠️ PackageService: backend package recovery failed: $e');
+      }
+    }
+
+    // Final fallback for legacy activated installs where package metadata is missing.
+    final fallback = _findPackageByName('Standard') ?? PricingPackage.packages.first;
+    await _persistRecoveredPackage(fallback, prefs);
+    debugPrint('⚠️ PackageService: using fallback package recovery (${fallback.name})');
+  }
+
+  Future<void> _persistRecoveredPackage(
+    PricingPackage package,
+    SharedPreferences prefs,
+  ) async {
+    _selectedPackage = package;
+    _setupComplete = true;
+    await prefs.setBool(_setupCompleteKey, true);
+    await prefs.setString(_activatedPackageNameKey, package.name);
+    await prefs.setString(_packageKey, 'type=${package.type}|name=${package.name}');
+  }
+
+  PricingPackage? _findPackageByName(String? packageName) {
+    if (packageName == null || packageName.trim().isEmpty) return null;
+    final normalized = packageName.trim().toLowerCase();
+    for (final pkg in PricingPackage.packages) {
+      if (pkg.name.toLowerCase() == normalized) {
+        return pkg;
+      }
+    }
+    return null;
   }
 
   Future<void> selectPackage(PricingPackage package) async {

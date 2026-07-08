@@ -239,7 +239,7 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
                   icon: Icons.subscriptions,
                   color: Colors.indigo,
                   title: 'Subscribers',
-                  description: 'View registered subscribers (owners)',
+                  description: 'View registered subscribers',
                   onTap: () {
                     Navigator.pushNamed(context, '/subscribers');
                   },
