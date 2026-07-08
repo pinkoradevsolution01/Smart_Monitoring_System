@@ -419,6 +419,24 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
+    const salesRef = await query(
+      'SELECT COUNT(*) AS count FROM sales WHERE cashier_id = ? AND (? IS NULL OR business_id = ?)',
+      [id, businessId ?? null, businessId ?? null],
+    );
+    const hasSalesReferences = Number(salesRef?.[0]?.count || 0) > 0;
+
+    if (hasSalesReferences) {
+      if (businessId) {
+        await query('UPDATE users SET is_active = 0 WHERE id = ? AND business_id = ?', [id, businessId]);
+      } else {
+        await query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
+      }
+      return res.json({
+        success: true,
+        message: 'User deactivated because related sales records already exist.',
+      });
+    }
+
     if (businessId) {
       await query('DELETE FROM users WHERE id = ? AND business_id = ?', [id, businessId]);
     } else {
