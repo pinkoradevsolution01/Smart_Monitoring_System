@@ -153,17 +153,24 @@ router.delete('/purge', async (req, res) => {
       );
 
       await connection.execute(
-        `DELETE FROM subscription_records WHERE activation_code IN ${clause}`,
+        `UPDATE subscription_records
+         SET status = 'cancelled',
+             notes = CASE
+               WHEN notes IS NULL OR notes = '' THEN 'Deactivated via subscriber deactivation'
+               ELSE CONCAT(notes, '\nDeactivated via subscriber deactivation')
+             END
+         WHERE activation_code IN ${clause}`,
         params,
       );
 
       await connection.execute(
-        `DELETE FROM subscriptions WHERE activation_code IN ${clause}`,
-        params,
-      );
-
-      await connection.execute(
-        `DELETE FROM activation_codes WHERE code IN ${clause}`,
+        `UPDATE subscriptions
+         SET status = 'cancelled',
+             notes = CASE
+               WHEN notes IS NULL OR notes = '' THEN 'Deactivated via subscriber deactivation'
+               ELSE CONCAT(notes, '\nDeactivated via subscriber deactivation')
+             END
+         WHERE activation_code IN ${clause}`,
         params,
       );
     }

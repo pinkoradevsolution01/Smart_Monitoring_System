@@ -846,27 +846,30 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('⚠️ Factory Reset'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'This will DELETE ALL DATA:\n'
-              '• All products\n'
-              '• All sales records\n'
-              '• All user accounts\n'
-              '• All settings\n'
-              '• Package selection\n\n'
-              'Type "DELETE" to confirm:',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'Type DELETE',
-                border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will DELETE ALL DATA:\n'
+                '• All products\n'
+                '• All sales records\n'
+                '• All user accounts\n'
+                '• All settings\n'
+                '• Package selection\n\n'
+                'Type "DELETE" to confirm:',
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Type DELETE',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
