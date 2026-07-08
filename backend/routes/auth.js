@@ -419,50 +419,19 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    const salesRef = await query(
-      'SELECT COUNT(*) AS count FROM sales WHERE cashier_id = ? AND (? IS NULL OR business_id = ?)',
-      [id, businessId ?? null, businessId ?? null],
-    );
-    const hasSalesReferences = Number(salesRef?.[0]?.count || 0) > 0;
-
-    if (hasSalesReferences) {
-      if (businessId) {
-        await query('UPDATE users SET is_active = 0 WHERE id = ? AND business_id = ?', [id, businessId]);
-      } else {
-        await query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
-      }
-      return res.json({
-        success: true,
-        message: 'User deactivated because related sales records already exist.',
-      });
-    }
-
     if (businessId) {
-      await query('DELETE FROM users WHERE id = ? AND business_id = ?', [id, businessId]);
+      await query('UPDATE users SET is_active = 0 WHERE id = ? AND business_id = ?', [id, businessId]);
     } else {
-      await query('DELETE FROM users WHERE id = ?', [id]);
-    }
-    return res.json({ success: true, message: 'User deleted successfully.' });
-  } catch (error) {
-    if (error && (error.code === 'ER_ROW_IS_REFERENCED_2' || error.errno === 1451)) {
-      try {
-        if (businessId) {
-          await query('UPDATE users SET is_active = 0 WHERE id = ? AND business_id = ?', [id, businessId]);
-        } else {
-          await query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
-        }
-        return res.json({
-          success: true,
-          message: 'User deactivated because related sales records already exist.',
-        });
-      } catch (deactivationError) {
-        console.error('Auth /users/:id deactivate error:', deactivationError);
-        return res.status(500).json({ success: false, message: 'Failed to deactivate user.' });
-      }
+      await query('UPDATE users SET is_active = 0 WHERE id = ?', [id]);
     }
 
+    return res.json({
+      success: true,
+      message: 'User deactivated successfully.',
+    });
+  } catch (error) {
     console.error('Auth /users/:id delete error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to delete user.' });
+    return res.status(500).json({ success: false, message: 'Failed to deactivate user.' });
   }
 });
 
