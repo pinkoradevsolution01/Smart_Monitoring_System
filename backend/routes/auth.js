@@ -8,8 +8,9 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_BACKEND_REDIRECT_URI = process.env.GOOGLE_BACKEND_REDIRECT_URI || '';
 const GOOGLE_DEFAULT_REDIRECT_URI =
-  process.env.GOOGLE_BACKEND_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || '';
+  GOOGLE_BACKEND_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || '';
 const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';
 const OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
 const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 1000;
@@ -513,7 +514,7 @@ router.get('/google/callback', async (req, res) => {
 
   try {
     const resolvedRedirectUri = normalizeRedirectUri(
-      GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
+      GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
     );
     if (!resolvedRedirectUri) {
       return res.status(400).send('Redirect URI is not configured.');
@@ -556,7 +557,7 @@ router.post('/google/exchange', async (req, res) => {
 
   try {
     const resolvedRedirectUri = normalizeRedirectUri(
-      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI,
+      redirectUri || GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI,
     );
     if (!resolvedRedirectUri) {
       return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
