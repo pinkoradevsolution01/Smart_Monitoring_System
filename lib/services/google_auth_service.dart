@@ -37,7 +37,13 @@ class GoogleAuthService {
   bool get _isDesktop =>
       !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
-  String get _backendCallbackUrl => '${BackendConfig.apiBaseUrl}/auth/google/callback';
+  String get _backendCallbackUrl {
+    final configuredRedirectUri = BackendConfig.oauthRedirectUri.trim();
+    if (configuredRedirectUri.isNotEmpty) {
+      return configuredRedirectUri;
+    }
+    return '${BackendConfig.apiBaseUrl}/auth/google/callback';
+  }
 
   Map<String, dynamic>? get currentUser => _currentUser;
   bool get isSignedIn => _accessToken != null && _currentUser != null;

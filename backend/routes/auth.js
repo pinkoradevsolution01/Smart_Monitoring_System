@@ -8,7 +8,9 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const GOOGLE_BACKEND_REDIRECT_URI = process.env.GOOGLE_BACKEND_REDIRECT_URI || '';
+const GOOGLE_OAUTH_REDIRECT_URI = process.env.GOOGLE_OAUTH_REDIRECT_URI || '';
+const GOOGLE_BACKEND_REDIRECT_URI =
+  process.env.GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_OAUTH_REDIRECT_URI || '';
 const GOOGLE_DEFAULT_REDIRECT_URI =
   GOOGLE_BACKEND_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || '';
 const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';

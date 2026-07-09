@@ -8,6 +8,10 @@ class BackendConfig {
   static const String backendApiBaseUrlsPrefsKey = 'backend_api_base_urls';
   static const String _defaultDropletApiBaseUrl =
       'http://152.42.185.35:3000/api';
+  static const String oauthRedirectUri = String.fromEnvironment(
+    'OAUTH_REDIRECT_URI',
+    defaultValue: '',
+  );
 
   /// Set this to your Node.js backend URL, including `/api` if desired.
   ///
