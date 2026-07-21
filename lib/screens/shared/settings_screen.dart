@@ -54,13 +54,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final savedBackendUrl = prefs.getString(
         BackendConfig.backendApiBaseUrlPrefsKey,
       );
+      final savedBackendUrls = prefs.getString(
+        BackendConfig.backendApiBaseUrlsPrefsKey,
+      );
       final mode = prefs.getString('subscription_mode');
       final trialExpiresStr = prefs.getString('trial_expires');
       final subscriptionExpiresStr = prefs.getString('subscription_expires');
       final activated = prefs.getBool('activation_status') ?? false;
       if (mounted) {
         if (saved != null) setState(() => _selectedPaperSize = saved);
-        if (savedBackendUrl != null && savedBackendUrl.isNotEmpty) {
+        if (savedBackendUrls != null && savedBackendUrls.isNotEmpty) {
+          _backendUrlController.text = savedBackendUrls;
+        } else if (savedBackendUrl != null && savedBackendUrl.isNotEmpty) {
           _backendUrlController.text = savedBackendUrl;
         }
         if (mode != null) setState(() => _subscriptionMode = mode);
@@ -126,24 +131,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
   }
 
+  List<String> _parseBackendUrls(String entered) {
+    return BackendServerResolver.normalizeCandidates(
+      entered.split(RegExp(r'[,\n; ]+')),
+    );
+  }
+
   Future<void> _saveBackendUrl() async {
     final entered = _backendUrlController.text.trim();
     if (entered.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please enter your laptop backend URL'),
+          content: Text('Please enter your backend URL'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    final normalized = entered.replaceAll(RegExp(r'/+$'), '');
-    final uri = Uri.tryParse(normalized);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+    final candidateUrls = _parseBackendUrls(entered);
+    if (candidateUrls.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter a valid URL like http://192.168.1.9:3000/api'),
+          content: Text(
+            'Enter at least one valid URL like http://152.42.185.35:3000/api',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -152,13 +164,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _isSavingBackendUrl = true);
     try {
-      final ok = await BackendServerResolver.testBaseUrl(normalized);
+      final ok = await BackendServerResolver.testBaseUrls(candidateUrls);
       if (!ok) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Cannot reach $normalized/health. Check laptop IP, port 3000, and firewall.',
+              'Cannot reach any saved backend. Check the droplet IP, port 3000, and firewall.',
             ),
             backgroundColor: Colors.red,
           ),
@@ -166,12 +178,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
 
-      await BackendServerResolver.savePreferredBaseUrl(normalized);
+      await BackendServerResolver.savePreferredBaseUrls(candidateUrls);
       if (!mounted) return;
       setState(() {});
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Backend URL saved: $normalized'),
+          content: Text(
+            candidateUrls.length == 1
+                ? 'Backend URL saved: ${candidateUrls.first}'
+                : 'Backend URLs saved: ${candidateUrls.join(', ')}',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -2105,15 +2121,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'For a physical device, enter your laptop or server LAN URL here. Example: http://192.168.1.9:3000/api',
+              'Enter your droplet URL first. You can also add fallback URLs separated by commas or spaces.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _backendUrlController,
               decoration: const InputDecoration(
-                labelText: 'Backend URL',
-                hintText: 'http://192.168.x.x:3000/api',
+                labelText: 'Backend URL(s)',
+                hintText: 'http://152.42.185.35:3000/api, http://192.168.x.x:3000/api',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.url,

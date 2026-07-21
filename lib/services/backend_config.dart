@@ -14,10 +14,11 @@ class BackendConfig {
   );
 
   /// Set this to your Node.js backend URL, including `/api` if desired.
+  /// You can also provide a comma-separated list of URLs to enable failover.
   ///
   /// Override it at build time with:
   /// `--dart-define=BACKEND_API_BASE_URL=http://192.168.1.9:3000/api`
-  /// For auto-detect across multiple LAN servers, use:
+  /// For auto-detect across multiple backend servers, use:
   /// `--dart-define=BACKEND_API_BASE_URLS=http://192.168.1.5:3000/api,http://192.168.1.9:3000/api`
   ///
   /// Common values:

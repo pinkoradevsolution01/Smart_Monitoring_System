@@ -28,7 +28,7 @@ class BackendServerResolver {
       BackendConfig.backendApiBaseUrlsPrefsKey,
     );
 
-    final candidateUrls = _normalizeCandidates(
+    final candidateUrls = normalizeCandidates(
       [
         ..._splitCandidates(savedBaseUrl ?? ''),
         ..._splitCandidates(savedBaseUrls ?? ''),
@@ -62,7 +62,7 @@ class BackendServerResolver {
     return selectedUrl;
   }
 
-  static List<String> _normalizeCandidates(List<String> candidates) {
+  static List<String> normalizeCandidates(List<String> candidates) {
     return candidates
         .map((candidate) => candidate.trim().replaceAll(RegExp(r'/+$'), ''))
         .where((candidate) => candidate.isNotEmpty)
@@ -106,11 +106,47 @@ class BackendServerResolver {
     return _probe(normalized);
   }
 
+  static Future<bool> testBaseUrls(List<String> baseUrls) async {
+    final normalized = normalizeCandidates(baseUrls);
+    if (normalized.isEmpty) {
+      return false;
+    }
+
+    for (final baseUrl in normalized) {
+      if (await testBaseUrl(baseUrl)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static Future<void> savePreferredBaseUrl(String baseUrl) async {
-    final normalized = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    await savePreferredBaseUrls([baseUrl]);
+  }
+
+  static Future<void> savePreferredBaseUrls(List<String> baseUrls) async {
+    final normalized = normalizeCandidates(baseUrls);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, normalized);
-    BackendConfig.setResolvedApiBaseUrl(normalized);
+    if (normalized.isEmpty) {
+      await prefs.remove(BackendConfig.backendApiBaseUrlPrefsKey);
+      await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
+      BackendConfig.setResolvedApiBaseUrl('');
+      _initialized = false;
+      return;
+    }
+
+    if (normalized.length == 1) {
+      await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, normalized.first);
+      await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
+      BackendConfig.setResolvedApiBaseUrl(normalized.first);
+    } else {
+      await prefs.setString(
+        BackendConfig.backendApiBaseUrlsPrefsKey,
+        normalized.join(','),
+      );
+      await prefs.remove(BackendConfig.backendApiBaseUrlPrefsKey);
+      BackendConfig.setResolvedApiBaseUrl(normalized.first);
+    }
     _initialized = true;
   }
 
@@ -119,6 +155,7 @@ class BackendServerResolver {
     String selectedUrl,
   ) async {
     await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, selectedUrl);
+    await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
   }
 
   static void resetForTests() {
