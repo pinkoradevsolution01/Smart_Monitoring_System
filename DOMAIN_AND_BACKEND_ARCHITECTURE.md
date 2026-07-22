@@ -214,7 +214,39 @@ For your current goal, the recommended path is:
 - **DigitalOcean Droplet is useful for the backend API**
 - **MySQL is still needed for backend data storage**
 
-## 9. Files In This Repo That Support This Architecture
+## 9. Flutter Run And Build Commands
+
+Use these commands after the production API is available at:
+
+```text
+https://api.smartmonitoringsystem.store/api
+```
+
+### Run On Windows
+
+```bash
+flutter run -d windows --dart-define=BACKEND_API_BASE_URL=https://api.smartmonitoringsystem.store/api --dart-define=OAUTH_REDIRECT_URI=https://api.smartmonitoringsystem.store/api/auth/google/callback --dart-define=GOOGLE_WEB_CLIENT_ID=961390569053-ol7mutt2h2bp7eb0608041aeh824btcm.apps.googleusercontent.com
+```
+
+### Build Windows Release
+
+```bash
+flutter build windows --release --dart-define=BACKEND_API_BASE_URL=https://api.smartmonitoringsystem.store/api --dart-define=OAUTH_REDIRECT_URI=https://api.smartmonitoringsystem.store/api/auth/google/callback --dart-define=GOOGLE_WEB_CLIENT_ID=961390569053-ol7mutt2h2bp7eb0608041aeh824btcm.apps.googleusercontent.com
+```
+
+### Run On Android
+
+```bash
+flutter run -d android --dart-define=BACKEND_API_BASE_URL=https://api.smartmonitoringsystem.store/api --dart-define=OAUTH_REDIRECT_URI=https://api.smartmonitoringsystem.store/api/auth/google/callback --dart-define=GOOGLE_WEB_CLIENT_ID=961390569053-ol7mutt2h2bp7eb0608041aeh824btcm.apps.googleusercontent.com
+```
+
+### Build Android APK
+
+```bash
+flutter build apk --release --dart-define=BACKEND_API_BASE_URL=https://api.smartmonitoringsystem.store/api --dart-define=OAUTH_REDIRECT_URI=https://api.smartmonitoringsystem.store/api/auth/google/callback --dart-define=GOOGLE_WEB_CLIENT_ID=961390569053-ol7mutt2h2bp7eb0608041aeh824btcm.apps.googleusercontent.com
+```
+
+## 10. Files In This Repo That Support This Architecture
 
 - [`backend/app.js`](backend/app.js)
 - [`backend/package.json`](backend/package.json)
@@ -222,4 +254,3 @@ For your current goal, the recommended path is:
 - [`pubspec.yaml`](pubspec.yaml)
 - [`SYSTEM_DOCUMENTATION.md`](SYSTEM_DOCUMENTATION.md)
 - [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md)
-

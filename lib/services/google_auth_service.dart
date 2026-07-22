@@ -230,24 +230,33 @@ class GoogleAuthService {
   }
 
   Future<void> _openUrlInBrowser(String url) async {
-    if (_isDesktop) {
-      if (Platform.isWindows) {
-        await Process.start('cmd', ['/c', 'start', '', url], runInShell: true);
-      } else if (Platform.isMacOS) {
-        await Process.start('open', [url]);
-      } else if (Platform.isLinux) {
-        await Process.start('xdg-open', [url]);
-      }
-      return;
-    }
-
     final uri = Uri.parse(url);
     final launched = await launchUrl(
       uri,
       mode: LaunchMode.externalApplication,
     );
-    if (!launched) {
-      throw Exception('Failed to launch browser for Google sign-in');
+    if (launched) {
+      return;
     }
+
+    if (_isDesktop) {
+      if (Platform.isWindows) {
+        await Process.start('rundll32', [
+          'url.dll,FileProtocolHandler',
+          url,
+        ]);
+        return;
+      }
+      if (Platform.isMacOS) {
+        await Process.start('open', [url]);
+        return;
+      }
+      if (Platform.isLinux) {
+        await Process.start('xdg-open', [url]);
+        return;
+      }
+    }
+
+    throw Exception('Failed to launch browser for Google sign-in');
   }
 }
