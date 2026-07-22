@@ -357,8 +357,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                       ),
                       const SizedBox(height: 24),
                       // Price (show discounted price only after activation)
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -469,7 +471,6 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                             Padding(
                               padding: const EdgeInsets.only(
                                 top: 8.0,
-                                left: 8.0,
                               ),
                               child: Text(
                                 displayPeriod,

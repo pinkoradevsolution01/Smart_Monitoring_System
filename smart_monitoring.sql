@@ -68,7 +68,7 @@ CREATE TABLE `activation_code_requests` (
   `business_name` varchar(255) NOT NULL,
   `package_name` varchar(128) NOT NULL,
   `package_price` varchar(64) NOT NULL,
-  `request_type` enum('monthly','trial','trial_upgrade') NOT NULL,
+  `request_type` enum('monthly','one_time_license','trial','trial_upgrade') NOT NULL,
   `contact_email` varchar(255) NOT NULL,
   `contact_phone` varchar(64) NOT NULL,
   `additional_notes` text DEFAULT NULL,

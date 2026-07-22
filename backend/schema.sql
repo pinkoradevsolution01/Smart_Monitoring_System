@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS activation_code_requests (
   business_name VARCHAR(255) NOT NULL,
   package_name VARCHAR(128) NOT NULL,
   package_price VARCHAR(64) NOT NULL,
-  request_type ENUM('monthly', 'trial', 'trial_upgrade') NOT NULL,
+  request_type ENUM('monthly', 'one_time_license', 'trial', 'trial_upgrade') NOT NULL,
   contact_email VARCHAR(255) NOT NULL,
   contact_phone VARCHAR(64) NOT NULL,
   additional_notes TEXT,
