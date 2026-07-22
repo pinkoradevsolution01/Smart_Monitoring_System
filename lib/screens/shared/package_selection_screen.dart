@@ -13,6 +13,8 @@ import '../../services/supabase_sync_service.dart';
 import '../owner/owner_dashboard.dart';
 import '../cashier/cashier_dashboard.dart';
 
+enum _PricingModel { oneTimeLicense, saas }
+
 class PackageSelectionScreen extends StatefulWidget {
   final PackageService packageService;
   final User? currentUser; // Optional: User who is selecting package
@@ -35,6 +37,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
   bool _hasUsedTrial = false; // Track if trial was already used
   int? _subscriptionDiscount;
   int _iconTapCount = 0; // Secret developer mode tap counter
+  _PricingModel _pricingModel = _PricingModel.oneTimeLicense;
   final Map<PackageType, Map<String, dynamic>> _packageOverrides = {};
 
   @override
@@ -82,6 +85,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       price: (o['price'] as String?)?.isNotEmpty == true
           ? o['price'] as String
           : pkg.price,
+      oneTimePrice: pkg.oneTimePrice,
+      saasPrice: pkg.saasPrice,
       oldPrice: (o['oldPrice'] as String?)?.isNotEmpty == true
           ? o['oldPrice'] as String
           : pkg.oldPrice,
@@ -165,6 +170,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                   // Header
                   _buildHeader(),
                   const SizedBox(height: 60),
+                  _buildPricingModelSwitch(),
+                  const SizedBox(height: 28),
                   // Package Cards
                   LayoutBuilder(
                     builder: (context, constraints) {
@@ -268,6 +275,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
   Widget _buildPackageCard(PricingPackage package) {
     final isHovered = _hoveredPackage == package;
     final isRecommended = package.recommended;
+    final displayPrice = _priceFor(package);
+    final displayPeriod = _periodFor(package);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredPackage = package),
@@ -359,8 +368,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                                   // Only show discount if user has activated (stored discount exists)
                                   if (_subscriptionDiscount != null &&
                                       package.type != PackageType.enterprise &&
-                                      package.price.contains(RegExp(r'\d'))) {
-                                    final priceStr = package.price.replaceAll(
+                                      package.price.contains(RegExp(r'\d')) &&
+                                      _pricingModel == _PricingModel.saas) {
+                                    final priceStr = displayPrice.replaceAll(
                                       RegExp(r'[^0-9]'),
                                       '',
                                     );
@@ -395,7 +405,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                                             top: 6.0,
                                           ),
                                           child: Text(
-                                            package.price,
+                                            displayPrice,
                                             style: TextStyle(
                                               fontSize: 16,
                                               color: Colors.grey.shade600,
@@ -410,13 +420,14 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
 
                                   // Default: show original package price with oldPrice if available
                                   if (package.oldPrice != null &&
-                                      package.type != PackageType.enterprise) {
+                                      package.type != PackageType.enterprise &&
+                                      _pricingModel == _PricingModel.saas) {
                                     return Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          package.price,
+                                          displayPrice,
                                           style: TextStyle(
                                             fontSize: 42,
                                             fontWeight: FontWeight.bold,
@@ -443,7 +454,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
 
                                   // Fallback: show only price
                                   return Text(
-                                    package.price,
+                                    displayPrice,
                                     style: TextStyle(
                                       fontSize: 42,
                                       fontWeight: FontWeight.bold,
@@ -454,14 +465,14 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                               ),
                             ],
                           ),
-                          if (package.period.isNotEmpty)
+                          if (displayPeriod.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(
                                 top: 8.0,
                                 left: 8.0,
                               ),
                               child: Text(
-                                package.period,
+                                displayPeriod,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey.shade600,
@@ -518,7 +529,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                           child: Text(
                             package.type == PackageType.enterprise
                                 ? 'Contact Sales'
-                                : 'Get Started - Monthly',
+                                : (_pricingModel == _PricingModel.oneTimeLicense
+                                    ? 'Request One-time License'
+                                    : 'Get Started - Monthly'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -526,11 +539,13 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                           ),
                         ),
                       ),
-                      // Monthly rental notice
+                      // Pricing model notice
                       if (package.type != PackageType.enterprise) ...[
                         const SizedBox(height: 8),
                         Text(
-                          'Monthly rental - Activation code required',
+                          _pricingModel == _PricingModel.oneTimeLicense
+                              ? 'One-time license - Setup and activation included'
+                              : 'Monthly rental - Activation code required',
                           style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade600,
@@ -592,7 +607,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Free trial not available. Click "Get Started" for monthly rental.',
+                                  'Free trial not available. Choose SaaS to renew monthly.',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: Colors.orange.shade900,
@@ -619,7 +634,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
     return Column(
       children: [
         Text(
-          'All plans are monthly rental - Renew with activation code each month',
+          _pricingModel == _PricingModel.oneTimeLicense
+              ? 'One-time license pricing · Valid for one business location'
+              : 'SaaS pricing · Renew with an activation code each month',
           style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
         ),
         const SizedBox(height: 8),
@@ -655,9 +672,11 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       return;
     }
 
-    // CRITICAL: ALL packages require activation code for monthly rental
-    // "Get Started" = Pay monthly with activation code
-    await _activateWithCode(package);
+    if (_pricingModel == _PricingModel.oneTimeLicense) {
+      await _showRequestCodeDialog(package, requestType: 'one_time_license');
+    } else {
+      await _activateWithCode(package);
+    }
   }
 
   Future<void> _activateWithCode(PricingPackage package) async {
@@ -1199,6 +1218,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       context: context,
       builder: (_) => _RequestCodeDialog(
         package: package,
+        packagePrice: _priceFor(package),
       ),
     );
 
@@ -1231,7 +1251,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       final codeRequestService = CodeRequestService();
       final success = await codeRequestService.requestActivationCode(
         packageName: package.name,
-        packagePrice: package.price,
+        packagePrice: _priceFor(package),
         requestType: requestType,
         businessName: requestData.businessName,
         contactEmail: requestData.contactEmail,
@@ -1278,6 +1298,52 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         ),
       );
     }
+  }
+
+  Widget _buildPricingModelSwitch() {
+    return Column(
+      children: [
+        SegmentedButton<_PricingModel>(
+          segments: const [
+            ButtonSegment(
+              value: _PricingModel.oneTimeLicense,
+              icon: Icon(Icons.verified_user_outlined),
+              label: Text('One-time License'),
+            ),
+            ButtonSegment(
+              value: _PricingModel.saas,
+              icon: Icon(Icons.cloud_outlined),
+              label: Text('SaaS Subscription'),
+            ),
+          ],
+          selected: {_pricingModel},
+          onSelectionChanged: (selection) => setState(() {
+            _pricingModel = selection.first;
+          }),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          _pricingModel == _PricingModel.oneTimeLicense
+              ? 'Own the software with a one-time license for one business location.'
+              : 'Flexible monthly access with cloud-enabled features and activation-code renewal.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+        ),
+      ],
+    );
+  }
+
+  String _priceFor(PricingPackage package) {
+    if (_pricingModel == _PricingModel.oneTimeLicense &&
+        package.oneTimePrice.isNotEmpty) {
+      return package.oneTimePrice;
+    }
+    return package.price;
+  }
+
+  String _periodFor(PricingPackage package) {
+    if (package.type == PackageType.enterprise) return '';
+    return _pricingModel == _PricingModel.oneTimeLicense ? 'one-time' : '/month';
   }
 }
 
@@ -1441,8 +1507,9 @@ class _RequestCodeFormData {
 
 class _RequestCodeDialog extends StatefulWidget {
   final PricingPackage package;
+  final String packagePrice;
 
-  const _RequestCodeDialog({required this.package});
+  const _RequestCodeDialog({required this.package, required this.packagePrice});
 
   @override
   State<_RequestCodeDialog> createState() => _RequestCodeDialogState();
@@ -1580,7 +1647,7 @@ class _RequestCodeDialogState extends State<_RequestCodeDialog> {
                 ),
               ),
               Text(
-                'Price: ${widget.package.price}/month',
+                'Price: ${widget.packagePrice}',
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
               ),
               const SizedBox(height: 20),

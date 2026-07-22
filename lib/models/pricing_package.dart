@@ -4,6 +4,8 @@ class PricingPackage {
   final PackageType type;
   final String name;
   final String price;
+  final String oneTimePrice;
+  final String saasPrice;
   final String period;
   final String description;
   final List<String> features;
@@ -26,6 +28,8 @@ class PricingPackage {
     required this.type,
     required this.name,
     required this.price,
+    this.oneTimePrice = '',
+    this.saasPrice = '',
     required this.period,
     required this.description,
     required this.features,
@@ -50,6 +54,8 @@ class PricingPackage {
       type: PackageType.basic,
       name: 'Basic',
       price: '₱1,999',
+      oneTimePrice: '₱19,999',
+      saasPrice: '₱1,999',
       oldPrice: '₱2,999',
       period: '/month',
       description:
@@ -85,6 +91,8 @@ class PricingPackage {
       type: PackageType.standard,
       name: 'Standard',
       price: '₱3,999',
+      oneTimePrice: '₱34,999',
+      saasPrice: '₱3,999',
       oldPrice: '₱5,999',
       period: '/month',
       features: [
@@ -120,6 +128,8 @@ class PricingPackage {
       type: PackageType.premium,
       name: 'Premium',
       price: '₱6,999',
+      oneTimePrice: '₱59,999',
+      saasPrice: '₱6,999',
       oldPrice: '₱9,999',
       period: '/month',
       features: [
