@@ -6,6 +6,8 @@ A new Flutter project.
 
 For a full system overview, feature map, backend summary, and module list, see [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md).
 
+For the project introduction, development history, implemented features, fixes, and six-month development experience, see [PROJECT_INTRODUCTION_AND_DEVELOPMENT_JOURNEY.md](PROJECT_INTRODUCTION_AND_DEVELOPMENT_JOURNEY.md).
+
 ## Backend Launcher
 
 To start the Node.js backend from the repo root:
