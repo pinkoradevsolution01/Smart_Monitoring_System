@@ -111,7 +111,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             IconButton(
               icon: const Icon(Icons.sync),
               onPressed: _syncSubscribers,
-              tooltip: 'Sync from Local & Cloud',
+              tooltip: 'Sync from Cloud',
             ),
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -142,8 +142,8 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Showing ${subs.length} subscriber${subs.length == 1 ? '' : 's'} (local + cloud). '
-                        'Tap sync icon to refresh from all sources.',
+                        'Showing ${subs.length} cloud subscriber${subs.length == 1 ? '' : 's'}. '
+                        'Tap sync icon to refresh from the cloud.',
                         style: const TextStyle(fontSize: 13),
                       ),
                     ),
@@ -166,7 +166,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                             const Text('No subscribers yet'),
                             const SizedBox(height: 8),
                             Text(
-                              'Subscribers are synced from local cache and cloud subscriptions',
+                              'Subscribers are loaded from cloud subscription records',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.grey[600],

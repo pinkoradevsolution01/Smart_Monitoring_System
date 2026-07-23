@@ -26,29 +26,17 @@ class SubscriberService extends ChangeNotifier {
   Future<void> _initialize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString(_key);
-      if (saved != null && saved.isNotEmpty) {
-        final List<dynamic> list = jsonDecode(saved);
-        for (final item in list) {
-          final s = Subscriber.fromMap(Map<String, dynamic>.from(item));
-          _subs[s.id] = s;
-        }
-        
-        // Perform cleanup: remove admin accounts from cached subscribers
-        // This will happen after services are initialized
-        Future.delayed(Duration(milliseconds: 100), () async {
-          await _removeAdminAccountsFromCache();
-        });
-        
-        notifyListeners();
-      }
+      // Older versions stored local owner records here. Subscribers must now
+      // come exclusively from the cloud, so discard that legacy cache.
+      await prefs.remove(_key);
     } catch (e) {
-      debugPrint('Error loading subscribers: $e');
+      debugPrint('Error clearing legacy subscriber cache: $e');
     }
   }
   
   /// Remove admin accounts from cached subscribers
   /// Called after services are initialized
+  // ignore: unused_element
   Future<void> _removeAdminAccountsFromCache() async {
     try {
       // Get admin email to filter out  
@@ -103,9 +91,8 @@ class SubscriberService extends ChangeNotifier {
   }
 
   Future<void> addSubscriber(Subscriber s) async {
-    _subs[s.id] = s;
-    await _save();
-    notifyListeners();
+    // Local owner records are intentionally not shown in Subscribers.
+    debugPrint('[SubscriberService] Ignoring local subscriber record: ${s.email}');
   }
 
   Future<void> addSubscriberFromUser({
@@ -262,18 +249,18 @@ class SubscriberService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sync subscribers from all sources (local owners + cloud subscriptions)
-  /// This consolidates subscribers from both local database and Supabase.
+  /// Sync subscribers from cloud subscriptions only.
   Future<int> syncFromAllSources() async {
     int newCount = 0;
     
     try {
       debugPrint('[SubscriberService] Starting sync from cloud subscriptions...');
       
-      // ONLY sync from Supabase cloud - owners register via Google OAuth and are pushed to cloud
-      // This prevents admin accounts from being recorded
+      // Subscribers are sourced exclusively from the cloud.
       try {
         final cloudService = CloudSubscriptionService();
+        // Do not retain local records or stale entries from a previous sync.
+        _subs.clear();
         
         // Always refresh the cloud list so new activations show up immediately.
         debugPrint('[SubscriberService] Refreshing subscriptions from backend...');
@@ -281,11 +268,8 @@ class SubscriberService extends ChangeNotifier {
         debugPrint('[SubscriberService] Cloud subscriptions after refresh: ${cloudService.subscriptions.length}');
         
         if (cloudService.subscriptions.isEmpty) {
-          debugPrint('[SubscriberService] ⚠️ No subscriptions found in cloud database, using local cached subscribers only');
+          debugPrint('[SubscriberService] ⚠️ No subscriptions found in cloud database');
         }
-        
-        // DON'T clear local cached subscribers - they should always be visible
-        // Just add/update cloud subscriptions separately
         
         // Platform names that should be filtered out (not actual owner names)
         const platformNames = {
