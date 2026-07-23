@@ -106,6 +106,20 @@ CREATE TABLE IF NOT EXISTS email_otps (
   KEY idx_email_otps_lookup (email, otp, used, expires_at)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS owner_pin_reset_tokens (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  user_id VARCHAR(64) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  token_hash CHAR(64) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_owner_pin_reset_user (user_id),
+  KEY idx_owner_pin_reset_email (email),
+  KEY idx_owner_pin_reset_token (token_hash),
+  KEY idx_owner_pin_reset_expiry (expires_at)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS developer_notification_settings (
   id CHAR(36) NOT NULL PRIMARY KEY DEFAULT (UUID()),
   notification_email VARCHAR(255) NOT NULL,

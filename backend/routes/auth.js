@@ -1,8 +1,19 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { randomUUID } = require('crypto');
-const { query } = require('../db');
+const {
+  randomUUID,
+  randomBytes,
+  createHash,
+} = require('crypto');
+const { query, execute } = require('../db');
+
+let nodemailer = null;
+try {
+  nodemailer = require('nodemailer');
+} catch (_) {
+  nodemailer = null;
+}
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
@@ -17,6 +28,44 @@ const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';
 const OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
 const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 1000;
 const oauthStateStore = new Map();
+const OWNER_PIN_RESET_TTL_MINUTES = 20;
+
+function getSmtpConfig() {
+  const host = process.env.SMTP_HOST || '';
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER || '';
+  const pass = process.env.SMTP_PASS || '';
+  const fromEmail = process.env.FROM_EMAIL || user || '';
+  return { host, port, user, pass, fromEmail };
+}
+
+async function sendOwnerPinResetToken({ to, token }) {
+  const config = getSmtpConfig();
+  if (!config.host || !config.user || !config.pass || !config.fromEmail) {
+    throw new Error('Email service is not configured.');
+  }
+  if (!nodemailer) {
+    throw new Error('nodemailer is not installed.');
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.port === 465,
+    auth: { user: config.user, pass: config.pass },
+  });
+
+  await transporter.sendMail({
+    from: config.fromEmail,
+    to,
+    subject: 'Owner PIN reset token',
+    text:
+      'Your Smart Monitoring System Owner PIN reset token is:\n\n' +
+      `${token}\n\n` +
+      `This token expires in ${OWNER_PIN_RESET_TTL_MINUTES} minutes and can only be used once. ` +
+      'If you did not request this, you can ignore this email.',
+  });
+}
 
 function normalizeRedirectUri(value) {
   return String(value || '')
@@ -225,6 +274,117 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     console.error('Auth /login error:', error);
     return res.status(500).json({ success: false, message: 'Login failed due to server error.' });
+  }
+});
+
+// Start an owner PIN reset. The response is intentionally generic so the
+// endpoint does not reveal whether an email belongs to an owner account.
+router.post('/owner-pin-reset/request', async (req, res) => {
+  const email = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ success: false, message: 'A valid email is required.' });
+  }
+
+  try {
+    const owners = await query(
+      `SELECT id, email FROM users
+       WHERE LOWER(email) = ? AND role = 'owner' AND is_active = 1
+       LIMIT 1`,
+      [email],
+    );
+
+    if (!owners.length) {
+      return res.json({
+        success: true,
+        message: 'If that email belongs to an owner account, a reset token has been sent.',
+      });
+    }
+
+    const owner = owners[0];
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
+
+    await execute(
+      `UPDATE owner_pin_reset_tokens
+       SET used_at = NOW()
+       WHERE user_id = ? AND used_at IS NULL`,
+      [owner.id],
+    );
+    await execute(
+      `INSERT INTO owner_pin_reset_tokens
+       (id, user_id, email, token_hash, expires_at)
+       VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL ${OWNER_PIN_RESET_TTL_MINUTES} MINUTE))`,
+      [randomUUID(), owner.id, owner.email, tokenHash],
+    );
+
+    try {
+      await sendOwnerPinResetToken({ to: owner.email, token });
+    } catch (mailError) {
+      await execute(
+        `UPDATE owner_pin_reset_tokens
+         SET used_at = NOW()
+         WHERE token_hash = ? AND used_at IS NULL`,
+        [tokenHash],
+      );
+      throw mailError;
+    }
+
+    return res.json({
+      success: true,
+      message: 'If that email belongs to an owner account, a reset token has been sent.',
+    });
+  } catch (error) {
+    console.error('Owner PIN reset request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to send a reset token right now. Please try again later.',
+    });
+  }
+});
+
+// Verify and consume an owner PIN reset token exactly once.
+router.post('/owner-pin-reset/verify', async (req, res) => {
+  const email = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+  const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+  const newPin = typeof req.body?.newPin === 'string' ? req.body.newPin.trim() : '';
+
+  if (!email || !email.includes('@') || !/^[a-f0-9]{64}$/i.test(token) || !/^\d{4}$/.test(newPin)) {
+    return res.status(400).json({ success: false, message: 'Invalid reset details.' });
+  }
+
+  try {
+    const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
+    const result = await execute(
+      `UPDATE owner_pin_reset_tokens t
+       INNER JOIN users u ON u.id = t.user_id
+       SET t.used_at = NOW()
+       WHERE t.email = ?
+         AND t.token_hash = ?
+         AND t.used_at IS NULL
+         AND t.expires_at > NOW()
+         AND u.role = 'owner'
+         AND u.is_active = 1`,
+      [email, tokenHash],
+    );
+
+    if (result[0].affectedRows !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset token is invalid, expired, or already used.',
+      });
+    }
+
+    // The PIN remains local to the app; consuming the server token is the
+    // authorization step, and the client persists the new PIN after success.
+    return res.json({ success: true, message: 'Owner PIN reset authorized.' });
+  } catch (error) {
+    console.error('Owner PIN reset verification error:', error);
+    return res.status(500).json({ success: false, message: 'PIN reset failed.' });
   }
 });
 

@@ -41,7 +41,9 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
   void _initializeControllers() {
     _nameController = TextEditingController(text: _owner?.name ?? '');
     _emailController = TextEditingController(text: _owner?.email ?? '');
-    _contactController = TextEditingController(text: _owner?.pin ?? '');
+    _contactController = TextEditingController(
+      text: _owner?.contactNumber ?? '',
+    );
   }
 
   void _onUsersChanged() {
@@ -73,9 +75,9 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
       final updated = _owner!.copyWith(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
-        pin: _contactController.text.isNotEmpty
+        contactNumber: _contactController.text.isNotEmpty
             ? _contactController.text.trim()
-            : _owner!.pin,
+            : _owner!.contactNumber,
       );
 
       if (BackendConfig.useRestBackend) {
@@ -85,7 +87,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
             body: {
               'fullName': updated.name,
               'email': updated.email,
-              'contactNumber': updated.pin,
+              'contactNumber': updated.contactNumber,
               'role': updated.role.toString().split('.').last,
             },
           );
@@ -164,7 +166,8 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
         password: 'owner',
-        pin: _contactController.text.trim(),
+        pin: null,
+        contactNumber: _contactController.text.trim(),
         role: UserRole.owner,
         createdAt: DateTime.now(),
         isActive: true,
@@ -260,38 +263,6 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                     setDialogState(() {
                       isSaving = true;
                     });
-
-                    if (BackendConfig.useRestBackend) {
-                      try {
-                        final response = await _api.patchJson(
-                          'auth/users/${Uri.encodeComponent(_owner!.id)}',
-                          body: {
-                            'fullName': _owner!.name,
-                            'email': _owner!.email,
-                            'contactNumber': a,
-                            'role': _owner!.role.toString().split('.').last,
-                          },
-                        );
-                        if (response is! Map<String, dynamic> ||
-                            response['success'] != true) {
-                          throw Exception('Failed to update PIN in backend');
-                        }
-                      } catch (e) {
-                        if (!mounted) return;
-                        setDialogState(() {
-                          isSaving = false;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Failed to save PIN changes to MySQL: $e',
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                        return;
-                      }
-                    }
 
                     final updated = _owner!.copyWith(pin: a);
                     final success = await _userService.updateUser(updated);

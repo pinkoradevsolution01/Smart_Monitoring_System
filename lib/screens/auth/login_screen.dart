@@ -8,7 +8,6 @@ import '../../services/user_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/backend_config.dart';
-import '../../services/otp_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../widgets/ai_help_button.dart';
@@ -170,26 +169,26 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Future<String?> _promptOtpCode(String email) async {
+  Future<String?> _promptResetToken(String email) async {
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Verify OTP'),
+        title: const Text('Enter Reset Token'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('A verification code was sent to $email'),
+            Text('A secure reset token was sent to $email'),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
+              keyboardType: TextInputType.text,
+              maxLength: 64,
               decoration: const InputDecoration(
-                labelText: '6-digit OTP',
-                hintText: '123456',
+                labelText: 'Reset token',
+                hintText: 'Paste the token from your email',
               ),
             ),
           ],
@@ -201,16 +200,16 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              final otp = controller.text.trim();
-              if (!RegExp(r'^\d{6}$').hasMatch(otp)) {
+              final token = controller.text.trim();
+              if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(token)) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Please enter the 6-digit OTP'),
+                    content: Text('Please enter the complete 64-character reset token'),
                   ),
                 );
                 return;
               }
-              Navigator.pop(ctx, otp);
+              Navigator.pop(ctx, token);
             },
             child: Text(AppLocalizations.t('verify')),
           ),
@@ -291,12 +290,30 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final otpSent = await OtpService.requestOtp(email);
-    if (!otpSent) {
+    if (!BackendConfig.useRestBackend) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to send OTP. Please try again.'),
+          content: Text('A backend connection is required to reset the Owner PIN.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final request = await _api.postJson(
+      'auth/owner-pin-reset/request',
+      body: {'email': email},
+    );
+    if (request is! Map<String, dynamic> || request['success'] != true) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            request is Map<String, dynamic>
+                ? (request['message']?.toString() ?? 'Failed to send reset token.')
+                : 'Failed to send reset token.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -305,60 +322,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('OTP sent to $email')),
+      SnackBar(content: Text('Reset token sent to $email')),
     );
 
-    final otp = await _promptOtpCode(email);
-    if (otp == null || otp.isEmpty) return;
+    final token = await _promptResetToken(email);
+    if (token == null || token.isEmpty) return;
 
     final newPin = await _promptNewPin();
     if (newPin == null || newPin.isEmpty) return;
 
-    final verification = await OtpService.verifyOtp(
-      email,
-      otp,
-      owner.password.isNotEmpty
-          ? owner.password
-          : 'pin-reset-${owner.id}-${DateTime.now().millisecondsSinceEpoch}',
+    final verification = await _api.postJson(
+      'auth/owner-pin-reset/verify',
+      body: {
+        'email': email,
+        'token': token,
+        'newPin': newPin,
+      },
     );
 
-    if (verification['success'] != true) {
+    if (verification is! Map<String, dynamic> || verification['success'] != true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            verification['error']?.toString() ?? 'OTP verification failed',
+            verification is Map<String, dynamic>
+                ? (verification['message']?.toString() ?? 'Reset token verification failed')
+                : 'Reset token verification failed',
           ),
           backgroundColor: Colors.red,
         ),
       );
       return;
-    }
-
-    if (BackendConfig.useRestBackend) {
-      try {
-        final response = await _api.patchJson(
-          'auth/users/${Uri.encodeComponent(owner.id)}',
-          body: {
-            'fullName': owner.name,
-            'email': owner.email,
-            'contactNumber': newPin,
-            'role': owner.role.toString().split('.').last,
-          },
-        );
-        if (response is! Map<String, dynamic> || response['success'] != true) {
-          throw Exception('Failed to persist PIN to backend');
-        }
-      } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('OTP verified, but PIN save failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
     }
 
     final updatedOwner = owner.copyWith(pin: newPin);

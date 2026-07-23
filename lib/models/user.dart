@@ -14,6 +14,7 @@ class User {
   final String email;
   final String password;
   final String? pin;
+  final String? contactNumber;
   final UserRole role;
   final String? businessId; // Links user to a business for multi-device sync
   final DateTime createdAt;
@@ -26,6 +27,7 @@ class User {
     required this.email,
     required this.password,
     this.pin,
+    this.contactNumber,
     required this.role,
     this.businessId,
     required this.createdAt,
@@ -40,6 +42,7 @@ class User {
       'email': email,
       'password': password,
       'pin': pin,
+      'contactNumber': contactNumber,
       'role': role.toString().split('.').last,
       'businessId': businessId,
       'createdAt': createdAt.toIso8601String(),
@@ -49,6 +52,16 @@ class User {
   }
 
   factory User.fromMap(Map<String, dynamic> map) {
+    final rawPin = map['pin']?.toString();
+    final rawContactNumber =
+        (map['contactNumber'] ?? map['contact_number'])?.toString();
+    // Older versions incorrectly stored the owner's phone number in `pin`.
+    // Recover that legacy value as a contact number while preserving real 4-digit PINs.
+    final legacyContactNumber = rawContactNumber == null &&
+            rawPin != null &&
+            !RegExp(r'^\d{4}$').hasMatch(rawPin)
+        ? rawPin
+        : null;
     final roleStr = (map['role'] ?? 'cashier').toString().toLowerCase();
     UserRole parsedRole;
     switch (roleStr) {
@@ -99,7 +112,8 @@ class User {
       name: map['name'] ?? map['full_name'] ?? '',
       email: map['email'] ?? '',
       password: map['password'] ?? map['password_hash'] ?? '',
-      pin: map['pin'] ?? map['contact_number'],
+      pin: legacyContactNumber == null ? rawPin : null,
+      contactNumber: rawContactNumber ?? legacyContactNumber,
       role: parsedRole,
       businessId: map['businessId'] ?? map['business_id'],
       createdAt: createdAtValue is String
@@ -116,6 +130,7 @@ class User {
     String? email,
     String? password,
     String? pin,
+    String? contactNumber,
     UserRole? role,
     String? businessId,
     DateTime? createdAt,
@@ -128,6 +143,7 @@ class User {
       email: email ?? this.email,
       password: password ?? this.password,
       pin: pin ?? this.pin,
+      contactNumber: contactNumber ?? this.contactNumber,
       role: role ?? this.role,
       businessId: businessId ?? this.businessId,
       createdAt: createdAt ?? this.createdAt,

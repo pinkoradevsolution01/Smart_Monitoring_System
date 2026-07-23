@@ -351,7 +351,7 @@ class SupabaseSyncService extends ChangeNotifier {
               'password_hash': user.password,
               'role': user.role.toString().split('.').last,
               'full_name': user.name,
-              'contact_number': user.pin,
+              'contact_number': user.contactNumber,
               'auth_method': user.authMethod,
               'is_active': user.isActive ? 1 : 0,
               'last_login_at': null,
@@ -1021,7 +1021,8 @@ class SupabaseSyncService extends ChangeNotifier {
           name: data['full_name']?.toString() ?? '',
           email: data['email']?.toString() ?? '',
           password: data['password_hash']?.toString() ?? '',
-          pin: data['contact_number']?.toString(),
+          pin: null,
+          contactNumber: data['contact_number']?.toString(),
           role: UserRole.values.firstWhere(
             (role) =>
                 role.toString().split('.').last ==

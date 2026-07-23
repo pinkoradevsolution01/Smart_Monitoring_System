@@ -149,8 +149,7 @@ class UserService extends ChangeNotifier {
           id: user.id,
           name: user.name,
           email: user.email,
-          contact:
-              user.pin, // pin as contact placeholder if contact not provided
+          contact: user.contactNumber,
         );
       } catch (e) {
         debugPrint('Failed to create subscriber for owner: $e');
