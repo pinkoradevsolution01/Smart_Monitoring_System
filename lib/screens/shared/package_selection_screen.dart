@@ -582,7 +582,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Free 3-minute trial (TEST MODE)',
+                          'Free 14-day trial',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade600,
@@ -673,23 +673,26 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       return;
     }
 
-    if (_pricingModel == _PricingModel.oneTimeLicense) {
-      await _showRequestCodeDialog(package, requestType: 'one_time_license');
-    } else {
-      await _activateWithCode(package);
-    }
+    await _activateWithCode(
+      package,
+      oneTimeLicense: _pricingModel == _PricingModel.oneTimeLicense,
+    );
   }
 
-  Future<void> _activateWithCode(PricingPackage package) async {
+  Future<void> _activateWithCode(
+    PricingPackage package, {
+    bool oneTimeLicense = false,
+  }) async {
     // Step 1: Show activation code input dialog
     final code = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _ActivationCodeDialog(
         package: package,
+        oneTimeLicense: oneTimeLicense,
         onRequestCode: () => _showRequestCodeDialog(
           package,
-          requestType: 'monthly',
+          requestType: oneTimeLicense ? 'one_time_license' : 'monthly',
         ),
       ),
     );
@@ -743,42 +746,44 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         // Save package selection
         await widget.packageService.selectPackage(package);
 
-        // Apply monthly discount: -200 pesos per month
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          // Parse numeric value from package.price like '₱1,999'
-          final priceStr = package.price.replaceAll(RegExp(r'[^0-9]'), '');
-          if (priceStr.isNotEmpty) {
-            final original = int.tryParse(priceStr) ?? 0;
-            final discount = 200; // fixed monthly discount
-            final discounted = (original - discount) > 0
-                ? (original - discount)
-                : 0;
-            // Format with thousand separators
-            final formattedDiscounted = discounted.toString().replaceAllMapped(
-              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-              (Match m) => '${m[1]},',
-            );
-            final formattedOriginal = original.toString().replaceAllMapped(
-              RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-              (Match m) => '${m[1]},',
-            );
-            // Save discount and computed price for later use in settings or receipts
-            await prefs.setInt('subscription_discount', discount);
-            await prefs.setInt('subscription_price', discounted);
-            await prefs.setInt('subscription_original_price', original);
-            // Human-readable display with thousand separators
-            await prefs.setString(
-              'subscription_price_display',
-              '₱$formattedDiscounted',
-            );
-            await prefs.setString(
-              'subscription_original_price_display',
-              '₱$formattedOriginal',
-            );
+        // Apply the recurring discount only to monthly subscriptions.
+        if (!oneTimeLicense) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            // Parse numeric value from package.price like '₱1,999'
+            final priceStr = package.price.replaceAll(RegExp(r'[^0-9]'), '');
+            if (priceStr.isNotEmpty) {
+              final original = int.tryParse(priceStr) ?? 0;
+              final discount = 200; // fixed monthly discount
+              final discounted = (original - discount) > 0
+                  ? (original - discount)
+                  : 0;
+              // Format with thousand separators
+              final formattedDiscounted = discounted.toString().replaceAllMapped(
+                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                (Match m) => '${m[1]},',
+              );
+              final formattedOriginal = original.toString().replaceAllMapped(
+                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+                (Match m) => '${m[1]},',
+              );
+              // Save discount and computed price for later use in settings or receipts
+              await prefs.setInt('subscription_discount', discount);
+              await prefs.setInt('subscription_price', discounted);
+              await prefs.setInt('subscription_original_price', original);
+              // Human-readable display with thousand separators
+              await prefs.setString(
+                'subscription_price_display',
+                '₱$formattedDiscounted',
+              );
+              await prefs.setString(
+                'subscription_original_price_display',
+                '₱$formattedOriginal',
+              );
+            }
+          } catch (e) {
+            debugPrint('Failed to save subscription discount: $e');
           }
-        } catch (e) {
-          debugPrint('Failed to save subscription discount: $e');
         }
 
         // Step 4: Show success confirmation dialog
@@ -820,8 +825,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                             size: 20,
                           ),
                           const SizedBox(width: 8),
-                          const Text(
-                            'Monthly Rental Subscription',
+                          Text(
+                            oneTimeLicense
+                                ? 'One-time License'
+                                : 'Monthly Rental Subscription',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
@@ -830,8 +837,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                         ],
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Valid for: 1 month (TEST MODE: 3 minutes)\nRenewal required monthly',
+                      Text(
+                        oneTimeLicense
+                            ? 'Perpetual access for one business location'
+                            : 'Valid for: 1 month (TEST MODE: 3 minutes)\nRenewal required monthly',
                         style: TextStyle(fontSize: 12),
                       ),
                     ],
@@ -1081,7 +1090,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Start a free 3-minute trial for this plan? (TEST MODE)',
+              'Start a free 14-day trial for this plan?',
             ),
             const SizedBox(height: 16),
             Container(
@@ -1151,9 +1160,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       // Activate offline free trial: save to SharedPreferences and select package locally
       final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now();
-      final expires = now.add(
-        const Duration(minutes: 3),
-      ); // TEST MODE: 3 minutes
+      final expires = now.add(const Duration(days: 14));
 
       // CRITICAL: Clear any previous activation status - free trial should NOT be activated
       await prefs.remove('activation_status');
@@ -1186,7 +1193,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           builder: (context) => AlertDialog(
             title: const Text('Trial Activated'),
             content: Text(
-              'Your free 3-minute trial (TEST MODE) for the ${package.name} plan is active until ${expires.toLocal().toString().split(".")[0].split(" ").last}\n\n'
+              'Your free 14-day trial for the ${package.name} plan is active until ${expires.toLocal().toString().split(".")[0].split(" ").last}\n\n'
               'Click Continue to start using the system.',
             ),
             actions: [
@@ -1350,10 +1357,12 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
 
 class _ActivationCodeDialog extends StatefulWidget {
   final PricingPackage package;
+  final bool oneTimeLicense;
   final Future<void> Function() onRequestCode;
 
   const _ActivationCodeDialog({
     required this.package,
+    required this.oneTimeLicense,
     required this.onRequestCode,
   });
 
@@ -1420,11 +1429,16 @@ class _ActivationCodeDialogState extends State<_ActivationCodeDialog> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Monthly Rental System:\n'
-                      '1. Complete payment for this month\n'
-                      '2. Developer will send activation code\n'
-                      '3. Enter code below (valid 1 month)\n'
-                      '4. Renew monthly with new code',
+                      widget.oneTimeLicense
+                          ? 'One-time License:\n'
+                            '1. Complete your one-time payment\n'
+                            '2. Enter the activation code provided by the developer\n'
+                            '3. Activate your permanent license'
+                          : 'Monthly Rental System:\n'
+                            '1. Complete payment for this month\n'
+                            '2. Developer will send activation code\n'
+                            '3. Enter code below (valid 1 month)\n'
+                            '4. Renew monthly with new code',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade700,
@@ -1437,7 +1451,9 @@ class _ActivationCodeDialogState extends State<_ActivationCodeDialog> {
               TextField(
                 controller: _activationCodeController,
                 decoration: InputDecoration(
-                  labelText: 'Monthly Activation Code',
+                  labelText: widget.oneTimeLicense
+                      ? 'One-time Activation Code'
+                      : 'Monthly Activation Code',
                   hintText: 'Enter code from developer',
                   prefixIcon: const Icon(Icons.vpn_key),
                   border: const OutlineInputBorder(),
@@ -1464,7 +1480,9 @@ class _ActivationCodeDialogState extends State<_ActivationCodeDialog> {
             await widget.onRequestCode();
           },
           icon: const Icon(Icons.email),
-          label: const Text('Request Code'),
+          label: Text(
+            widget.oneTimeLicense ? 'Request License Code' : 'Request Code',
+          ),
           style: OutlinedButton.styleFrom(foregroundColor: Colors.blue),
         ),
         ElevatedButton(
