@@ -359,17 +359,32 @@ router.post('/owner-pin-reset/verify', async (req, res) => {
 
   try {
     const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
-    const result = await execute(
-      `UPDATE owner_pin_reset_tokens t
+    const candidates = await query(
+      `SELECT t.id
+       FROM owner_pin_reset_tokens t
        INNER JOIN users u ON u.id = t.user_id
-       SET t.used_at = NOW()
-       WHERE t.email = ?
+       WHERE LOWER(t.email) = ?
          AND t.token_hash = ?
          AND t.used_at IS NULL
          AND t.expires_at > NOW()
          AND u.role = 'owner'
-         AND u.is_active = 1`,
+         AND u.is_active = 1
+       LIMIT 1`,
       [email, tokenHash],
+    );
+
+    if (!candidates.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'This reset token is invalid, expired, or already used.',
+      });
+    }
+
+    const result = await execute(
+      `UPDATE owner_pin_reset_tokens
+       SET used_at = NOW()
+       WHERE id = ? AND used_at IS NULL AND expires_at > NOW()`,
+      [candidates[0].id],
     );
 
     if (result[0].affectedRows !== 1) {

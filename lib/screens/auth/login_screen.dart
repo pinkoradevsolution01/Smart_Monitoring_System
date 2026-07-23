@@ -301,10 +301,22 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    final request = await _api.postJson(
-      'auth/owner-pin-reset/request',
-      body: {'email': email},
-    );
+    dynamic request;
+    try {
+      request = await _api.postJson(
+        'auth/owner-pin-reset/request',
+        body: {'email': email},
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send reset token: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
     if (request is! Map<String, dynamic> || request['success'] != true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -331,14 +343,26 @@ class _LoginScreenState extends State<LoginScreen> {
     final newPin = await _promptNewPin();
     if (newPin == null || newPin.isEmpty) return;
 
-    final verification = await _api.postJson(
-      'auth/owner-pin-reset/verify',
-      body: {
-        'email': email,
-        'token': token,
-        'newPin': newPin,
-      },
-    );
+    dynamic verification;
+    try {
+      verification = await _api.postJson(
+        'auth/owner-pin-reset/verify',
+        body: {
+          'email': email,
+          'token': token,
+          'newPin': newPin,
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('PIN reset failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     if (verification is! Map<String, dynamic> || verification['success'] != true) {
       if (!mounted) return;
