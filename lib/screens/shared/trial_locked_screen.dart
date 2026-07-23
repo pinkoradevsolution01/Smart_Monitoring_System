@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/package_service.dart';
 import '../../services/license_service.dart';
+import 'activation_code_request_dialog.dart';
 
 class TrialLockedScreen extends StatefulWidget {
   const TrialLockedScreen({super.key});
@@ -18,6 +19,7 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
   DateTime? _expiredAt;
   DateTime? _subscriptionExpiredAt;
   bool _isActivating = false;
+  bool _hasRequestedFreshCode = false;
   final _showActivationForm = true; // Show by default - payment required!
   bool _isSubscriptionExpiry =
       false; // Track if lock is due to subscription expiry
@@ -58,6 +60,13 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
   }
 
   Future<void> _activateWithCode() async {
+    if (!_hasRequestedFreshCode) {
+      _showMessage(
+        'Request a new activation code before activating.',
+        isError: true,
+      );
+      return;
+    }
     final code = _activationCodeController.text.trim().toUpperCase();
 
     if (code.isEmpty) {
@@ -146,6 +155,24 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _requestActivationCode() async {
+    final packageService = GetIt.I<PackageService>();
+    final package = packageService.selectedPackage;
+    final requestSent = await showActivationCodeRequestDialog(
+      context: context,
+      packageName: package?.name ?? _packageName ?? 'Selected Package',
+      packagePrice: package?.price ?? '',
+      requestType: 'monthly',
+    );
+    if (requestSent && mounted) {
+      setState(() => _hasRequestedFreshCode = true);
+      _showMessage(
+        'Request submitted. Enter the new activation code when you receive it.',
+        isError: false,
+      );
+    }
   }
 
   // Developer access now uses the centralized Developer Auth route.
@@ -324,6 +351,16 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: OutlinedButton.icon(
+                              onPressed: _requestActivationCode,
+                              icon: const Icon(Icons.email_outlined),
+                              label: const Text('Request New Activation Code'),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           TextField(
                             controller: _activationCodeController,
                             decoration: InputDecoration(
@@ -347,7 +384,7 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                             width: double.infinity,
                             height: 48,
                             child: ElevatedButton.icon(
-                              onPressed: _isActivating
+                              onPressed: _isActivating || !_hasRequestedFreshCode
                                   ? null
                                   : _activateWithCode,
                               icon: _isActivating
@@ -366,7 +403,9 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                               label: Text(
                                 _isActivating
                                     ? 'Activating...'
-                                    : 'Activate Now',
+                                    : _hasRequestedFreshCode
+                                    ? 'Activate Now'
+                                    : 'Request a code first',
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green,

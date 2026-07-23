@@ -5,6 +5,7 @@ import '../cashier/cashier_pos.dart';
 import '../cashier/price_checker_screen.dart';
 import '../../models/user.dart';
 import '../owner/for_delivery_screen.dart';
+import '../../utils/responsive_utils.dart';
 
 class SalesPromoterDashboard extends StatelessWidget {
   final User user;
@@ -18,7 +19,11 @@ class SalesPromoterDashboard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: EdgeInsets.all(
+              ResponsiveUtils.responsivePadding(
+                MediaQuery.sizeOf(context).width,
+              ).left,
+            ),
             child: Column(
               children: [
                 // Dashboard welcome section
@@ -47,9 +52,9 @@ class SalesPromoterDashboard extends StatelessWidget {
                 // Action tiles
                 Expanded(
                   child: GridView.count(
-                    crossAxisCount: MediaQuery.of(context).size.width > 800
-                        ? 3
-                        : 2,
+                    crossAxisCount: ResponsiveUtils.columnsForWidth(
+                      MediaQuery.sizeOf(context).width,
+                    ),
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     children: [
@@ -234,7 +239,7 @@ class _AttendanceCardState extends State<_AttendanceCard> {
   Widget build(BuildContext context) {
     final next = _nextLabel;
     return SizedBox(
-      width: 420,
+      width: ResponsiveUtils.dialogWidth(MediaQuery.sizeOf(context).width),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

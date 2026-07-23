@@ -11,9 +11,11 @@ import '../../services/license_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../../services/backend_config.dart';
 import '../../services/backend_server_resolver.dart';
+import '../../models/pricing_package.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/print_settings.dart';
 import 'user_manual_screen.dart';
+import 'activation_code_request_dialog.dart';
 import 'dart:math' as math;
 
 class SettingsScreen extends StatefulWidget {
@@ -1626,8 +1628,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _showRenewalDialog() async {
     final packageService = GetIt.I<PackageService>();
-    final package = packageService.selectedPackage;
-    if (package == null) return;
+    var package = packageService.selectedPackage;
+    if (package == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPackageName = prefs.getString('subscription_package');
+      for (final savedPackage in PricingPackage.packages) {
+        if (savedPackage.name == savedPackageName) {
+          package = savedPackage;
+          break;
+        }
+      }
+    }
+    if (package == null || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to determine the current subscription package.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Every settlement/renewal must start with a fresh activation-code
+    // request, even if the user already requested or used a previous code.
+    final requestSent = await showActivationCodeRequestDialog(
+      context: context,
+      packageName: package.name,
+      packagePrice: package.price,
+      requestType: 'monthly',
+    );
+    if (!requestSent || !mounted) return;
 
     final activationCodeController = TextEditingController();
 
@@ -1640,7 +1672,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Icon(Icons.vpn_key, color: Colors.blue.shade700),
             const SizedBox(width: 12),
-            Text('Renew ${package.name}'),
+            const Expanded(child: Text('Enter Renewal Activation Code')),
           ],
         ),
         content: Column(
@@ -1683,6 +1715,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 20),
+            const Text(
+              'Your request was sent. Enter the new activation code you receive to renew your subscription.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: activationCodeController,
               decoration: InputDecoration(

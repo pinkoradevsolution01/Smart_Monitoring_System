@@ -340,7 +340,7 @@ class _AttendanceCardState extends State<_AttendanceCard> {
   Widget build(BuildContext context) {
     final next = _nextLabel;
     return SizedBox(
-      width: 420,
+      width: ResponsiveUtils.dialogWidth(MediaQuery.sizeOf(context).width),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -15,6 +15,7 @@ import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../services/package_service.dart';
 import '../../services/attendance_service.dart';
+import '../../utils/responsive_utils.dart';
 
 class ManagerDashboard extends StatelessWidget {
   final User user;
@@ -50,7 +51,11 @@ class ManagerDashboard extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
             child: Padding(
-              padding: const EdgeInsets.all(12.0),
+              padding: EdgeInsets.all(
+                ResponsiveUtils.responsivePadding(
+                  MediaQuery.sizeOf(context).width,
+                ).left,
+              ),
               child: ListView(
                 children: [
                   // Dashboard welcome section
@@ -75,14 +80,9 @@ class ManagerDashboard extends StatelessWidget {
                   ),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      int cols = 1;
-                      if (constraints.maxWidth >= 1000) {
-                        cols = 4;
-                      } else if (constraints.maxWidth >= 800) {
-                        cols = 3;
-                      } else if (constraints.maxWidth >= 600) {
-                        cols = 2;
-                      }
+                      final cols = ResponsiveUtils.columnsForWidth(
+                        constraints.maxWidth,
+                      );
 
                       final items = <Widget>[
                         if (packageService.hasAttendanceAccess)
@@ -513,7 +513,7 @@ class _AttendanceCardState extends State<_AttendanceCard> {
   Widget build(BuildContext context) {
     final next = _nextLabel;
     return SizedBox(
-      width: 420,
+      width: ResponsiveUtils.dialogWidth(MediaQuery.sizeOf(context).width),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
