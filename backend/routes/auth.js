@@ -291,7 +291,9 @@ router.post('/owner-pin-reset/request', async (req, res) => {
   try {
     const owners = await query(
       `SELECT id, email FROM users
-       WHERE email = ? AND role = 'owner' AND is_active = 1
+       WHERE email COLLATE utf8mb4_unicode_ci =
+             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         AND role = 'owner' AND is_active = 1
        LIMIT 1`,
       [email],
     );
@@ -363,7 +365,8 @@ router.post('/owner-pin-reset/verify', async (req, res) => {
       `SELECT t.id
        FROM owner_pin_reset_tokens t
        INNER JOIN users u ON u.id = t.user_id
-       WHERE t.email = ?
+       WHERE t.email COLLATE utf8mb4_unicode_ci =
+             CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
          AND t.token_hash = ?
          AND t.used_at IS NULL
          AND t.expires_at > NOW()
