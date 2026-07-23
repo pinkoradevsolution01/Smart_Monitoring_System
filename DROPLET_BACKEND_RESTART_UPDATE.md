@@ -2,6 +2,16 @@
 
 This guide explains how to update, restart, and verify the Smart Monitoring System backend on the DigitalOcean Droplet.
 
+## Code-Only Backend Fixes
+
+For fixes that only change backend source files, such as the CCTV restore fix:
+
+- Update/redeploy the backend code and restart the PM2 process.
+- Do not change `backend/.env` unless environment variables were changed explicitly.
+- Rebuild/restart the Flutter app when the fix also changes client-side Dart code.
+
+The complete command sequence is provided in Section 13 below.
+
 ## 1. SSH Into The Droplet
 
 ```bash
@@ -252,4 +262,3 @@ Confirm Google Cloud Console has this exact Authorized redirect URI:
 ```text
 https://api.smartmonitoringsystem.store/api/auth/google/callback
 ```
-

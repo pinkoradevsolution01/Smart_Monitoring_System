@@ -676,8 +676,11 @@ function registerCrudRoutes(resourceName, config) {
       const offset = Math.max(parseInt(normalized.offset, 10) || 0, 0);
 
       const rows = await query(
-        `SELECT * FROM ${config.table} ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
-        [...params, limit, offset],
+        // MySQL/MariaDB prepared statements can reject LIMIT/OFFSET bound
+        // parameters (ER_WRONG_ARGUMENTS). The values are already validated
+        // as integers above, so embed them in the statement safely.
+        `SELECT * FROM ${config.table} ${where} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`,
+        params,
       );
 
       return res.json({ success: true, data: rows });

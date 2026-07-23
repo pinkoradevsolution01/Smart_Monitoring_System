@@ -64,6 +64,7 @@ class DatabaseService {
   }
 
   Future<void> _deleteRemoteRecord(String resource, dynamic id) async {
+    if (_suppressCloudSync) return;
     if (!BackendConfig.useRestBackend) return;
     final businessId = _currentBusinessId();
     if (businessId == null || businessId.isEmpty) return;
@@ -74,6 +75,7 @@ class DatabaseService {
   }
 
   Future<void> _deleteAllRemoteRecords(String resource) async {
+    if (_suppressCloudSync) return;
     if (!BackendConfig.useRestBackend) return;
     final businessId = _currentBusinessId();
     if (businessId == null || businessId.isEmpty) return;
