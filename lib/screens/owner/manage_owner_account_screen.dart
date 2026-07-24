@@ -186,16 +186,89 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
     }
   }
 
-  void _showChangePasswordDialog() {
+  Future<void> _showChangePinDialog() async {
+    if (!mounted || _owner == null) return;
+    if (!BackendConfig.useRestBackend) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A backend connection is required to change the PIN.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final owner = _owner!;
+    try {
+      final request = await _api.postJson(
+        'auth/owner-pin-reset/request',
+        body: {'email': owner.email},
+      );
+      if (request is! Map<String, dynamic> || request['success'] != true) {
+        throw Exception(
+          request is Map<String, dynamic>
+              ? (request['message'] ?? 'Failed to send PIN reset token')
+              : 'Failed to send PIN reset token',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send PIN reset token: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (!mounted) return;
-    showDialog(
+    final token = await showDialog<String>(
       context: context,
-      builder: (_) =>
-          _OwnerChangePasswordDialog(userService: _userService, owner: _owner),
+      barrierDismissible: false,
+      builder: (_) => const _OwnerPinResetTokenDialog(),
     );
+    if (token == null || !mounted) return;
+
+    final newPin = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _OwnerNewPinDialog(),
+    );
+    if (newPin == null || !mounted) return;
+
+    try {
+      final verification = await _api.postJson(
+        'auth/owner-pin-reset/verify',
+        body: {'email': owner.email, 'token': token, 'newPin': newPin},
+      );
+      if (verification is! Map<String, dynamic> ||
+          verification['success'] != true) {
+        throw Exception(
+          verification is Map<String, dynamic>
+              ? (verification['message'] ?? 'PIN reset failed')
+              : 'PIN reset failed',
+        );
+      }
+
+      final updated = owner.copyWith(pin: newPin);
+      final success = await _userService.updateUser(updated);
+      if (!success) throw Exception('PIN could not be saved locally');
+      if (!mounted) return;
+      setState(() => _owner = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.t('account_updated_success'))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('PIN reset failed: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 
-  void _showChangePinDialog() {
+  /*
+  void _showChangePinDialogLegacy() {
     if (!mounted) return;
     showDialog(
       context: context,
@@ -305,6 +378,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
       },
     );
   }
+  */
 
   Future<void> _deleteOwner() async {
     if (_owner == null) return;
@@ -503,15 +577,6 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton.icon(
-                          onPressed: _showChangePasswordDialog,
-                          icon: const Icon(Icons.lock_open),
-                          label: Text(AppLocalizations.t('change_password')),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
                           onPressed: _showChangePinDialog,
                           icon: const Icon(Icons.pin),
                           label: const Text('Change PIN'),
@@ -571,6 +636,123 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _OwnerPinResetTokenDialog extends StatefulWidget {
+  const _OwnerPinResetTokenDialog();
+
+  @override
+  State<_OwnerPinResetTokenDialog> createState() =>
+      _OwnerPinResetTokenDialogState();
+}
+
+class _OwnerPinResetTokenDialogState extends State<_OwnerPinResetTokenDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Enter PIN Reset Token'),
+      content: TextField(
+        controller: _controller,
+        maxLength: 64,
+        decoration: const InputDecoration(
+          labelText: 'Reset token',
+          hintText: 'Paste the token from your email',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(AppLocalizations.t('cancel')),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final value = _controller.text.trim();
+            if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(value)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Enter the complete reset token')),
+              );
+              return;
+            }
+            Navigator.pop(context, value);
+          },
+          child: Text(AppLocalizations.t('verify')),
+        ),
+      ],
+    );
+  }
+}
+
+class _OwnerNewPinDialog extends StatefulWidget {
+  const _OwnerNewPinDialog();
+
+  @override
+  State<_OwnerNewPinDialog> createState() => _OwnerNewPinDialogState();
+}
+
+class _OwnerNewPinDialogState extends State<_OwnerNewPinDialog> {
+  final _newPinController = TextEditingController();
+  final _confirmPinController = TextEditingController();
+
+  @override
+  void dispose() {
+    _newPinController.dispose();
+    _confirmPinController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Change Owner PIN'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _newPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(hintText: 'New 4-digit PIN'),
+          ),
+          TextField(
+            controller: _confirmPinController,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            obscureText: true,
+            decoration: const InputDecoration(hintText: 'Confirm PIN'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(AppLocalizations.t('cancel')),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final pin = _newPinController.text.trim();
+            final confirmation = _confirmPinController.text.trim();
+            if (!RegExp(r'^\d{4}$').hasMatch(pin) || pin != confirmation) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('PINs must match and be 4 digits')),
+              );
+              return;
+            }
+            Navigator.pop(context, pin);
+          },
+          child: Text(AppLocalizations.t('save_changes')),
+        ),
+      ],
     );
   }
 }

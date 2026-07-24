@@ -364,7 +364,9 @@ router.post('/owner-pin-reset/verify', async (req, res) => {
     const candidates = await query(
       `SELECT t.id
        FROM owner_pin_reset_tokens t
-       INNER JOIN users u ON u.id = t.user_id
+       INNER JOIN users u ON
+         CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+         CONVERT(t.user_id USING utf8mb4) COLLATE utf8mb4_unicode_ci
        WHERE t.email COLLATE utf8mb4_unicode_ci =
              CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
          AND t.token_hash = ?
