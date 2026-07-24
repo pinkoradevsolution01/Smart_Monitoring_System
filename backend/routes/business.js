@@ -166,6 +166,7 @@ router.delete('/purge', async (req, res) => {
       await connection.execute(
         `UPDATE subscriptions
          SET status = 'cancelled',
+             last_checked_at = NOW(),
              notes = CASE
                WHEN notes IS NULL OR notes = '' THEN 'Deactivated via subscriber deactivation'
                ELSE CONCAT(notes, '\nDeactivated via subscriber deactivation')
@@ -177,7 +178,14 @@ router.delete('/purge', async (req, res) => {
 
     if (ownerEmail) {
       await connection.execute(
-        'DELETE FROM activation_code_requests WHERE contact_email = ?',
+        `UPDATE activation_code_requests
+         SET status = 'cancelled',
+             additional_notes = CASE
+               WHEN additional_notes IS NULL OR additional_notes = '' THEN 'Cancelled via subscriber deactivation'
+               ELSE CONCAT(additional_notes, '\nCancelled via subscriber deactivation')
+             END,
+             updated_at = NOW()
+         WHERE contact_email = ?`,
         [ownerEmail],
       );
     }

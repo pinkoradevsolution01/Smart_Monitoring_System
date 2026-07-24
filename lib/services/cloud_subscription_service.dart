@@ -139,7 +139,7 @@ class CloudSubscriptionService extends ChangeNotifier {
         '"${sub.packageName}",'
         '"${sub.status}",'
         '"${sub.activatedAt.toLocal()}",'
-        '"${sub.expiresAt.toLocal()}",'
+        '"${sub.expiresAt?.toLocal() ?? 'Perpetual'}",'
         '${sub.remainingDays}',
       );
     }

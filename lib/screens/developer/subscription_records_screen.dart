@@ -337,7 +337,9 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
               _buildDetailRow(
                 Icons.event,
                 'Expires',
-                dateFormat.format(subscription.expiresAt.toLocal()),
+                      subscription.expiresAt == null
+                          ? 'Perpetual'
+                          : dateFormat.format(subscription.expiresAt!.toLocal()),
                 isActive ? Colors.green : Colors.red,
               ),
               if (isActive) ...[
@@ -468,7 +470,9 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
               ),
               _buildInfoItem(
                 'Expires At',
-                dateFormat.format(subscription.expiresAt.toLocal()),
+                subscription.expiresAt == null
+                    ? 'Perpetual'
+                    : dateFormat.format(subscription.expiresAt!.toLocal()),
               ),
               if (subscription.lastCheckedAt != null)
                 _buildInfoItem(

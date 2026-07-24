@@ -230,10 +230,12 @@ class SubscriberService extends ChangeNotifier {
 
     await syncFromAllSources();
 
-    final stillExists = _subs.values.any(
-      (s) => s.id == subscriber.id || s.email.trim().toLowerCase() == normalizedEmail,
+    final stillActive = _subs.values.any(
+      (s) =>
+          s.status == 'active' &&
+          (s.id == subscriber.id || s.email.trim().toLowerCase() == normalizedEmail),
     );
-    if (stillExists) {
+    if (stillActive) {
       throw Exception(
         'Deactivation request sent but subscriber still exists in cloud records. Please sync again.',
       );
@@ -350,6 +352,7 @@ class SubscriberService extends ChangeNotifier {
             email: customerEmail,
             contactNumber: subscription.packageName,
             createdAt: subscription.activatedAt,
+            status: subscription.status,
           );
           
           if (!_subs.containsKey(deviceId)) {

@@ -187,10 +187,25 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                           itemBuilder: (context, i) {
                             final s = subs[i];
                             return ListTile(
-                              leading: const Icon(Icons.person_outline),
+                              leading: Icon(
+                                s.status == 'cancelled'
+                                    ? Icons.cancel_outlined
+                                    : Icons.person_outline,
+                                color: s.status == 'cancelled' ? Colors.red : null,
+                              ),
                               title: Text(s.name),
                               subtitle: Text(
                                 '${s.email}${s.contactNumber != null ? ' • ${s.contactNumber}' : ''}',
+                              ),
+                              trailing: Text(
+                                s.status.toUpperCase(),
+                                style: TextStyle(
+                                  color: s.status == 'cancelled'
+                                      ? Colors.red
+                                      : Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
                               ),
                               onTap: () => _showDetails(s),
                             );
@@ -329,6 +344,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildDetailRow('📧 Email', s.email),
+              _buildDetailRow('Status', s.status.toUpperCase()),
               if (s.contactNumber != null) 
                 _buildDetailRow('📱 Contact', s.contactNumber!),
               _buildDetailRow('📅 Registered', s.createdAt.toLocal().toString().split('.')[0]),
@@ -424,14 +440,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _confirmDeactivation(s);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Deactivate'),
-          ),
+          if (s.status != 'cancelled')
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _confirmDeactivation(s);
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Deactivate'),
+            ),
         ],
       ),
     );

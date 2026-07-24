@@ -6,7 +6,7 @@ class SubscriptionRecord {
   final String packageName;
   final String? deviceName;
   final DateTime activatedAt;
-  final DateTime expiresAt;
+  final DateTime? expiresAt;
   final String status; // active, expired, cancelled
   final DateTime? lastCheckedAt;
   final String? notes;
@@ -33,7 +33,9 @@ class SubscriptionRecord {
       packageName: json['package_name'] as String,
       deviceName: json['device_name'] as String?,
       activatedAt: DateTime.parse(json['activated_at'] as String),
-      expiresAt: DateTime.parse(json['expires_at'] as String),
+      expiresAt: json['expires_at'] != null
+          ? DateTime.parse(json['expires_at'] as String)
+          : null,
       status: json['status'] as String,
       lastCheckedAt: json['last_checked_at'] != null
           ? DateTime.parse(json['last_checked_at'] as String)
@@ -51,7 +53,7 @@ class SubscriptionRecord {
       'package_name': packageName,
       'device_name': deviceName,
       'activated_at': activatedAt.toIso8601String(),
-      'expires_at': expiresAt.toIso8601String(),
+      'expires_at': expiresAt?.toIso8601String(),
       'status': status,
       'last_checked_at': lastCheckedAt?.toIso8601String(),
       'notes': notes,
@@ -59,18 +61,24 @@ class SubscriptionRecord {
   }
 
   /// Check if subscription is active
-  bool get isActive => status == 'active' && DateTime.now().isBefore(expiresAt);
+  bool get isActive =>
+      status == 'active' &&
+      (expiresAt == null || DateTime.now().isBefore(expiresAt!));
 
   /// Check if subscription is expired
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
+  bool get isExpired =>
+      status == 'expired' ||
+      (status == 'active' && expiresAt != null && DateTime.now().isAfter(expiresAt!));
 
   /// Get remaining days until expiry
-  int get remainingDays => expiresAt.difference(DateTime.now()).inDays;
+  int? get remainingDays => expiresAt?.difference(DateTime.now()).inDays;
 
   /// Get formatted status with expiry info
   String get formattedStatus {
-    if (isActive) {
-      return 'Active ($remainingDays days left)';
+    if (status == 'cancelled') {
+      return 'Cancelled';
+    } else if (isActive) {
+      return expiresAt == null ? 'Active (Perpetual)' : 'Active ($remainingDays days left)';
     } else if (isExpired) {
       return 'Expired';
     } else {

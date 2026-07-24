@@ -4,6 +4,7 @@ class Subscriber {
   final String email;
   final String? contactNumber;
   final DateTime createdAt;
+  final String status;
 
   Subscriber({
     required this.id,
@@ -11,6 +12,7 @@ class Subscriber {
     required this.email,
     this.contactNumber,
     required this.createdAt,
+    this.status = 'active',
   });
 
   factory Subscriber.fromMap(Map<String, dynamic> m) => Subscriber(
@@ -19,6 +21,7 @@ class Subscriber {
     email: m['email'] as String,
     contactNumber: m['contactNumber'] as String?,
     createdAt: DateTime.parse(m['createdAt'] as String),
+    status: m['status'] as String? ?? 'active',
   );
 
   Map<String, dynamic> toMap() => {
@@ -27,5 +30,6 @@ class Subscriber {
     'email': email,
     'contactNumber': contactNumber,
     'createdAt': createdAt.toIso8601String(),
+    'status': status,
   };
 }

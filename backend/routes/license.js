@@ -234,6 +234,18 @@ router.post('/activate', async (req, res) => {
       [deviceId, code, packageName || codeRow.package_name || 'Standard', deviceName, expiresAt, 'active'],
     );
 
+    await query(
+      `INSERT INTO subscription_records
+        (device_id, activation_code, package_name, device_name, activated_at, expires_at, status, created_at)
+        VALUES (?, ?, ?, ?, NOW(), ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE
+          package_name = VALUES(package_name),
+          device_name = VALUES(device_name),
+          expires_at = VALUES(expires_at),
+          status = VALUES(status)`,
+      [deviceId, code, packageName || codeRow.package_name || 'Standard', deviceName, expiresAt, 'active'],
+    );
+
     return res.json({
       success: true,
       message: 'Activation successful.',
