@@ -1239,12 +1239,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ),
                           ],
                         ),
+                      if (_subscriptionMode == 'one_time_license')
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.green.shade200),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.verified_user_outlined,
+                                    size: 16,
+                                    color: Colors.green.shade700,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'One-Time License',
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Perpetual access',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: Colors.grey[700]),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
                 if (package.price != 'Custom Pricing')
                   Text(
-                    package.price,
+                    _subscriptionMode == 'one_time_license' &&
+                            package.oneTimePrice.isNotEmpty
+                        ? package.oneTimePrice
+                        : package.price,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.primary,
