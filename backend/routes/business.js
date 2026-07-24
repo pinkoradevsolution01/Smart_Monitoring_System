@@ -24,6 +24,17 @@ router.post('/init', async (req, res) => {
   }
 
   try {
+    const cancelledRows = await query(
+      'SELECT id FROM cancelled_subscribers WHERE email = ? LIMIT 1',
+      [ownerEmail.trim().toLowerCase()],
+    );
+    if (cancelledRows.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'This subscriber account has been cancelled and cannot be reactivated.',
+      });
+    }
+
     if (existingBusinessId) {
       const existing = await query('SELECT id, owner_id FROM businesses WHERE id = ?', [existingBusinessId]);
       if (existing.length) {
@@ -177,6 +188,16 @@ router.delete('/purge', async (req, res) => {
     }
 
     if (ownerEmail) {
+      await connection.execute(
+        `INSERT INTO cancelled_subscribers (email, activation_code, reason)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           activation_code = COALESCE(VALUES(activation_code), activation_code),
+           reason = VALUES(reason),
+           cancelled_at = NOW()`,
+        [ownerEmail.toLowerCase(), activationCodeList[0] || null, 'Subscriber deactivated by developer'],
+      );
+
       await connection.execute(
         `UPDATE activation_code_requests
          SET status = 'cancelled',

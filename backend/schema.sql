@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS businesses (
   KEY idx_businesses_is_active (is_active)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS cancelled_subscribers (
+  id CHAR(36) NOT NULL PRIMARY KEY DEFAULT (UUID()),
+  email VARCHAR(255) NOT NULL,
+  activation_code VARCHAR(64) NULL,
+  reason TEXT,
+  cancelled_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_cancelled_subscribers_email (email),
+  KEY idx_cancelled_subscribers_activation_code (activation_code)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(64) PRIMARY KEY,
   business_id VARCHAR(64) NULL,

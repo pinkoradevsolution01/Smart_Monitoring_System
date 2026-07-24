@@ -289,6 +289,17 @@ router.post('/owner-pin-reset/request', async (req, res) => {
   }
 
   try {
+    const cancelledRows = await query(
+      'SELECT id FROM cancelled_subscribers WHERE email = ? LIMIT 1',
+      [String(email).trim().toLowerCase()],
+    );
+    if (cancelledRows.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'This subscriber account has been cancelled and cannot be reactivated.',
+      });
+    }
+
     const owners = await query(
       `SELECT id, email FROM users
        WHERE email COLLATE utf8mb4_unicode_ci =
@@ -418,6 +429,17 @@ router.post('/google/register-owner', async (req, res) => {
   }
 
   try {
+    const cancelledRows = await query(
+      'SELECT id FROM cancelled_subscribers WHERE email = ? LIMIT 1',
+      [normalizedEmail.toLowerCase()],
+    );
+    if (cancelledRows.length) {
+      return res.status(403).json({
+        success: false,
+        message: 'This subscriber account has been cancelled and cannot be reactivated.',
+      });
+    }
+
     const existingRows = businessId
       ? await query(
           'SELECT id, business_id, email, role, full_name, contact_number, auth_method FROM users WHERE business_id = ? AND email = ? LIMIT 1',

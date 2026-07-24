@@ -257,3 +257,96 @@ flutter build apk --release --dart-define=BACKEND_API_BASE_URL=https://api.smart
 - [`pubspec.yaml`](pubspec.yaml)
 - [`SYSTEM_DOCUMENTATION.md`](SYSTEM_DOCUMENTATION.md)
 - [`SYSTEM_ARCHITECTURE.md`](SYSTEM_ARCHITECTURE.md)
+
+## 11. Recent Backend and Domain Features
+
+The production backend now includes the following flows in addition to the
+original CRUD and synchronization endpoints.
+
+### Owner PIN/password reset token flow
+
+Owner PIN reset authorization is handled by the Node.js API and email service:
+
+1. The client submits an owner email to `POST /api/auth/owner-pin-reset/request`.
+2. The backend returns a generic response so the endpoint does not reveal
+   whether an email belongs to an owner account.
+3. For an active owner, the backend creates a cryptographically random token,
+   stores only its SHA-256 hash in `owner_pin_reset_tokens`, and sends the raw
+   token through SMTP using Nodemailer.
+4. Tokens expire after 20 minutes. Any previous unused token for the owner is
+   invalidated before a new token is created.
+5. The client submits the email, token, and new four-digit PIN to
+   `POST /api/auth/owner-pin-reset/verify`.
+6. The backend validates the token hash, owner account, expiry, and unused
+   state, then atomically marks the token as used. The client persists the new
+   local PIN only after successful authorization.
+
+Required email environment variables are `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_USER`, `SMTP_PASS`, and `FROM_EMAIL`. The flow is implemented in
+`backend/routes/auth.js` and uses the `owner_pin_reset_tokens` table defined in
+`backend/schema.sql`.
+
+### Google OAuth token exchange
+
+Google login uses a short-lived authorization code. The backend exchanges that
+code exactly once at `GET /api/auth/google/callback` or
+`POST /api/auth/google/exchange`, verifies the returned Google ID token, and
+issues the application JWT. The configured Google client credentials and
+redirect URI must belong to the same OAuth client. A stale, reused, or
+refreshed callback URL can produce Google's `invalid_grant` response.
+
+### One-Time License and SaaS subscription modes
+
+Package activation supports two entitlement models:
+
+- **One-Time License**: the selected package is stored as
+  `subscription_mode = one_time_license`; the subscription has no expiry and
+  Settings displays perpetual access.
+- **SaaS Monthly Subscription**: the selected package is stored as an active
+  subscription with a 30-day expiry, monthly pricing, and renewal handling.
+
+Premium and Enterprise packages use a negative product limit to represent
+unlimited products. Product-limit checks treat negative limits as unlimited;
+Basic and Standard retain their finite limits. The backend also records the
+license type and subscription expiry in the activation flow.
+
+### Persistent subscriber cancellation
+
+Subscriber deactivation is a status-preserving CRUD operation:
+
+- `subscriptions.status` is set to `cancelled`.
+- `subscription_records.status` is set to `cancelled`.
+- The cancelled email is recorded in `cancelled_subscribers` so it cannot
+  register or log in again through Google or password authentication.
+- Activation requests are retained and marked cancelled rather than deleted.
+- Subscription renewal rows are removed while the subscription history remains.
+- Developer Subscribers and Subscription Records display the cancelled status.
+- Cancelled records are not considered active during synchronization.
+
+The migration `sql/subscription_cancellation_and_perpetual_license.sql` makes
+subscription expiry nullable for perpetual licenses and backfills historical
+subscription records. It must be applied once to an existing MySQL database.
+
+### Safe synchronization after deactivation
+
+The client can still have queued data after a business is deactivated. Before
+processing `POST /api/sync/push`, the backend verifies that the referenced
+business still exists. If it has been intentionally purged, the API returns a
+successful skipped response instead of inserting orphaned child rows. This
+prevents foreign-key errors in attendance schedules and other business-owned
+tables and avoids recreating access for a cancelled subscriber.
+
+### Operational deployment sequence
+
+After backend or schema changes are pushed to GitHub:
+
+```bash
+cd /root/Smart_Monitoring_System
+git pull --ff-only origin main
+mysql -u YOUR_MYSQL_USER -p smart_monitoring < sql/subscription_cancellation_and_perpetual_license.sql
+pm2 restart smart-monitoring-backend
+pm2 save
+```
+
+Verify the service with `pm2 status`, `pm2 logs smart-monitoring-backend`, and
+`https://api.smartmonitoringsystem.store/api/health`.
