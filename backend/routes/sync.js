@@ -31,6 +31,21 @@ router.post('/push', async (req, res) => {
     return res.status(400).json({ success: false, message: 'businessId is required.' });
   }
 
+  // A deactivated subscriber's local client may still retry a queued payload.
+  // Do not recreate child records for a business that was intentionally purged.
+  const existingBusiness = await query(
+    'SELECT id FROM businesses WHERE id = ? LIMIT 1',
+    [resolvedBusinessId],
+  );
+  if (!existingBusiness.length) {
+    return res.json({
+      success: true,
+      skipped: true,
+      reason: 'business_cancelled',
+      message: 'Sync skipped because the business is no longer active.',
+    });
+  }
+
   const connection = await getConnection();
   try {
     await connection.beginTransaction();
