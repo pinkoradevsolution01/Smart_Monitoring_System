@@ -441,7 +441,7 @@ class LicenseService extends ChangeNotifier {
       _activationCode = code;
       _isActivated = true;
       _isLocked = false;
-      _subscriptionMode = 'activated';
+      _subscriptionMode = oneTimeLicense ? 'one_time_license' : 'activated';
       _subscriptionExpires = subscriptionExpires;
 
       notifyListeners();
