@@ -182,7 +182,10 @@ class LicenseService extends ChangeNotifier {
 
   /// Activate the app with an activation code using Supabase
   /// Returns true if activation was successful
-  Future<ActivationResult> activate(String code) async {
+  Future<ActivationResult> activate(
+    String code, {
+    bool oneTimeLicense = false,
+  }) async {
     if (code.isEmpty) {
       return ActivationResult(
         success: false,
@@ -195,7 +198,11 @@ class LicenseService extends ChangeNotifier {
         debugPrint('LicenseService: Validating code via REST backend...');
         final backendResult = await _validateWithBackend(code);
         if (backendResult.success) {
-          await _saveActivation(code, backendResult.packageName ?? 'Standard');
+          await _saveActivation(
+            code,
+            backendResult.packageName ?? 'Standard',
+            oneTimeLicense: oneTimeLicense,
+          );
         }
         return backendResult;
       }
@@ -205,7 +212,11 @@ class LicenseService extends ChangeNotifier {
       );
       final offlineResult = await _validateOffline(code);
       if (offlineResult.success) {
-        await _saveActivation(code, offlineResult.packageName ?? 'Standard');
+        await _saveActivation(
+          code,
+          offlineResult.packageName ?? 'Standard',
+          oneTimeLicense: oneTimeLicense,
+        );
       }
       return offlineResult;
     } catch (e) {
@@ -213,7 +224,11 @@ class LicenseService extends ChangeNotifier {
 
       final offlineResult = await _validateOffline(code);
       if (offlineResult.success) {
-        await _saveActivation(code, offlineResult.packageName ?? 'Standard');
+        await _saveActivation(
+          code,
+          offlineResult.packageName ?? 'Standard',
+          oneTimeLicense: oneTimeLicense,
+        );
       }
       return offlineResult;
     }
@@ -392,25 +407,36 @@ class LicenseService extends ChangeNotifier {
   }
 
   /// Save successful activation to preferences
-  Future<void> _saveActivation(String code, String packageName) async {
+  Future<void> _saveActivation(
+    String code,
+    String packageName, {
+    required bool oneTimeLicense,
+  }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final now = DateTime.now();
 
-      // MONTHLY RENTAL: Set subscription expiry to 1 month from now
-      final subscriptionExpires = now.add(
-        const Duration(days: 30), // PRODUCTION: 30 days monthly rental
-      );
+      // One-time licenses are perpetual; SaaS activations expire after 30 days.
+      final subscriptionExpires = oneTimeLicense
+          ? null
+          : now.add(const Duration(days: 30));
 
       await prefs.setString(_activationCodeKey, code);
       await prefs.setBool(_activationStatusKey, true);
-      await prefs.setString(_subscriptionModeKey, 'activated');
+      await prefs.setString(
+        _subscriptionModeKey,
+        oneTimeLicense ? 'one_time_license' : 'activated',
+      );
       await prefs.setString(_activationDateKey, now.toIso8601String());
       await prefs.setString(_activatedPackageNameKey, packageName);
-      await prefs.setString(
-        _subscriptionExpiresKey,
-        subscriptionExpires.toIso8601String(),
-      );
+      if (subscriptionExpires == null) {
+        await prefs.remove(_subscriptionExpiresKey);
+      } else {
+        await prefs.setString(
+          _subscriptionExpiresKey,
+          subscriptionExpires.toIso8601String(),
+        );
+      }
 
       _activationCode = code;
       _isActivated = true;
@@ -421,7 +447,7 @@ class LicenseService extends ChangeNotifier {
       notifyListeners();
 
       debugPrint(
-        'LicenseService: Activation saved - $packageName package - expires ${subscriptionExpires.toLocal()} (30-day subscription)',
+        'LicenseService: Activation saved - $packageName package - ${oneTimeLicense ? 'perpetual one-time license' : 'expires ${subscriptionExpires!.toLocal()}'}',
       );
     } catch (e) {
       debugPrint('LicenseService: Error saving activation: $e');

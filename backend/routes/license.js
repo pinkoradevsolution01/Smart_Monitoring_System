@@ -204,10 +204,23 @@ router.post('/activate', async (req, res) => {
       ['used', deviceId, deviceName, code],
     );
 
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 19)
-      .replace('T', ' ');
+    // The request type determines the entitlement duration. One-time licenses
+    // are perpetual; SaaS subscriptions remain active for 30 days.
+    const requestRows = await query(
+      `SELECT request_type
+       FROM activation_code_requests
+       WHERE activation_code = ?
+       ORDER BY fulfilled_at DESC, requested_at DESC
+       LIMIT 1`,
+      [code],
+    );
+    const isOneTimeLicense = requestRows[0]?.request_type === 'one_time_license';
+    const expiresAt = isOneTimeLicense
+      ? null
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 19)
+          .replace('T', ' ');
 
     await query(
       `INSERT INTO subscriptions
@@ -226,6 +239,7 @@ router.post('/activate', async (req, res) => {
       message: 'Activation successful.',
       packageName: packageName ?? codeRow.package_name,
       expiresAt,
+      licenseType: isOneTimeLicense ? 'one_time_license' : 'monthly',
     });
   } catch (error) {
     console.error('License activate error:', error);

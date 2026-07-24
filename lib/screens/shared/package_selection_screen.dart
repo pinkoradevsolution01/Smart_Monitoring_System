@@ -735,7 +735,10 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
     // Step 3: Try to activate
     try {
       final licenseService = GetIt.I<LicenseService>();
-      final activationResult = await licenseService.activate(code);
+      final activationResult = await licenseService.activate(
+        code,
+        oneTimeLicense: oneTimeLicense,
+      );
 
       if (!mounted) return;
 

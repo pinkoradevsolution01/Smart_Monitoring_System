@@ -1,56 +1,100 @@
 # Smart Monitoring System Pricing Sheet
 
-For SMBs using a **MySQL + Node.js backend**.
+The following packages match the pricing and package features configured in the Smart Monitoring System application.
 
-This pricing is structured as a **one-time license** with optional setup and maintenance, so it is easier for small and medium businesses to budget.
+## Pricing Models
 
-After reviewing the current feature set, this system is no longer just a POS. It now functions more like a small retail ERP with role-based access, attendance, payroll, supplier management, cloud sync, CCTV, activation licensing, and AI help.
+### One-time License
 
-## Recommended Pricing
+| Package | Price | Best For |
+|---|---:|---|
+| Basic | ₱19,999 | Small businesses starting with POS and local operations |
+| Standard | ₱34,999 | Growing retail stores requiring cloud sync and business management tools |
+| Premium | ₱59,999 | Businesses requiring CCTV monitoring, advanced analytics, and multi-device access |
+| Enterprise | Custom | Large retail chains requiring tailored features and support |
 
-| Package | Price | Best For | Includes |
-|---|---:|---|---|
-| Basic | ₱19,999 | Very small shops, single branch, simple POS use | POS, inventory, reports, backup/restore, e-wallet, AI help, delivery support |
-| Standard | ₱34,999 | Growing stores, small chains, multiple staff | Everything in Basic plus cloud sync, supplier management, attendance, payroll, multi-device support |
-| Premium | ₱59,999 | Busier stores, owners who want stronger oversight | Everything in Standard plus CCTV integration, advanced analytics, priority support |
+One-time license pricing provides perpetual access for one business location. Setup and activation are included. Enterprise pricing is quoted based on requirements.
 
-## Optional Service Fees
+### SaaS Subscription
 
-| Item | Price |
-|---|---:|
-| Installation and database setup | ₱5,000 - ₱10,000 |
-| Staff training | ₱3,000 - ₱6,000 |
-| Annual maintenance and support | 15% - 20% of license price |
-| Major version upgrade | Quoted per scope |
+| Package | Monthly Price | Previous Price | Best For |
+|---|---:|---:|---|
+| Basic | ₱1,999/month | ₱2,999/month | Small businesses starting with POS and local operations |
+| Standard | ₱3,999/month | ₱5,999/month | Growing retail stores requiring cloud sync and business management tools |
+| Premium | ₱6,999/month | ₱9,999/month | Businesses requiring CCTV monitoring, advanced analytics, and multi-device access |
+| Enterprise | Custom | — | Large retail chains requiring tailored features and support |
 
-## What the Client Is Paying For
+SaaS subscriptions require monthly renewal with an activation code. Enterprise pricing is quoted based on requirements.
 
-- Licensed use of the system for one business
-- MySQL database setup
-- Node.js backend deployment
-- Initial configuration and activation
-- Basic bug fixes during the support period
-- Minor updates and assistance, depending on plan
+## Package Features
 
-## Suggested License Terms
+### Basic
 
-- One-time payment for the software license
-- License valid for one business location unless otherwise agreed
-- Optional annual maintenance after the included support period
-- Custom development and extra integrations billed separately
+- Smart POS Terminal (Mobile, Web, Windows)
+- 2 user accounts
+- Up to 100 products
+- Basic inventory management
+- Sales reports
+- Local storage only
+- Local backup and restore
+- Backup export/import
+- E-Wallet integration
+- Email support
+- AI Help Assistance
+- Delivery management support
 
-## If You Want a Higher-Priced Version
+### Standard — Most Popular
 
-Use these instead if you want a more premium market position:
+- Smart POS Terminal (Mobile, Web, Windows)
+- 5 user accounts
+- Up to 500 products
+- Advanced inventory
+- Sales and financial reports
+- Attendance management
+- Cloud sync
+- Supplier management
+- E-Wallet integration
+- Priority email support
+- AI Help Assistance
+- Delivery management support
 
-| Package | Price |
-|---|---:|
-| Basic | ₱24,999 |
-| Standard | ₱39,999 |
-| Premium | ₱69,999 |
+### Premium
 
-These higher prices work better if you include stronger support, deployment help, training, and more hands-on customization.
+- Smart POS Terminal (Mobile, Web, Windows)
+- 10 user accounts
+- Unlimited products
+- Full inventory suite
+- CCTV integration for up to 4 cameras
+- Advanced analytics
+- Attendance management
+- Multi-device sync
+- All integrations
+- 24/7 phone support
+- AI Help Assistance
+- Delivery management support
 
-## Simple Sales Pitch
+### Enterprise
 
-“Smart Monitoring System is a one-time licensed retail management solution with POS, inventory, reporting, backup, and business control tools. It is designed for small and medium businesses that want a practical system without monthly SaaS costs.”
+- Smart POS Terminal (Mobile, Web, Windows)
+- Unlimited users
+- Unlimited products
+- Enterprise inventory
+- Unlimited CCTV integration
+- Custom analytics dashboard
+- Multi-branch support
+- API access
+- Dedicated account manager
+- On-site training
+- Custom integrations
+
+## License and Subscription Terms
+
+- One-time licenses are valid for one business location unless otherwise agreed.
+- SaaS subscriptions are valid for one month and must be renewed monthly.
+- Activation codes are required for paid plans.
+- Enterprise pricing, custom development, and additional integrations are quoted separately.
+- Free trials may be available according to the application’s current trial rules.
+
+## Important Pricing Note
+
+Package prices and features should be updated here whenever the package definitions in `lib/models/pricing_package.dart` change. Developer package overrides may change the displayed package name, price, description, or period on a specific installation.

@@ -54,6 +54,13 @@ class PackageService extends ChangeNotifier {
   int get maxUsers => _selectedPackage?.maxUsers ?? 1;
   int get maxProducts => _selectedPackage?.maxProducts ?? 100;
 
+  /// Returns whether another product may be added to the selected package.
+  /// A negative product limit represents an unlimited package.
+  bool isProductLimitReached(int currentProductCount) {
+    final limit = _selectedPackage?.maxProducts;
+    return limit != null && limit >= 0 && currentProductCount >= limit;
+  }
+
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     _setupComplete = prefs.getBool(_setupCompleteKey) ?? false;

@@ -75,10 +75,9 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
     // Only check product limit when adding new product (not editing)
     if (product == null) {
       final currentProductCount = _posService.products.length;
-      final maxProducts =
-          _packageService.selectedPackage?.maxProducts ?? 999999;
+      final maxProducts = _packageService.maxProducts;
 
-      if (currentProductCount >= maxProducts) {
+      if (_packageService.isProductLimitReached(currentProductCount)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
