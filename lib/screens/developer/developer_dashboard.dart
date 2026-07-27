@@ -9,7 +9,6 @@ import '../../services/google_auth_service.dart';
 import '../../models/pricing_package.dart';
 import '../shared/developer_auth_screen.dart';
 // removed unused import: package selection is no longer referenced here
-import '../shared/license_test_screen.dart';
 import '../auth/login_screen.dart';
 import 'activity_logs_screen.dart';
 import 'activation_code_generator_screen.dart';
@@ -17,7 +16,7 @@ import 'activation_requests_screen.dart';
 import 'code_revocation_screen.dart';
 import 'customer_activation_screen.dart';
 import 'subscription_records_screen.dart';
-import 'supabase_connection_test.dart';
+import 'backend_connection_test.dart';
 import 'developer_account_screen.dart';
 import 'demo_access_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -203,13 +202,13 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
                 _DeveloperCard(
                   icon: Icons.wifi_tethering,
                   color: Colors.indigo,
-                  title: 'Test Supabase Connection',
-                  description: 'Verify database connection and RLS policies',
+                  title: 'System Health & Diagnostics',
+                  description: 'Check the Droplet API and MySQL availability',
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const SupabaseConnectionTest(),
+                        builder: (_) => const BackendConnectionTest(),
                       ),
                     );
                   },
@@ -270,24 +269,6 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
                   },
                 ),
 
-                const SizedBox(height: 24),
-                _buildSectionTitle('Debug Info'),
-                const SizedBox(height: 12),
-                _DeveloperCard(
-                  icon: Icons.bug_report,
-                  color: Colors.deepOrange,
-                  title: 'License Test Tools',
-                  description: 'Test trial expiry and activation codes',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const LicenseTestScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildDebugInfoCard(),
               ],
             ),
           ),
@@ -588,77 +569,6 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
   }
 
   // removed _buildInfoRow — it was used only by the Current Package card
-
-  Widget _buildDebugInfoCard() {
-    return Card(
-      color: Colors.grey[850],
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '🐛 Debug Information',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildDebugItem(
-              'Has Package',
-              packageService.hasPackage.toString(),
-            ),
-            _buildDebugItem(
-              'Setup Complete',
-              packageService.setupComplete.toString(),
-            ),
-            _buildDebugItem(
-              'CCTV Access',
-              packageService.hasCCTVAccess.toString(),
-            ),
-            _buildDebugItem(
-              'E-Wallet Access',
-              packageService.hasEWalletAccess.toString(),
-            ),
-            _buildDebugItem(
-              'Cloud Sync',
-              packageService.hasCloudSyncAccess.toString(),
-            ),
-            _buildDebugItem(
-              'Supplier Mgmt',
-              packageService.hasSupplierManagementAccess.toString(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDebugItem(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              color: value == 'true' ? Colors.green : Colors.red,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   void _showClearPreferencesDialog() {
     showDialog(

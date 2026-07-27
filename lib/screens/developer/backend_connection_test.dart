@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../services/backend_api_service.dart';
 
-/// Quick test screen to verify backend/MySQL connection
-/// Add this to Developer Dashboard for testing
-class SupabaseConnectionTest extends StatefulWidget {
-  const SupabaseConnectionTest({super.key});
+/// Quick test screen to verify the Droplet backend API and MySQL connection.
+class BackendConnectionTest extends StatefulWidget {
+  const BackendConnectionTest({super.key});
 
   @override
-  State<SupabaseConnectionTest> createState() => _SupabaseConnectionTestState();
+  State<BackendConnectionTest> createState() => _BackendConnectionTestState();
 }
 
-class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
+class _BackendConnectionTestState extends State<BackendConnectionTest> {
   String _status = 'Ready to test...';
   bool _isTesting = false;
   Color _statusColor = Colors.grey;
@@ -21,7 +20,7 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Backend Connection Test'),
+        title: const Text('Backend API & Database Test'),
         backgroundColor: Colors.indigo,
       ),
       body: Padding(
@@ -143,76 +142,26 @@ class _SupabaseConnectionTestState extends State<SupabaseConnectionTest> {
     });
 
     try {
-      // Test 1: Check backend client initialization
-      _addResult(true, 'Backend client initialized');
+      // Test 1: Check the backend API itself.
+      setState(() => _status = 'Checking backend API...');
+      final health = await _api.getJson('health');
+      if (health is! Map<String, dynamic> || health['status'] != 'ok') {
+        throw Exception('Backend health check returned an invalid response');
+      }
+      _addResult(true, 'Backend API is reachable');
       await Future.delayed(const Duration(milliseconds: 300));
 
-      // Test 2: Query activation_codes table
-      setState(() => _status = 'Checking activation_codes table...');
-      try {
-        final response = await _api.getJson('license/codes');
-        final codesResponse = response is Map<String, dynamic> && response['codes'] is List
-            ? List<Map<String, dynamic>>.from(response['codes'] as List)
-            : <Map<String, dynamic>>[];
-
-        if (codesResponse.isNotEmpty) {
-          _addResult(true, 'activation_codes table exists and accessible');
-          _addResult(true, 'Sample code: ${codesResponse[0]['code']}');
-        } else {
-          _addResult(true, 'activation_codes table exists (empty)');
-        }
-      } catch (e) {
-        _addResult(false, 'activation_codes error: $e');
+      // Test 2: Verify the backend can query MySQL.
+      setState(() => _status = 'Checking MySQL database connection...');
+      final database = await _api.getJson('health/db');
+      if (database is! Map<String, dynamic> || database['status'] != 'ok') {
+        throw Exception('Database health check returned an invalid response');
+      }
+      _addResult(true, 'MySQL database connection is healthy');
+      if (database['database'] != null) {
+        _addResult(true, 'Database: ${database['database']}');
       }
       await Future.delayed(const Duration(milliseconds: 300));
-
-      // Test 3: Count unused codes
-      setState(() => _status = 'Counting unused codes...');
-      try {
-        final response = await _api.getJson(
-          'license/codes/available',
-          queryParameters: {'packageName': 'All'},
-        );
-        final unusedCodes = response is Map<String, dynamic> && response['codes'] is List
-            ? List<Map<String, dynamic>>.from(response['codes'] as List)
-            : <Map<String, dynamic>>[];
-
-        _addResult(true, 'Found ${unusedCodes.length} unused codes');
-      } catch (e) {
-        _addResult(false, 'Count unused codes error: $e');
-      }
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // Test 4: Query subscriptions table
-      setState(() => _status = 'Checking subscriptions table...');
-      try {
-        final response = await _api.getJson('license/subscriptions');
-        final subsResponse = response is Map<String, dynamic> && response['subscriptions'] is List
-            ? List<Map<String, dynamic>>.from(response['subscriptions'] as List)
-            : <Map<String, dynamic>>[];
-
-        _addResult(true, 'subscriptions table exists and accessible');
-        if (subsResponse.isNotEmpty) {
-          _addResult(true, 'Has subscription records');
-        }
-      } catch (e) {
-        _addResult(false, 'subscriptions error: $e');
-      }
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      // Test 5: Query subscription_renewals table
-      setState(() => _status = 'Checking subscription_renewals table...');
-      try {
-        final response = await _api.getJson('license/subscription-renewals');
-        final renewals = response is Map<String, dynamic> && response['renewals'] is List
-            ? List<Map<String, dynamic>>.from(response['renewals'] as List)
-            : <Map<String, dynamic>>[];
-
-        _addResult(true, 'subscription_renewals table exists and accessible');
-        _addResult(true, 'Found ${renewals.length} renewal records');
-      } catch (e) {
-        _addResult(false, 'subscription_renewals error: $e');
-      }
 
       // Final result
       final failedTests = _testResults.where((r) => r.startsWith('❌')).length;
