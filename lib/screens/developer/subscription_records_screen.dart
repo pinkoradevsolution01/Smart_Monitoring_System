@@ -20,7 +20,7 @@ class SubscriptionRecordsScreen extends StatefulWidget {
 class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _filterStatus = 'all'; // all, active, expired
+  String _filterStatus = 'all'; // all, active, expired, cancelled, one_time, saas
 
   @override
   void initState() {
@@ -47,13 +47,26 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
       subscriptions = subscriptions.where((s) => s.isActive).toList();
     } else if (_filterStatus == 'expired') {
       subscriptions = subscriptions.where((s) => s.isExpired).toList();
+    } else if (_filterStatus == 'cancelled') {
+      subscriptions = subscriptions
+          .where((s) => s.status.toLowerCase() == 'cancelled')
+          .toList();
+    } else if (_filterStatus == 'one_time') {
+      // Perpetual licenses have no expiry date. This also includes cancelled
+      // one-time licenses, which can be narrowed further with search.
+      subscriptions = subscriptions.where((s) => s.expiresAt == null).toList();
+    } else if (_filterStatus == 'saas') {
+      subscriptions = subscriptions.where((s) => s.expiresAt != null).toList();
     }
 
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
-      subscriptions = widget.cloudSubscriptionService.searchSubscriptions(
-        _searchQuery,
-      );
+      final query = _searchQuery.toLowerCase();
+      subscriptions = subscriptions.where((s) {
+        return (s.deviceName?.toLowerCase().contains(query) ?? false) ||
+            s.activationCode.toLowerCase().contains(query) ||
+            s.packageName.toLowerCase().contains(query);
+      }).toList();
     }
 
     return subscriptions;
@@ -240,6 +253,27 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
                 },
                 selectedColor: Colors.red.withValues(alpha: 0.3),
                 checkmarkColor: Colors.red,
+              ),
+              FilterChip(
+                label: const Text('Cancelled'),
+                selected: _filterStatus == 'cancelled',
+                onSelected: (_) => setState(() => _filterStatus = 'cancelled'),
+                selectedColor: Colors.red.withValues(alpha: 0.3),
+                checkmarkColor: Colors.red,
+              ),
+              FilterChip(
+                label: const Text('One-Time'),
+                selected: _filterStatus == 'one_time',
+                onSelected: (_) => setState(() => _filterStatus = 'one_time'),
+                selectedColor: Colors.green.withValues(alpha: 0.3),
+                checkmarkColor: Colors.green,
+              ),
+              FilterChip(
+                label: const Text('SaaS'),
+                selected: _filterStatus == 'saas',
+                onSelected: (_) => setState(() => _filterStatus = 'saas'),
+                selectedColor: Colors.blue.withValues(alpha: 0.3),
+                checkmarkColor: Colors.blue,
               ),
             ],
           ),
