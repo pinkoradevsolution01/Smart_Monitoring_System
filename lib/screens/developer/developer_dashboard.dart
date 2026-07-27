@@ -89,7 +89,7 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
                   color: Colors.indigo,
                   title: 'Demo Access Portal',
                   description:
-                      'Quick login to test all features with demo accounts and sample data',
+                      'Temporary in-memory role previews for client demonstrations',
                   onTap: () {
                     Navigator.push(
                       context,
