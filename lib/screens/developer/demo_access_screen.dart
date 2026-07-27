@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import '../../models/user.dart' as user_model;
+import '../../models/pricing_package.dart';
 import '../../services/demo_access_service.dart';
+import '../../services/package_service.dart';
 import '../cashier/cashier_dashboard.dart';
 import '../delivery_receiver/delivery_receiver_dashboard.dart';
 import '../inventory_clerk/inventory_clerk_dashboard.dart';
@@ -52,7 +55,7 @@ class DemoAccessScreen extends StatelessWidget {
                     ),
                     SizedBox(height: 12),
                     Text(
-                      'Choose a role to preview the system. Demo accounts exist only in memory for this session. No account, package, product, sales, or other demonstration data is saved.',
+                      'Choose a role to preview the complete Premium feature set. The Premium package is enabled only in memory for this session. No account, package, product, sales, or other demonstration data is saved.',
                       style: TextStyle(color: Colors.white70, fontSize: 13),
                     ),
                     SizedBox(height: 12),
@@ -90,12 +93,18 @@ class DemoAccessScreen extends StatelessWidget {
   void _login(BuildContext context, DemoAccessService service, String role) {
     final user = service.createDemoUser(role);
     if (user == null) return;
-    Navigator.pushAndRemoveUntil(
+    final packageService = GetIt.I<PackageService>();
+    final premium = PricingPackage.packages.firstWhere(
+      (package) => package.type == PackageType.premium,
+    );
+    packageService.enterDemoPackage(premium);
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => LoadingScreen(destination: _dashboardFor(user)),
+        builder: (_) => LoadingScreen(
+          destination: _DemoSessionFrame(child: _dashboardFor(user)),
+        ),
       ),
-      (route) => false,
     );
   }
 
@@ -119,6 +128,51 @@ class DemoAccessScreen extends StatelessWidget {
   }
 }
 
+/// Keeps a visible exit control over the demo session without changing the
+/// system dashboards or persisting any demo state.
+class _DemoSessionFrame extends StatelessWidget {
+  final Widget child;
+
+  const _DemoSessionFrame({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<void>(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          GetIt.I<PackageService>().exitDemoPackage();
+        }
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          child,
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: SafeArea(
+              child: FloatingActionButton.extended(
+                heroTag: 'exit-demo-session',
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                onPressed: () {
+                  // DemoAccessScreen remains below the session, so this pops
+                  // directly back to Developer Dashboard.
+                  GetIt.I<PackageService>().exitDemoPackage();
+                  Navigator.of(context).pop();
+                },
+                icon: const Icon(Icons.exit_to_app),
+                label: const Text('Exit Demo'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DemoRoleCard extends StatelessWidget {
   final String role;
   final Map<String, String> account;
@@ -135,19 +189,41 @@ class _DemoRoleCard extends StatelessWidget {
     return Card(
       color: Colors.grey[850],
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        title: Text(
-          DemoAccessService.formatRoleForDisplay(role),
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          account['email']!,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        trailing: ElevatedButton.icon(
-          onPressed: onLogin,
-          icon: const Icon(Icons.login),
-          label: const Text('Preview'),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    DemoAccessService.formatRoleForDisplay(role),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    account['email']!,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 112,
+              child: ElevatedButton.icon(
+                onPressed: onLogin,
+                icon: const Icon(Icons.login, size: 18),
+                label: const Text('Preview'),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -13,11 +13,33 @@ class PackageService extends ChangeNotifier {
 
   PricingPackage? _selectedPackage;
   bool _setupComplete = false;
+  PricingPackage? _packageBeforeDemo;
+  bool _demoPackageActive = false;
   final ApiClient _api = ApiClient();
 
   PricingPackage? get selectedPackage => _selectedPackage;
   bool get setupComplete => _setupComplete;
   bool get hasPackage => _selectedPackage != null;
+
+  /// Temporarily expose a package for demonstrations without changing local
+  /// preferences or syncing the package to the backend.
+  void enterDemoPackage(PricingPackage package) {
+    if (!_demoPackageActive) {
+      _packageBeforeDemo = _selectedPackage;
+      _demoPackageActive = true;
+    }
+    _selectedPackage = package;
+    notifyListeners();
+  }
+
+  /// Restore the package that was active before Demo Access was opened.
+  void exitDemoPackage() {
+    if (!_demoPackageActive) return;
+    _selectedPackage = _packageBeforeDemo;
+    _packageBeforeDemo = null;
+    _demoPackageActive = false;
+    notifyListeners();
+  }
 
   // Feature checks
   bool get hasCCTVAccess => _selectedPackage?.hasCCTV ?? false;
