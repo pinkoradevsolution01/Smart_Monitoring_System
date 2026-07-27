@@ -373,7 +373,7 @@ router.post('/owner-pin-reset/verify', async (req, res) => {
   try {
     const tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
     const candidates = await query(
-      `SELECT t.id
+      `SELECT t.id, t.user_id
        FROM owner_pin_reset_tokens t
        INNER JOIN users u ON
          CONVERT(u.id USING utf8mb4) COLLATE utf8mb4_unicode_ci =
@@ -410,12 +410,50 @@ router.post('/owner-pin-reset/verify', async (req, res) => {
       });
     }
 
-    // The PIN remains local to the app; consuming the server token is the
-    // authorization step, and the client persists the new PIN after success.
+    const pinHash = await bcrypt.hash(newPin, 10);
+    await execute(
+      'UPDATE users SET pin_hash = ? WHERE id = ?',
+      [pinHash, candidates[0].user_id],
+    );
+
+    // The token is temporary authorization; the hashed PIN is permanent until
+    // the owner completes another reset.
     return res.json({ success: true, message: 'Owner PIN reset authorized.' });
   } catch (error) {
     console.error('Owner PIN reset verification error:', error);
     return res.status(500).json({ success: false, message: 'PIN reset failed.' });
+  }
+});
+
+// Verify the permanent Owner PIN stored in MySQL. Reset tokens are only
+// temporary authorization; they never determine the PIN's lifetime.
+router.post('/owner-pin/verify', async (req, res) => {
+  const email = typeof req.body?.email === 'string'
+    ? req.body.email.trim().toLowerCase()
+    : '';
+  const pin = typeof req.body?.pin === 'string' ? req.body.pin.trim() : '';
+
+  if (!email || !email.includes('@') || !/^\d{4}$/.test(pin)) {
+    return res.status(400).json({ success: false, message: 'Invalid PIN details.' });
+  }
+
+  try {
+    const owners = await query(
+      `SELECT pin_hash FROM users
+       WHERE email COLLATE utf8mb4_unicode_ci = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+         AND role = 'owner' AND is_active = 1 LIMIT 1`,
+      [email],
+    );
+    const valid = owners.length && owners[0].pin_hash
+      ? await bcrypt.compare(pin, owners[0].pin_hash)
+      : false;
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Invalid PIN.' });
+    }
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Owner PIN verification error:', error);
+    return res.status(500).json({ success: false, message: 'PIN verification failed.' });
   }
 });
 

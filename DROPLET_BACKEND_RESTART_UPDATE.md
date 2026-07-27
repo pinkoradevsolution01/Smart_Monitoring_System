@@ -12,6 +12,13 @@ For fixes that only change backend source files, such as the CCTV restore fix:
 
 The complete command sequence is provided in Section 13 below.
 
+
+## Watch only error lines
+
+```bash
+pm2 logs smart-monitoring-backend --err --lines 0
+```
+
 ## 1. SSH Into The Droplet
 
 ```bash

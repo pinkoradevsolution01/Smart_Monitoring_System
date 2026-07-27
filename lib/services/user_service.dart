@@ -233,8 +233,11 @@ class UserService extends ChangeNotifier {
 
   /// Get user by email
   User? getUserByEmail(String email) {
+    final normalizedEmail = email.trim().toLowerCase();
     try {
-      return _users.values.firstWhere((u) => u.email == email);
+      return _users.values.firstWhere(
+        (u) => u.email.trim().toLowerCase() == normalizedEmail,
+      );
     } catch (_) {
       return null;
     }

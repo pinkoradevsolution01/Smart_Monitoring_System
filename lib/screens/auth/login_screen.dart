@@ -576,7 +576,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
                           user_model.User? matched;
                           for (final o in owners) {
-                            if (_userService.verifyPin(o.id, entered)) {
+                            var valid = _userService.verifyPin(o.id, entered);
+                            if (BackendConfig.useRestBackend) {
+                              try {
+                                final response = await _api.postJson(
+                                  'auth/owner-pin/verify',
+                                  body: {'email': o.email, 'pin': entered},
+                                );
+                                valid = response is Map<String, dynamic> &&
+                                    response['success'] == true;
+                              } catch (_) {
+                                valid = false;
+                              }
+                            }
+                            if (valid) {
                               matched = o;
                               break;
                             }

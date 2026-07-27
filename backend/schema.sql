@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
   business_id VARCHAR(64) NULL,
   email VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  pin_hash VARCHAR(255) NULL,
   role VARCHAR(64) NOT NULL DEFAULT 'owner',
   full_name VARCHAR(255) NOT NULL,
   contact_number VARCHAR(64),

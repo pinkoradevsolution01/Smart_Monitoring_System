@@ -68,6 +68,7 @@ async function ensureColumn(tableName, columnName, definition) {
 }
 
 async function ensureUsersTableColumns() {
+  await ensureColumn('users', 'pin_hash', 'VARCHAR(255) NULL');
   await ensureColumn('users', 'business_id', 'VARCHAR(64) NULL');
   await ensureColumn('users', 'contact_number', 'VARCHAR(64) NULL');
   await ensureColumn('users', 'auth_method', "VARCHAR(32) NOT NULL DEFAULT 'password'");
