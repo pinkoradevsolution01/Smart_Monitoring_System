@@ -11,9 +11,21 @@ const businessRouter = require('./routes/business');
 const licenseRouter = require('./routes/license');
 const syncRouter = require('./routes/sync');
 const crudRouter = require('./routes/crud');
+const analyticsRouter = require('./routes/analytics');
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    // Non-browser clients (Flutter/server-to-server) do not send Origin.
+    if (!origin || allowedOrigins.includes(origin) || (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production')) return callback(null, true);
+    return callback(new Error('Origin is not permitted by CORS policy.'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '5mb' }));
 
 app.use((req, _res, next) => {
@@ -38,6 +50,7 @@ app.use('/api/developer', developerRouter);
 app.use('/api/business', businessRouter);
 app.use('/api/license', licenseRouter);
 app.use('/api/sync', syncRouter);
+app.use('/api/analytics', analyticsRouter);
 app.use('/api', crudRouter);
 
 app.get('/api/health', (req, res) => {
