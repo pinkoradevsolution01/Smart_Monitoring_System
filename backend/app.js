@@ -104,10 +104,8 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
   );
 }
 
-if (!process.env.GOOGLE_REDIRECT_URI) {
-  console.warn(
-    '⚠️ GOOGLE_REDIRECT_URI is not set. Google sign-in will require redirectUri to be passed by the client.',
-  );
+if (!process.env.GOOGLE_CALLBACK_URL || !process.env.WEB_ANALYTICS_URL) {
+  console.warn('Google Web Analytics OAuth requires GOOGLE_CALLBACK_URL and WEB_ANALYTICS_URL.');
 }
 
 initDb()

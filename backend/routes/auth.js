@@ -19,9 +19,10 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || '';
 const GOOGLE_OAUTH_REDIRECT_URI = process.env.GOOGLE_OAUTH_REDIRECT_URI || '';
 const GOOGLE_BACKEND_REDIRECT_URI =
-  process.env.GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_OAUTH_REDIRECT_URI || '';
+  GOOGLE_CALLBACK_URL || process.env.GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_OAUTH_REDIRECT_URI || '';
 const GOOGLE_DEFAULT_REDIRECT_URI =
   GOOGLE_BACKEND_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || '';
 const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';
@@ -172,14 +173,84 @@ async function exchangeGoogleCode(code, redirectUri) {
   return await response.json();
 }
 
-function issueAppSession(profile) {
+function authError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function googleCallbackUri() {
+  return normalizeRedirectUri(
+    GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
+  );
+}
+
+function webAnalyticsCallbackUri() {
+  const origin = String(process.env.WEB_ANALYTICS_URL || '').trim();
+  if (!origin) return '';
+  return new URL('/auth/google/callback', origin).toString();
+}
+
+function redirectToWebAnalytics(res, params) {
+  const callbackUri = webAnalyticsCallbackUri();
+  if (!callbackUri) return false;
+  const destination = new URL(callbackUri);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      destination.searchParams.set(key, String(value));
+    }
+  }
+  res.redirect(302, destination.toString());
+  return true;
+}
+
+function readCookie(req, name) {
+  const cookieHeader = req.headers.cookie || '';
+  for (const item of cookieHeader.split(';')) {
+    const [key, ...parts] = item.trim().split('=');
+    if (key === name) return decodeURIComponent(parts.join('='));
+  }
+  return null;
+}
+
+async function findAnalyticsUserByEmail(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const cancelled = await query(
+    'SELECT id FROM cancelled_subscribers WHERE LOWER(email) = ? LIMIT 1',
+    [normalizedEmail],
+  );
+  if (cancelled.length) throw authError(403, 'This subscriber account has been cancelled.');
+
+  const rows = await query(
+    'SELECT u.id, u.business_id, u.email, u.role, u.full_name, u.contact_number, b.is_active AS business_is_active FROM users u INNER JOIN businesses b ON b.id = u.business_id WHERE LOWER(u.email) = ? AND u.is_active = 1 AND b.is_active = 1',
+    [normalizedEmail],
+  );
+  const eligible = rows.filter((user) => ANALYTICS_ROLES.has(String(user.role || '').toLowerCase()));
+  if (eligible.length !== 1) {
+    throw authError(403, 'This Google account is not eligible for Web Analytics.');
+  }
+  return eligible[0];
+}
+
+async function findAnalyticsUserById(userId, businessId) {
+  const rows = await query(
+    'SELECT u.id, u.business_id, u.email, u.role, u.full_name, u.contact_number, b.is_active AS business_is_active FROM users u INNER JOIN businesses b ON b.id = u.business_id WHERE u.id = ? AND u.business_id = ? AND u.is_active = 1 AND b.is_active = 1 LIMIT 1',
+    [userId, businessId],
+  );
+  if (!rows.length || !ANALYTICS_ROLES.has(String(rows[0].role || '').toLowerCase())) {
+    throw authError(403, 'This account is no longer eligible for Web Analytics.');
+  }
+  const cancelled = await query(
+    'SELECT id FROM cancelled_subscribers WHERE LOWER(email) = ? LIMIT 1',
+    [String(rows[0].email).toLowerCase()],
+  );
+  if (cancelled.length) throw authError(403, 'This subscriber account has been cancelled.');
+  return rows[0];
+}
+
+function issueAnalyticsSession(user) {
   const token = jwt.sign(
-    {
-      userId: profile.sub,
-      email: profile.email,
-      role: 'google_user',
-      name: profile.name || profile.email.split('@')[0],
-    },
+    { userId: user.id, email: user.email, role: user.role, businessId: user.business_id },
     JWT_SECRET,
     { expiresIn: '12h' },
   );
@@ -188,11 +259,12 @@ function issueAppSession(profile) {
     success: true,
     token,
     user: {
-      id: profile.sub,
-      email: profile.email,
-      role: 'google_user',
-      fullName: profile.name || profile.email.split('@')[0],
-      avatarUrl: profile.picture || null,
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      businessId: user.business_id,
+      fullName: user.full_name,
+      contactNumber: user.contact_number || null,
     },
   };
 }
@@ -200,9 +272,10 @@ function issueAppSession(profile) {
 function pruneOauthStateStore() {
   const now = Date.now();
   for (const [state, entry] of oauthStateStore.entries()) {
-    if (now - entry.createdAt > OAUTH_STATE_TTL_MS) {
-      oauthStateStore.delete(state);
-    }
+    if (now - entry.createdAt > OAUTH_STATE_TTL_MS) oauthStateStore.delete(state);
+  }
+  for (const [codeHash, entry] of oauthExchangeStore.entries()) {
+    if (now >= entry.expiresAt) oauthExchangeStore.delete(codeHash);
   }
 }
 
@@ -702,10 +775,12 @@ router.post('/google', async (req, res) => {
 
   try {
     const profile = await verifyGoogleIdToken(idToken);
-    return res.json(issueAppSession(profile));
+    const user = await findAnalyticsUserByEmail(profile.email);
+    await execute('UPDATE users SET last_login_at = NOW() WHERE id = ? AND business_id = ?', [user.id, user.business_id]);
+    return res.json(issueAnalyticsSession(user));
   } catch (error) {
     console.error('Auth /google error:', error);
-    return res.status(401).json({ success: false, message: 'Google sign-in failed.' });
+    return res.status(error.status || 401).json({ success: false, message: error.message || 'Google sign-in failed.' });
   }
 });
 
@@ -733,91 +808,102 @@ router.get('/google/url', async (req, res) => {
   }
 });
 
-router.get('/google/status', async (req, res) => {
-  const state = req.query.state?.toString();
-  if (!state) {
-    return res.status(400).json({ success: false, message: 'OAuth state is required.' });
-  }
-
-  const entry = oauthStateStore.get(state);
-  if (!entry) {
-    return res.json({ success: false, status: 'pending' });
-  }
-
-  oauthStateStore.delete(state);
-  return res.json({ success: true, status: 'complete', token: entry.token, user: entry.user });
-});
-
-router.get('/google/callback', async (req, res) => {
-  const { code, state } = req.query;
-  if (!code) {
-    return res.status(400).send('Missing authorization code.');
+router.get('/google', (req, res) => {
+  const redirectUri = googleCallbackUri();
+  if (!redirectUri || !webAnalyticsCallbackUri()) {
+    return res.status(500).json({ success: false, message: 'Google OAuth is not configured for Web Analytics.' });
   }
 
   try {
-    const resolvedRedirectUri = normalizeRedirectUri(
-      GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
-    );
-    if (!resolvedRedirectUri) {
-      return res.status(400).send('Redirect URI is not configured.');
-    }
+    const state = randomBytes(32).toString('base64url');
+    oauthStateStore.set(state, { createdAt: Date.now(), flow: 'web-analytics' });
+    res.cookie('smart_monitoring_google_state', state, {
+      httpOnly: true,
+      secure: redirectUri.startsWith('https://'),
+      sameSite: 'lax',
+      maxAge: OAUTH_STATE_TTL_MS,
+      path: '/api/auth/google',
+    });
+    return res.redirect(302, buildGoogleAuthUrl(redirectUri, state));
+  } catch (error) {
+    console.error('Auth /google start error:', error);
+    return res.status(500).json({ success: false, message: 'Unable to start Google sign-in.' });
+  }
+});
 
-    const tokenResponse = await exchangeGoogleCode(code.toString(), resolvedRedirectUri);
-    const idToken = tokenResponse.id_token;
-    if (!idToken) {
-      return res.status(401).send('Google did not return an ID token.');
-    }
+router.get('/google/status', (_req, res) => {
+  return res.status(410).json({
+    success: false,
+    message: 'Google polling is no longer supported. Use the Web Analytics callback flow.',
+  });
+});
 
-    const profile = await verifyGoogleIdToken(idToken);
-    const authResponse = issueAppSession(profile);
+router.get('/google/callback', async (req, res) => {
+  const { code, state, error: providerError } = req.query;
+  const fail = (status, message) => {
+    res.clearCookie('smart_monitoring_google_state', { path: '/api/auth/google' });
+    if (redirectToWebAnalytics(res, { error: 'google_sign_in_failed', error_description: message })) return;
+    return res.status(status).send(message);
+  };
 
-    if (state && typeof state === 'string') {
-      oauthStateStore.set(state, { ...authResponse, createdAt: Date.now() });
-    }
+  if (providerError) return fail(401, 'Google sign-in was cancelled or denied.');
+  if (!code || !state || typeof state !== 'string') return fail(400, 'Invalid Google sign-in response.');
 
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head><meta charset="UTF-8"><title>Authentication Successful</title></head>
-      <body style="font-family: Arial, sans-serif; text-align: center; padding: 40px;">
-        <h1>Authentication Successful</h1>
-        <p>You may now return to the app.</p>
-      </body>
-      </html>
-    `);
+  const stateEntry = oauthStateStore.get(state);
+  const stateCookie = readCookie(req, 'smart_monitoring_google_state');
+  oauthStateStore.delete(state);
+  res.clearCookie('smart_monitoring_google_state', { path: '/api/auth/google' });
+  if (!stateEntry || stateEntry.flow !== 'web-analytics' || stateCookie !== state) {
+    return fail(400, 'Google sign-in session is invalid or expired.');
+  }
+
+  try {
+    const redirectUri = googleCallbackUri();
+    if (!redirectUri) throw authError(500, 'Google callback URL is not configured.');
+    const tokenResponse = await exchangeGoogleCode(String(code), redirectUri);
+    if (!tokenResponse.id_token) throw authError(401, 'Google did not return an ID token.');
+
+    const profile = await verifyGoogleIdToken(tokenResponse.id_token);
+    const user = await findAnalyticsUserByEmail(profile.email);
+    await execute('UPDATE users SET last_login_at = NOW() WHERE id = ? AND business_id = ?', [user.id, user.business_id]);
+
+    const exchangeCode = randomBytes(32).toString('base64url');
+    const exchangeCodeHash = createHash('sha256').update(exchangeCode).digest('hex');
+    oauthExchangeStore.set(exchangeCodeHash, {
+      userId: user.id,
+      businessId: user.business_id,
+      expiresAt: Date.now() + OAUTH_EXCHANGE_TTL_MS,
+    });
+
+    if (redirectToWebAnalytics(res, { code: exchangeCode })) return;
+    return res.status(500).send('Web Analytics callback URL is not configured.');
   } catch (error) {
     console.error('Auth /google/callback error:', error);
-    return res.status(500).send('Google login failed. Please try again.');
+    return fail(error.status || 500, error.message || 'Google sign-in failed.');
   }
 });
 
 router.post('/google/exchange', async (req, res) => {
-  const { code, redirectUri } = req.body;
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
   if (!code) {
     return res.status(400).json({ success: false, message: 'Authorization code is required.' });
   }
 
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  const entry = oauthExchangeStore.get(codeHash);
+  oauthExchangeStore.delete(codeHash);
+  if (!entry || Date.now() >= entry.expiresAt) {
+    return res.status(401).json({ success: false, message: 'Authorization code is invalid, expired, or already used.' });
+  }
+
   try {
-    const resolvedRedirectUri = normalizeRedirectUri(
-      redirectUri || GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI,
-    );
-    if (!resolvedRedirectUri) {
-      return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
-    }
-
-    const tokenResponse = await exchangeGoogleCode(code, resolvedRedirectUri);
-    const idToken = tokenResponse.id_token;
-    if (!idToken) {
-      return res.status(401).json({ success: false, message: 'Google did not return an ID token.' });
-    }
-
-    const profile = await verifyGoogleIdToken(idToken);
-    return res.json(issueAppSession(profile));
+    const user = await findAnalyticsUserById(entry.userId, entry.businessId);
+    return res.json(issueAnalyticsSession(user));
   } catch (error) {
     console.error('Auth /google/exchange error:', error);
-    return res.status(401).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: `Google code exchange failed: ${error.message}`,
+      message: error.message || 'Google sign-in could not be completed.',
     });
   }
 });
