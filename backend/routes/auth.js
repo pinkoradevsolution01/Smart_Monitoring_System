@@ -29,6 +29,9 @@ const GOOGLE_LOCAL_REDIRECT_URI = process.env.GOOGLE_LOCAL_REDIRECT_URI || '';
 const OAUTH_STATE_TTL_MS = 5 * 60 * 1000;
 const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 1000;
 const oauthStateStore = new Map();
+const oauthExchangeStore = new Map();
+const OAUTH_EXCHANGE_TTL_MS = 2 * 60 * 1000;
+const ANALYTICS_ROLES = new Set(['owner', 'admin', 'manager']);
 const OWNER_PIN_RESET_TTL_MINUTES = 20;
 
 function getSmtpConfig() {
@@ -267,6 +270,15 @@ function issueAnalyticsSession(user) {
       contactNumber: user.contact_number || null,
     },
   };
+}
+
+function issueAppSession(profile) {
+  const token = jwt.sign(
+    { userId: profile.sub, email: profile.email, role: 'google_user', name: profile.name || profile.email.split('@')[0] },
+    JWT_SECRET,
+    { expiresIn: '12h' },
+  );
+  return { success: true, token, user: { id: profile.sub, email: profile.email, role: 'google_user', fullName: profile.name || profile.email.split('@')[0], avatarUrl: profile.picture || null } };
 }
 
 function pruneOauthStateStore() {
@@ -769,61 +781,32 @@ router.delete('/users/:id', async (req, res) => {
 
 router.post('/google', async (req, res) => {
   const { idToken } = req.body;
-  if (!idToken) {
-    return res.status(400).json({ success: false, message: 'Google ID token is required.' });
-  }
-
-  try {
-    const profile = await verifyGoogleIdToken(idToken);
-    const user = await findAnalyticsUserByEmail(profile.email);
-    await execute('UPDATE users SET last_login_at = NOW() WHERE id = ? AND business_id = ?', [user.id, user.business_id]);
-    return res.json(issueAnalyticsSession(user));
-  } catch (error) {
-    console.error('Auth /google error:', error);
-    return res.status(error.status || 401).json({ success: false, message: error.message || 'Google sign-in failed.' });
-  }
+  if (!idToken) return res.status(400).json({ success: false, message: 'Google ID token is required.' });
+  try { return res.json(issueAppSession(await verifyGoogleIdToken(idToken))); }
+  catch (error) { console.error('Auth /google error:', error); return res.status(401).json({ success: false, message: 'Google sign-in failed.' }); }
 });
 
 router.get('/google/url', async (req, res) => {
   const { redirectUri, state } = req.query;
   try {
-    const resolvedRedirectUri = normalizeRedirectUri(
-      redirectUri || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI,
-    );
-    if (!resolvedRedirectUri) {
-      return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
-    }
-
-    return res.json({
-      success: true,
-      authUrl: buildGoogleAuthUrl(resolvedRedirectUri, state),
-      redirectUri: resolvedRedirectUri,
-    });
+    const resolvedRedirectUri = normalizeRedirectUri(redirectUri || GOOGLE_DEFAULT_REDIRECT_URI || GOOGLE_LOCAL_REDIRECT_URI);
+    if (!resolvedRedirectUri) return res.status(400).json({ success: false, message: 'Redirect URI is required.' });
+    return res.json({ success: true, authUrl: buildGoogleAuthUrl(resolvedRedirectUri, state), redirectUri: resolvedRedirectUri });
   } catch (error) {
     console.error('Auth /google/url error:', error);
-    return res.status(500).json({
-      success: false,
-      message: `Failed to build Google auth URL: ${error.message}`,
-    });
+    return res.status(500).json({ success: false, message: 'Failed to build Google auth URL: ' + error.message });
   }
 });
 
+// Reserved for Web Analytics. Existing Smart Monitoring clients use /google/url,
+// /google/status, or POST /google and retain their original behavior.
 router.get('/google', (req, res) => {
   const redirectUri = googleCallbackUri();
-  if (!redirectUri || !webAnalyticsCallbackUri()) {
-    return res.status(500).json({ success: false, message: 'Google OAuth is not configured for Web Analytics.' });
-  }
-
+  if (!redirectUri || !webAnalyticsCallbackUri()) return res.status(500).json({ success: false, message: 'Google OAuth is not configured for Web Analytics.' });
   try {
     const state = randomBytes(32).toString('base64url');
     oauthStateStore.set(state, { createdAt: Date.now(), flow: 'web-analytics' });
-    res.cookie('smart_monitoring_google_state', state, {
-      httpOnly: true,
-      secure: redirectUri.startsWith('https://'),
-      sameSite: 'lax',
-      maxAge: OAUTH_STATE_TTL_MS,
-      path: '/api/auth/google',
-    });
+    res.cookie('smart_monitoring_google_state', state, { httpOnly: true, secure: redirectUri.startsWith('https://'), sameSite: 'lax', maxAge: OAUTH_STATE_TTL_MS, path: '/api/auth/google' });
     return res.redirect(302, buildGoogleAuthUrl(redirectUri, state));
   } catch (error) {
     console.error('Auth /google start error:', error);
@@ -831,80 +814,87 @@ router.get('/google', (req, res) => {
   }
 });
 
-router.get('/google/status', (_req, res) => {
-  return res.status(410).json({
-    success: false,
-    message: 'Google polling is no longer supported. Use the Web Analytics callback flow.',
-  });
+router.get('/google/status', async (req, res) => {
+  const state = req.query.state?.toString();
+  if (!state) return res.status(400).json({ success: false, message: 'OAuth state is required.' });
+  const entry = oauthStateStore.get(state);
+  if (!entry || entry.flow === 'web-analytics') return res.json({ success: false, status: 'pending' });
+  oauthStateStore.delete(state);
+  return res.json({ success: true, status: 'complete', token: entry.token, user: entry.user });
 });
 
 router.get('/google/callback', async (req, res) => {
   const { code, state, error: providerError } = req.query;
-  const fail = (status, message) => {
+  const stateEntry = typeof state === 'string' ? oauthStateStore.get(state) : null;
+  const isWebAnalytics = stateEntry?.flow === 'web-analytics';
+  if (isWebAnalytics) {
+    const fail = (status, message) => {
+      res.clearCookie('smart_monitoring_google_state', { path: '/api/auth/google' });
+      if (redirectToWebAnalytics(res, { error: 'google_sign_in_failed', error_description: message })) return;
+      return res.status(status).send(message);
+    };
+    if (providerError) return fail(401, 'Google sign-in was cancelled or denied.');
+    if (!code || !state || typeof state !== 'string') return fail(400, 'Invalid Google sign-in response.');
+    const stateCookie = readCookie(req, 'smart_monitoring_google_state');
+    oauthStateStore.delete(state);
     res.clearCookie('smart_monitoring_google_state', { path: '/api/auth/google' });
-    if (redirectToWebAnalytics(res, { error: 'google_sign_in_failed', error_description: message })) return;
-    return res.status(status).send(message);
-  };
-
-  if (providerError) return fail(401, 'Google sign-in was cancelled or denied.');
-  if (!code || !state || typeof state !== 'string') return fail(400, 'Invalid Google sign-in response.');
-
-  const stateEntry = oauthStateStore.get(state);
-  const stateCookie = readCookie(req, 'smart_monitoring_google_state');
-  oauthStateStore.delete(state);
-  res.clearCookie('smart_monitoring_google_state', { path: '/api/auth/google' });
-  if (!stateEntry || stateEntry.flow !== 'web-analytics' || stateCookie !== state) {
-    return fail(400, 'Google sign-in session is invalid or expired.');
+    if (stateCookie !== state) return fail(400, 'Google sign-in session is invalid or expired.');
+    try {
+      const redirectUri = googleCallbackUri();
+      if (!redirectUri) throw authError(500, 'Google callback URL is not configured.');
+      const tokenResponse = await exchangeGoogleCode(String(code), redirectUri);
+      if (!tokenResponse.id_token) throw authError(401, 'Google did not return an ID token.');
+      const user = await findAnalyticsUserByEmail((await verifyGoogleIdToken(tokenResponse.id_token)).email);
+      await execute('UPDATE users SET last_login_at = NOW() WHERE id = ? AND business_id = ?', [user.id, user.business_id]);
+      const exchangeCode = randomBytes(32).toString('base64url');
+      oauthExchangeStore.set(createHash('sha256').update(exchangeCode).digest('hex'), { userId: user.id, businessId: user.business_id, expiresAt: Date.now() + OAUTH_EXCHANGE_TTL_MS });
+      if (redirectToWebAnalytics(res, { code: exchangeCode })) return;
+      return res.status(500).send('Web Analytics callback URL is not configured.');
+    } catch (error) {
+      console.error('Auth /google/callback (analytics) error:', error);
+      return fail(error.status || 500, error.message || 'Google sign-in failed.');
+    }
   }
-
+  // Legacy Smart Monitoring callback: preserve the original polling flow.
+  if (providerError) return res.status(401).send('Google login was cancelled or denied.');
+  if (!code) return res.status(400).send('Missing authorization code.');
   try {
     const redirectUri = googleCallbackUri();
-    if (!redirectUri) throw authError(500, 'Google callback URL is not configured.');
+    if (!redirectUri) return res.status(400).send('Redirect URI is not configured.');
     const tokenResponse = await exchangeGoogleCode(String(code), redirectUri);
-    if (!tokenResponse.id_token) throw authError(401, 'Google did not return an ID token.');
-
-    const profile = await verifyGoogleIdToken(tokenResponse.id_token);
-    const user = await findAnalyticsUserByEmail(profile.email);
-    await execute('UPDATE users SET last_login_at = NOW() WHERE id = ? AND business_id = ?', [user.id, user.business_id]);
-
-    const exchangeCode = randomBytes(32).toString('base64url');
-    const exchangeCodeHash = createHash('sha256').update(exchangeCode).digest('hex');
-    oauthExchangeStore.set(exchangeCodeHash, {
-      userId: user.id,
-      businessId: user.business_id,
-      expiresAt: Date.now() + OAUTH_EXCHANGE_TTL_MS,
-    });
-
-    if (redirectToWebAnalytics(res, { code: exchangeCode })) return;
-    return res.status(500).send('Web Analytics callback URL is not configured.');
+    if (!tokenResponse.id_token) return res.status(401).send('Google did not return an ID token.');
+    const authResponse = issueAppSession(await verifyGoogleIdToken(tokenResponse.id_token));
+    if (state && typeof state === 'string') oauthStateStore.set(state, { ...authResponse, createdAt: Date.now(), flow: 'smart-monitoring' });
+    return res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Authentication Successful</title></head><body style="font-family: Arial, sans-serif; text-align: center; padding: 40px;"><h1>Authentication Successful</h1><p>You may now return to the app.</p></body></html>');
   } catch (error) {
-    console.error('Auth /google/callback error:', error);
-    return fail(error.status || 500, error.message || 'Google sign-in failed.');
+    console.error('Auth /google/callback (legacy) error:', error);
+    return res.status(500).send('Google login failed. Please try again.');
   }
 });
 
 router.post('/google/exchange', async (req, res) => {
-  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
-  if (!code) {
-    return res.status(400).json({ success: false, message: 'Authorization code is required.' });
+  const { code, redirectUri } = req.body || {};
+  if (!code) return res.status(400).json({ success: false, message: 'Authorization code is required.' });
+  if (redirectUri) {
+    try {
+      const resolvedRedirectUri = normalizeRedirectUri(redirectUri || GOOGLE_BACKEND_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT_URI);
+      const tokenResponse = await exchangeGoogleCode(code, resolvedRedirectUri);
+      if (!tokenResponse.id_token) return res.status(401).json({ success: false, message: 'Google did not return an ID token.' });
+      return res.json(issueAppSession(await verifyGoogleIdToken(tokenResponse.id_token)));
+    } catch (error) {
+      console.error('Auth /google/exchange (legacy) error:', error);
+      return res.status(401).json({ success: false, message: 'Google code exchange failed: ' + error.message });
+    }
   }
-
-  const codeHash = createHash('sha256').update(code).digest('hex');
+  const exchangeCode = String(code).trim();
+  const codeHash = createHash('sha256').update(exchangeCode).digest('hex');
   const entry = oauthExchangeStore.get(codeHash);
   oauthExchangeStore.delete(codeHash);
-  if (!entry || Date.now() >= entry.expiresAt) {
-    return res.status(401).json({ success: false, message: 'Authorization code is invalid, expired, or already used.' });
-  }
-
-  try {
-    const user = await findAnalyticsUserById(entry.userId, entry.businessId);
-    return res.json(issueAnalyticsSession(user));
-  } catch (error) {
-    console.error('Auth /google/exchange error:', error);
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.message || 'Google sign-in could not be completed.',
-    });
+  if (!entry || Date.now() >= entry.expiresAt) return res.status(401).json({ success: false, message: 'Authorization code is invalid, expired, or already used.' });
+  try { return res.json(issueAnalyticsSession(await findAnalyticsUserById(entry.userId, entry.businessId))); }
+  catch (error) {
+    console.error('Auth /google/exchange (analytics) error:', error);
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'Google sign-in could not be completed.' });
   }
 });
 
