@@ -13,6 +13,7 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 - Owner profile updates via `PATCH /api/auth/users/:id`
 - Owner password changes via `PATCH /api/auth/users/:id/password`
 - Owner deletion via `DELETE /api/auth/users/:id`
+- Activation-code email delivery through Resend's HTTPS API
 
 ## Setup
  
@@ -28,6 +29,19 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 5. Start the server:
    - `cd backend && npm start`
    - Or run `start_backend.bat` from the repo root to start local XAMPP MySQL first, then launch the backend.
+
+### Activation email configuration
+
+Activation-code fulfillment uses Resend's HTTPS API. This avoids the SMTP ports
+blocked by DigitalOcean Droplets. Add these server-only values to `backend/.env`:
+
+```env
+RESEND_API_KEY=re_your_private_sending_access_key
+FROM_EMAIL=Smart Monitoring System <noreply@mail.smartmonitoringsystem.store>
+```
+
+The `FROM_EMAIL` domain must be verified in Resend. Do not expose the Resend key
+in the Flutter app, Web Analytics application, or source control.
 
 ## Deploy To DigitalOcean
 

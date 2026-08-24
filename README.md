@@ -8,6 +8,8 @@ For a full system overview, feature map, backend summary, and module list, see [
 
 For the project introduction, development history, implemented features, fixes, and six-month development experience, see [PROJECT_INTRODUCTION_AND_DEVELOPMENT_JOURNEY.md](PROJECT_INTRODUCTION_AND_DEVELOPMENT_JOURNEY.md).
 
+For a portfolio-ready overview of the system, technology stack, achievements, and lessons learned, see [PROJECT_DOCUMENTATION_AND_LEARNING_REFLECTION.md](PROJECT_DOCUMENTATION_AND_LEARNING_REFLECTION.md).
+
 ## Backend Launcher
 
 To start the Node.js backend from the repo root:

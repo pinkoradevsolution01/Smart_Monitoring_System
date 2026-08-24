@@ -2,14 +2,8 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const { query } = require('../db');
 
-let nodemailer = null;
-try {
-  nodemailer = require('nodemailer');
-} catch (_) {
-  nodemailer = null;
-}
-
 const router = express.Router();
+const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
 
 function toBool(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
@@ -31,28 +25,68 @@ function buildInClause(values) {
   };
 }
 
-function getSmtpConfig() {
-  const host = process.env.SMTP_HOST || '';
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER || '';
-  const pass = process.env.SMTP_PASS || '';
-  const fromEmail = process.env.FROM_EMAIL || user || '';
-  return { host, port, user, pass, fromEmail };
+function getResendConfig() {
+  return {
+    apiKey: String(process.env.RESEND_API_KEY || '').trim(),
+    fromEmail: String(process.env.FROM_EMAIL || '').trim(),
+  };
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+async function sendWithResend({ to, subject, text, html }) {
+  const { apiKey, fromEmail } = getResendConfig();
+  const missing = [];
+  if (!apiKey) missing.push('RESEND_API_KEY');
+  if (!fromEmail) missing.push('FROM_EMAIL');
+
+  if (missing.length) {
+    throw new Error(`Resend is not configured. Missing: ${missing.join(', ')}`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(RESEND_EMAILS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: fromEmail, to: [to], subject, text, html }),
+      signal: controller.signal,
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = payload.message || payload.name || 'Unknown Resend error.';
+      throw new Error(`Resend rejected the email (${response.status}): ${detail}`);
+    }
+
+    if (!payload.id) {
+      throw new Error('Resend accepted the request without returning an email ID.');
+    }
+
+    return payload.id;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('Resend request timed out after 15 seconds.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function sendActivationEmail({ to, code, businessName, packageName }) {
-  const config = getSmtpConfig();
-  const missing = [];
-
-  if (!config.host) missing.push('SMTP_HOST');
-  if (!config.user) missing.push('SMTP_USER');
-  if (!config.pass) missing.push('SMTP_PASS');
-  if (!config.fromEmail) missing.push('FROM_EMAIL');
-
-  if (missing.length) {
-    throw new Error(`Email service is not configured. Missing: ${missing.join(', ')}`);
-  }
-
   const codeRows = await query(
     'SELECT code, status FROM activation_codes WHERE code = ?',
     [code],
@@ -69,22 +103,10 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
     throw new Error('This activation code has been revoked.');
   }
 
-  if (!nodemailer) {
-    throw new Error('nodemailer is not installed. Run npm install in backend/');
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.port === 465,
-    auth: {
-      user: config.user,
-      pass: config.pass,
-    },
-  });
-
-  await transporter.sendMail({
-    from: config.fromEmail,
+  const safeBusinessName = escapeHtml(businessName);
+  const safePackageName = escapeHtml(packageName);
+  const safeCode = escapeHtml(code);
+  const messageId = await sendWithResend({
     to,
     subject: `Your activation code for ${packageName}`,
     text:
@@ -95,9 +117,9 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
     html: `
       <div style="font-family: Arial, sans-serif; line-height: 1.6;">
         <h2>Your activation code is ready</h2>
-        <p><strong>Business:</strong> ${businessName}</p>
-        <p><strong>Package:</strong> ${packageName}</p>
-        <p><strong>Activation Code:</strong> <span style="font-size: 18px; font-weight: bold;">${code}</span></p>
+        <p><strong>Business:</strong> ${safeBusinessName}</p>
+        <p><strong>Package:</strong> ${safePackageName}</p>
+        <p><strong>Activation Code:</strong> <span style="font-size: 18px; font-weight: bold;">${safeCode}</span></p>
         <p>Enter this code in the app to activate your subscription.</p>
       </div>
     `,
@@ -108,9 +130,10 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
      SET status = 'assigned',
          assigned_at = COALESCE(assigned_at, NOW()),
          email_sent_at = NOW(),
-         expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR)
+         expires_at = DATE_ADD(NOW(), INTERVAL 24 HOUR),
+         notes = CONCAT_WS('\n', NULLIF(notes, ''), ?)
      WHERE code = ?`,
-    [code],
+    [`Resend email accepted: ${messageId}`, code],
   );
 }
 
