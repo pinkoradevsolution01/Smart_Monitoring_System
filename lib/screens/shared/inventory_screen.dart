@@ -17,6 +17,7 @@ import '../../models/sale.dart';
 import '../../models/sale_item.dart';
 import '../owner/supplier_management_screen.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
+import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 
 enum InventoryFilter { all, lowStock, outOfStock, inStock }
 
@@ -40,14 +41,21 @@ class _InventoryScreenState extends State<InventoryScreen>
   InventoryFilter _filter = InventoryFilter.all;
   List<DamageReport> _damageReports = [];
   bool _loadingDamageReports = false;
+  bool _loadingProducts = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     pos.addListener(_onPosChanged);
-    pos.loadProducts();
+    _loadProducts();
     _loadDamageReports();
+  }
+
+  Future<void> _loadProducts() async {
+    if (mounted) setState(() => _loadingProducts = true);
+    await pos.loadProducts();
+    if (mounted) setState(() => _loadingProducts = false);
   }
 
   void _onPosChanged() {
@@ -128,6 +136,7 @@ class _InventoryScreenState extends State<InventoryScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(AppLocalizations.t('inventory_status')),
+        backgroundColor: Theme.of(context).colorScheme.primary,
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(
@@ -140,22 +149,12 @@ class _InventoryScreenState extends State<InventoryScreen>
             tooltip: 'Reset shoe sizes',
             icon: const Icon(Icons.restore),
             onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Reset Shoe Sizes'),
-                  content: const Text('Set all shoe size quantities to 0?'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: Text(AppLocalizations.t('cancel')),
-                    ),
-                    ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: const Text('Confirm'),
-                    ),
-                  ],
-                ),
+              final confirm = await showAppDestructiveConfirmation(
+                context,
+                title: 'Reset shoe sizes?',
+                message:
+                    'This will set every shoe-size quantity to 0. You cannot undo this from this screen.',
+                confirmLabel: 'Reset sizes',
               );
 
               if (confirm == true) {
@@ -178,7 +177,7 @@ class _InventoryScreenState extends State<InventoryScreen>
             },
           ),
         ],
-        foregroundColor: Colors.white,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.white,
@@ -356,10 +355,22 @@ class _InventoryScreenState extends State<InventoryScreen>
 
         // Product list
         Expanded(
-          child: filtered.isEmpty
-              ? Center(child: Text(AppLocalizations.t('no_products')))
+          child: _loadingProducts
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: AppLoadingSkeleton(lines: 5),
+                )
+              : filtered.isEmpty
+              ? AppEmptyState(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'No products found',
+                  message: _query.isEmpty
+                      ? 'Add products to begin monitoring stock levels.'
+                      : 'Try a different product name, barcode, or filter.',
+                  onRetry: _loadProducts,
+                )
               : RefreshIndicator(
-                  onRefresh: () => pos.loadProducts(),
+                  onRefresh: _loadProducts,
                   child: ListView.builder(
                     padding: const EdgeInsets.all(12),
                     itemCount: filtered.length,
@@ -433,36 +444,14 @@ class _InventoryScreenState extends State<InventoryScreen>
               ),
             ),
             if (isOut)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  AppLocalizations.t('out_of_stock').toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              AppStatusBadge(
+                label: AppLocalizations.t('out_of_stock').toUpperCase(),
+                status: AppStatus.danger,
               )
             else if (isLow)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.orange,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  AppLocalizations.t('low_stock_alert'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+              AppStatusBadge(
+                label: AppLocalizations.t('low_stock_alert'),
+                status: AppStatus.warning,
               ),
           ],
         ),

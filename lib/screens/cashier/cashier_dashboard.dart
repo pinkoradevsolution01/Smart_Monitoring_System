@@ -11,6 +11,10 @@ import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import '../../services/attendance_service.dart';
+import '../../services/pos_service.dart';
+import '../../theme.dart';
+import '../../utils/interaction_feedback.dart';
+import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 
 class CashierDashboard extends StatelessWidget {
   final User user;
@@ -20,10 +24,10 @@ class CashierDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final packageService = GetIt.I<PackageService>();
+    final pos = GetIt.I<POSService>();
     return AnimatedBuilder(
-      animation: packageService,
+      animation: Listenable.merge([packageService, pos]),
       builder: (context, _) => Scaffold(
-        backgroundColor: Colors.grey.shade100,
         appBar: AppBar(
           title: Text(AppLocalizations.t('cashier_dashboard')),
           actions: [
@@ -48,33 +52,158 @@ class CashierDashboard extends StatelessWidget {
           ],
         ),
         floatingActionButton: const AIHelpButton(),
+        bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
+            ? NavigationBar(
+                selectedIndex: 0,
+                onDestinationSelected: (index) {
+                  InteractionFeedback.tap();
+                  switch (index) {
+                    case 1:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CashierPOS(cashierName: user.name),
+                        ),
+                      );
+                    case 2:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PriceCheckerScreen(),
+                        ),
+                      );
+                    case 3:
+                      if (!packageService.hasAttendanceAccess) {
+                        showDialog(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Feature locked'),
+                            content: const Text(
+                              'Attendance is available in the Standard package and above.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                        return;
+                      }
+                      showDialog(
+                        context: context,
+                        builder: (_) => Dialog(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: _AttendanceCard(user: user),
+                          ),
+                        ),
+                      );
+                  }
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard),
+                    label: 'Dashboard',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.point_of_sale_outlined),
+                    selectedIcon: Icon(Icons.point_of_sale),
+                    label: 'POS',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.qr_code_scanner_outlined),
+                    selectedIcon: Icon(Icons.qr_code_scanner),
+                    label: 'Check price',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.access_time_outlined),
+                    selectedIcon: Icon(Icons.access_time),
+                    label: 'Attendance',
+                  ),
+                ],
+              )
+            : null,
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
+            constraints: const BoxConstraints(maxWidth: 1200),
             child: Padding(
-              padding: EdgeInsets.all(ResponsiveUtils.spacingForWidth(MediaQuery.sizeOf(context).width)),
+              padding: ResponsiveUtils.responsivePadding(
+                MediaQuery.sizeOf(context).width,
+              ),
               child: ListView(
                 children: [
-                  // Dashboard welcome section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Dashboard',
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Welcome, ${user.name}',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(color: Colors.grey[600]),
-                        ),
-                      ],
+                  AppPageHeader(
+                    title: 'Cashier dashboard',
+                    subtitle:
+                        'Welcome, ${user.name}. Start a sale or access your cashier tools.',
+                    breadcrumbs: const ['Home', 'Cashier'],
+                    action: FilledButton.icon(
+                      onPressed: () {
+                        InteractionFeedback.tap();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CashierPOS(cashierName: user.name),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.point_of_sale),
+                      label: const Text('New sale'),
                     ),
                   ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 700 ? 3 : 1;
+                      return GridView.count(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: columns == 1 ? 3 : 1.7,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          AppMetricCard(
+                            label: 'Products ready to sell',
+                            value:
+                                '${pos.products.where((p) => p.quantity > 0).length}',
+                            icon: Icons.inventory_2_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                            detail: 'Items with available stock',
+                          ),
+                          AppMetricCard(
+                            label: 'Cart items',
+                            value:
+                                '${pos.cart.fold<int>(0, (sum, item) => sum + item.quantity)}',
+                            icon: Icons.shopping_cart_outlined,
+                            color: AppColors.accentTeal,
+                            detail: 'Current open order',
+                          ),
+                          AppMetricCard(
+                            label: 'Shift tools',
+                            value: packageService.hasAttendanceAccess
+                                ? 'Ready'
+                                : 'Locked',
+                            icon: Icons.access_time,
+                            color: packageService.hasAttendanceAccess
+                                ? AppColors.successGreen
+                                : AppColors.warningOrange,
+                            detail: 'Attendance and payment features',
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Quick actions',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
@@ -229,36 +358,7 @@ class _DashboardSquareTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: color,
-                child: Icon(icon, color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return AppActionTile(icon: icon, color: color, title: title, onTap: onTap);
   }
 }
 

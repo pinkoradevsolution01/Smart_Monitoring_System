@@ -562,7 +562,7 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
                     return MediaQuery(
                       data: media.copyWith(
                         textScaler: TextScaler.linear(
-                          media.textScaler.scale(1.0).clamp(0.8, 1.3),
+                          media.textScaler.scale(1.0).clamp(1.0, 1.4),
                         ),
                       ),
                       child: SafeArea(

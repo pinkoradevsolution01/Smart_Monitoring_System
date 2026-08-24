@@ -1464,6 +1464,8 @@ class _SalesReportScreenState extends State<SalesReportScreen>
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         title: Text(AppLocalizations.t('sales_reports')),
         bottom: TabBar(
           controller: _tabController,

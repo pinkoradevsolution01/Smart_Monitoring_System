@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemeController {
-  // Holds currently selected theme key: 'professional', 'gradient', 'red', 'yellow', 'blue', or 'custom'
+  // Holds the selected theme key. `gradient` is the existing storage key for
+  // the Indigo preset and is retained for backwards compatibility.
   static final ValueNotifier<String> themeKey = ValueNotifier('professional');
 
   // Holds custom color value (only used when themeKey == 'custom')
@@ -65,32 +66,48 @@ class ThemeController {
   };
 
   static MaterialColor getMaterialColor(String key) {
-    if (key == 'custom') {
-      return _createMaterialColor(customColor.value);
-    }
-    return presets[key] ?? Colors.blue;
+    final color = key == 'custom'
+        ? customColor.value
+        : (presets[key]?.shade500 ?? Colors.blue);
+    return _createMaterialColor(color);
   }
 
-  // Create MaterialColor from a single color
-  static MaterialColor _createMaterialColor(Color color) {
-    final int red = (color.r * 255.0).round().clamp(0, 255);
-    final int green = (color.g * 255.0).round().clamp(0, 255);
-    final int blue = (color.b * 255.0).round().clamp(0, 255);
+  /// Returns the muted accent that is actually applied to the interface.
+  /// Every preset remains recognisable, but avoids highly saturated colors.
+  static Color previewColor(String key) => getMaterialColor(key).shade500;
 
-    final Map<int, Color> shades = {
-      50: Color.fromRGBO(red, green, blue, .1),
-      100: Color.fromRGBO(red, green, blue, .2),
-      200: Color.fromRGBO(red, green, blue, .3),
-      300: Color.fromRGBO(red, green, blue, .4),
-      400: Color.fromRGBO(red, green, blue, .5),
-      500: Color.fromRGBO(red, green, blue, .6),
-      600: Color.fromRGBO(red, green, blue, .7),
-      700: Color.fromRGBO(red, green, blue, .8),
-      800: Color.fromRGBO(red, green, blue, .9),
-      900: Color.fromRGBO(red, green, blue, 1),
+  static Color neutralizeForUi(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    final saturation = hsl.saturation <= .34
+        ? hsl.saturation
+        : (hsl.saturation * .42).clamp(.12, .34).toDouble();
+    final lightness = hsl.lightness.clamp(.34, .46).toDouble();
+    return hsl
+        .withSaturation(saturation)
+        .withLightness(lightness)
+        .toColor();
+  }
+
+  // Create an opaque, accessible MaterialColor from a muted accent color.
+  static MaterialColor _createMaterialColor(Color color) {
+    final base = neutralizeForUi(color);
+    final hsl = HSLColor.fromColor(base);
+    Color tone(double lightness) => hsl.withLightness(lightness).toColor();
+
+    final shades = <int, Color>{
+      50: tone(.96),
+      100: tone(.90),
+      200: tone(.82),
+      300: tone(.72),
+      400: tone(.60),
+      500: base,
+      600: tone(.30),
+      700: tone(.25),
+      800: tone(.20),
+      900: tone(.15),
     };
 
-    return MaterialColor(color.toARGB32(), shades);
+    return MaterialColor(base.toARGB32(), shades);
   }
 
   // Persistence

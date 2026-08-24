@@ -10,6 +10,9 @@ import '../../models/product.dart';
 import '../../models/sale.dart';
 import 'package:smart_monitoring_system/screens/owner/cctv_screen.dart';
 import 'widgets/cart_sheet.dart';
+import 'package:smart_monitoring_system/widgets/app_design_system.dart';
+import 'package:smart_monitoring_system/utils/interaction_feedback.dart';
+import 'package:smart_monitoring_system/utils/motion_controller.dart';
 
 class CashierPOS extends StatefulWidget {
   final String cashierName;
@@ -27,6 +30,7 @@ class _CashierPOSState extends State<CashierPOS> {
   final String _selectedPaymentMethod = 'cash';
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _cartPulsing = false;
 
   @override
   void initState() {
@@ -49,6 +53,15 @@ class _CashierPOSState extends State<CashierPOS> {
       _updateCategories();
       setState(() {});
     }
+  }
+
+  void _celebrateCartAdd() {
+    InteractionFeedback.cartAdded();
+    if (MotionController.reduceMotion.value) return;
+    setState(() => _cartPulsing = true);
+    Future<void>.delayed(const Duration(milliseconds: 260), () {
+      if (mounted) setState(() => _cartPulsing = false);
+    });
   }
 
   @override
@@ -216,6 +229,7 @@ class _CashierPOSState extends State<CashierPOS> {
                           quantity: 1,
                           selectedShoeSize: size,
                         );
+                        _celebrateCartAdd();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
@@ -245,13 +259,16 @@ class _CashierPOSState extends State<CashierPOS> {
         ? p.totalQuantity <= 0
         : p.quantity <= 0;
     return Card(
-      elevation: 2,
-      child: InkWell(
+      clipBehavior: Clip.antiAlias,
+      child: AppPressable(
+        playSound: false,
+        borderRadius: BorderRadius.circular(16),
         onTap: isOutOfStock
             ? null
             : () {
                 // For shoe products, show size selection dialog
                 if (p.hasShoeVariants) {
+                  InteractionFeedback.tap();
                   _showShoeSizeSelectionDialog(p);
                   return;
                 }
@@ -277,6 +294,7 @@ class _CashierPOSState extends State<CashierPOS> {
                 }
 
                 pos.addToCart(p, quantity: 1);
+                _celebrateCartAdd();
               },
         onLongPress: () async {
           if (p.imagePath != null && p.imagePath!.isNotEmpty) {
@@ -406,29 +424,16 @@ class _CashierPOSState extends State<CashierPOS> {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    p.hasShoeVariants
-                        ? 'Stock: ${p.totalQuantity} (${AppLocalizations.t('multiple_sizes')})'
+                  AppStatusBadge(
+                    label: p.hasShoeVariants
+                        ? 'Stock: ${p.totalQuantity}'
                         : 'Stock: ${p.quantity}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color:
-                          (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
-                              0
-                          ? Colors.red
-                          : ((p.hasShoeVariants
-                                        ? p.totalQuantity
-                                        : p.quantity) <=
-                                    p.reorderLevel
-                                ? Colors.orange
-                                : Colors.grey),
-                      fontSize: 11,
-                      fontWeight:
-                          (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
-                              0
-                          ? FontWeight.bold
-                          : FontWeight.normal,
-                    ),
+                    status: isOutOfStock
+                        ? AppStatus.danger
+                        : (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
+                                p.reorderLevel
+                            ? AppStatus.warning
+                            : AppStatus.success,
                   ),
                 ],
               ),
@@ -845,12 +850,18 @@ class _CashierPOSState extends State<CashierPOS> {
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: AppLocalizations.t('sales_log_tooltip'),
-            onPressed: openSalesLog,
+            onPressed: () {
+              InteractionFeedback.tap();
+              openSalesLog();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.shopping_cart),
             tooltip: AppLocalizations.t('open_cart_tooltip'),
-            onPressed: openCartSheet,
+            onPressed: () {
+              InteractionFeedback.tap();
+              openCartSheet();
+            },
           ),
         ],
       ),
@@ -918,6 +929,7 @@ class _CashierPOSState extends State<CashierPOS> {
                             label: Text(category),
                             selected: isSelected,
                             onSelected: (selected) {
+                              InteractionFeedback.tap();
                               setState(() {
                                 _selectedCategory = category;
                               });
@@ -951,12 +963,19 @@ class _CashierPOSState extends State<CashierPOS> {
                                 Expanded(
                                   flex: 3,
                                   child: products.isEmpty
-                                      ? Center(
-                                          child: Text(
-                                            _selectedCategory == 'All'
-                                                ? 'No products'
-                                                : 'No products in $_selectedCategory',
-                                          ),
+                                      ? AppEmptyState(
+                                          icon: Icons.search_off_outlined,
+                                          title: 'No products found',
+                                          message: _searchQuery.isEmpty
+                                              ? 'There are no products available in this category.'
+                                              : 'Try a different product name or barcode.',
+                                          onRetry: () {
+                                            _searchController.clear();
+                                            setState(() {
+                                              _searchQuery = '';
+                                              _selectedCategory = 'All';
+                                            });
+                                          },
                                         )
                                       : GridView.builder(
                                           itemCount: products.length,
@@ -995,12 +1014,19 @@ class _CashierPOSState extends State<CashierPOS> {
                               ],
                             )
                           : (products.isEmpty
-                                ? Center(
-                                    child: Text(
-                                      _selectedCategory == 'All'
-                                          ? 'No products'
-                                          : 'No products in $_selectedCategory',
-                                    ),
+                                ? AppEmptyState(
+                                    icon: Icons.search_off_outlined,
+                                    title: 'No products found',
+                                    message: _searchQuery.isEmpty
+                                        ? 'There are no products available in this category.'
+                                        : 'Try a different product name or barcode.',
+                                    onRetry: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                        _selectedCategory = 'All';
+                                      });
+                                    },
                                   )
                                 : GridView.builder(
                                     itemCount: products.length,
@@ -1034,13 +1060,23 @@ class _CashierPOSState extends State<CashierPOS> {
         builder: (context, constraints) {
           // hide floating button when wide layout shows the cart panel
           if (constraints.maxWidth > 900) return const SizedBox.shrink();
-          return FloatingActionButton.extended(
-            onPressed: openCartSheet,
-            icon: const Icon(Icons.shopping_cart_checkout),
-            label: Text(
-              AppLocalizations.t(
-                'cart_count',
-              ).replaceAll('{count}', cartCount.toString()),
+          return AnimatedScale(
+            scale: MotionController.reduceMotion.value || !_cartPulsing
+                ? 1
+                : 1.08,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOutBack,
+            child: FloatingActionButton.extended(
+              onPressed: () {
+                InteractionFeedback.tap();
+                openCartSheet();
+              },
+              icon: const Icon(Icons.shopping_cart_checkout),
+              label: Text(
+                AppLocalizations.t(
+                  'cart_count',
+                ).replaceAll('{count}', cartCount.toString()),
+              ),
             ),
           );
         },

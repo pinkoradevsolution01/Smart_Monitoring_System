@@ -226,6 +226,8 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         title: Text(
           AppLocalizations.t('supplier_management'),
           style: const TextStyle(color: Colors.white),

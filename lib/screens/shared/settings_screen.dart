@@ -28,7 +28,9 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late Locale _selectedLocale;
   late String _selectedThemeKey;
+  late String _savedThemeKey;
   late bool _selectedReduceMotion;
+  late bool _savedReduceMotion;
   final TextEditingController _backendUrlController = TextEditingController();
   String _selectedPaperSize = 'Thermal 48mm';
   bool _hasChanges = false;
@@ -47,7 +49,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     _selectedLocale = LocaleController.locale.value;
     _selectedThemeKey = ThemeController.themeKey.value;
+    _savedThemeKey = _selectedThemeKey;
     _selectedReduceMotion = MotionController.reduceMotion.value;
+    _savedReduceMotion = _selectedReduceMotion;
     _backendUrlController.text = BackendConfig.resolvedApiBaseUrl ??
         BackendConfig.apiBaseUrl;
     // Load saved default paper size and update shared notifier
@@ -113,7 +117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ThemeController.setTheme(_selectedThemeKey);
     MotionController.setReduceMotion(_selectedReduceMotion);
 
-    setState(() => _hasChanges = false);
+    setState(() {
+      _savedThemeKey = _selectedThemeKey;
+      _savedReduceMotion = _selectedReduceMotion;
+      _hasChanges = false;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -125,10 +133,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _resetChanges() {
+    ThemeController.setTheme(_savedThemeKey);
+    MotionController.setReduceMotion(_savedReduceMotion);
     setState(() {
       _selectedLocale = LocaleController.locale.value;
-      _selectedThemeKey = ThemeController.themeKey.value;
-      _selectedReduceMotion = MotionController.reduceMotion.value;
+      _selectedThemeKey = _savedThemeKey;
+      _selectedReduceMotion = _savedReduceMotion;
       _hasChanges = false;
     });
   }
@@ -510,10 +520,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text('Motion', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             SwitchListTile(
-              title: Text(AppLocalizations.t('reduce_motion')),
-              value: _selectedReduceMotion,
-              onChanged: (v) {
-                setState(() => _selectedReduceMotion = v);
+              title: const Text('Motion and interaction sounds'),
+              subtitle: const Text(
+                'Animate taps and play subtle system feedback for buttons, navigation, and POS actions.',
+              ),
+              value: !_selectedReduceMotion,
+              onChanged: (enabled) {
+                setState(() => _selectedReduceMotion = !enabled);
+                MotionController.setReduceMotion(!enabled);
                 _markAsChanged();
               },
             ),
@@ -553,12 +567,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
             // Printing / Paper Size Section
             Text('Printing', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Text('Default Paper Size:'),
-                const SizedBox(width: 12),
-                DropdownButton<String>(
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final paperSizePicker = DropdownButton<String>(
                   value: _selectedPaperSize,
+                  isExpanded: constraints.maxWidth < 480,
                   items:
                       <String>[
                             'A4',
@@ -569,29 +582,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             'Thermal 58mm',
                           ]
                           .map(
-                            (k) => DropdownMenuItem(value: k, child: Text(k)),
+                            (size) => DropdownMenuItem(
+                              value: size,
+                              child: Text(size, overflow: TextOverflow.ellipsis),
+                            ),
                           )
                           .toList(),
-                  onChanged: (v) async {
-                    if (v == null) return;
-                    setState(() => _selectedPaperSize = v);
+                  onChanged: (value) async {
+                    if (value == null) return;
+                    setState(() => _selectedPaperSize = value);
                     _markAsChanged();
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('default_receipt_paper_size', v);
-                    // broadcast change so open previews update live
-                    PrintSettings.paperSize.value = v;
+                    await prefs.setString('default_receipt_paper_size', value);
+                    PrintSettings.paperSize.value = value;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Default paper size saved: $v')),
+                      SnackBar(content: Text('Default paper size saved: $value')),
                     );
                   },
-                ),
-                const Spacer(),
-                Text(
-                  _selectedPaperSize.contains('Thermal')
-                      ? 'Width: ${_selectedPaperSize.replaceAll(RegExp(r'[^0-9]'), '')} mm'
-                      : '',
-                ),
-              ],
+                );
+                final thermalWidth = _selectedPaperSize.contains('Thermal')
+                    ? 'Width: ${_selectedPaperSize.replaceAll(RegExp(r'[^0-9]'), '')} mm'
+                    : null;
+
+                if (constraints.maxWidth < 480) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Default Paper Size:'),
+                      const SizedBox(height: 8),
+                      SizedBox(width: double.infinity, child: paperSizePicker),
+                      if (thermalWidth != null) ...[
+                        const SizedBox(height: 4),
+                        Text(thermalWidth),
+                      ],
+                    ],
+                  );
+                }
+
+                return Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    const Text('Default Paper Size:'),
+                    paperSizePicker,
+                    if (thermalWidth != null) Text(thermalWidth),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 16),
             _buildBackendConnectionCard(context),
@@ -1059,9 +1097,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Add custom color if it exists
     final colors = <MapEntry<String, Color>>[
-      ...entries.map((e) => MapEntry(e.key, e.value)),
+      ...entries.map(
+        (entry) => MapEntry(
+          entry.key,
+          ThemeController.previewColor(entry.key),
+        ),
+      ),
       if (selectedKey == 'custom')
-        MapEntry('custom', ThemeController.customColor.value),
+        MapEntry('custom', ThemeController.previewColor('custom')),
     ];
 
     return Center(
@@ -1074,8 +1117,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           return _buildHexagon(
             color: entry.value,
             isSelected: isSelected,
-            label: entry.key[0].toUpperCase() + entry.key.substring(1),
+            label: entry.key == 'gradient'
+                ? 'Indigo'
+                : entry.key[0].toUpperCase() + entry.key.substring(1),
             onTap: () {
+              ThemeController.setTheme(entry.key);
               setState(() => _selectedThemeKey = entry.key);
               _markAsChanged();
             },
@@ -1134,8 +1180,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showCustomColorPicker(BuildContext context) {
-    showDialog(context: context, builder: (ctx) => _CustomColorPickerDialog());
+  Future<void> _showCustomColorPicker(BuildContext context) async {
+    await showDialog(context: context, builder: (ctx) => _CustomColorPickerDialog());
+    if (!mounted || ThemeController.themeKey.value != 'custom') return;
+    setState(() => _selectedThemeKey = 'custom');
+    _markAsChanged();
   }
 
   Widget _buildPackageInfoCard(BuildContext context) {
@@ -2307,7 +2356,9 @@ class _CustomColorPickerDialog extends StatefulWidget {
 }
 
 class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
-  Color selectedColor = ThemeController.customColor.value;
+  Color selectedColor = ThemeController.neutralizeForUi(
+    ThemeController.customColor.value,
+  );
 
   final List<Color> predefinedColors = [
     Colors.red,
@@ -2363,7 +2414,7 @@ class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
                   return GestureDetector(
                     onTap: () {
                       setState(() {
-                        selectedColor = color;
+                        selectedColor = ThemeController.neutralizeForUi(color);
                       });
                     },
                     child: _buildSmallHexagon(

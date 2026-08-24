@@ -249,6 +249,13 @@ Follow these steps in order. Do not make the web dashboard publicly available un
 
 - Desktop-first responsive dashboard, usable at 1280 px and above and readable on tablet widths.
 - Professional, calm operations design: sidebar navigation, compact header, clear status colors, accessible contrast, keyboard-friendly controls, loading/empty/error states.
+- Use the same selectable theme presets as the Flutter Smart Monitoring System. The user preference must be persisted and applied to charts, tables, focus rings, buttons, navigation, badges, and dialogs:
+  - **Professional** (default): `#212121` primary; neutral white and soft-gray surfaces for focused operational work.
+  - **Indigo**: `#5E72E4` primary; cool indigo accents while retaining the same contrast and semantic status colors.
+  - **Mocha**: `#6F4E37` primary; warm brown accents while retaining the same contrast and semantic status colors.
+  - Semantic status colors are not replaced by a preset: success `#15803D`, warning `#D97706`, error `#DC2626`, and information uses the active preset primary.
+- Use an 8 px spacing scale, 10 px control corners, 16 px card/dialog corners, 48 px minimum interactive targets, and visible 2 px keyboard focus outlines using the active preset color.
+- Respect `prefers-reduced-motion`; avoid autoplaying chart transitions and use short opacity changes only when motion is enabled.
 - Default date range: last 30 days. Support Today, Last 7 days, Last 30 days, This Month, custom range, and prior-period comparison.
 - Display money in the business-configured currency; until configuration exists, use PHP with `en-PH` formatting.
 - Treat all backend timestamps as server time and state the timezone in the UI. Use `Asia/Manila` as the initial product default unless business-level settings are later added.

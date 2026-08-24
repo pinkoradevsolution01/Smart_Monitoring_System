@@ -20,8 +20,12 @@ import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import '../../services/package_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/pos_service.dart';
+import '../../theme.dart';
+import '../../utils/interaction_feedback.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
+import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 
 class OwnerDashboard extends StatefulWidget {
   final User user;
@@ -62,11 +66,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
   @override
   Widget build(BuildContext context) {
     final packageService = GetIt.I<PackageService>();
+    final pos = GetIt.I<POSService>();
+    final lowStockCount = pos.products
+        .where((product) => product.lowStock || product.quantity == 0)
+        .length;
 
     return AnimatedBuilder(
-      animation: packageService,
+      animation: Listenable.merge([packageService, pos]),
       builder: (context, _) => Scaffold(
-        backgroundColor: Colors.grey.shade100,
         appBar: AppBar(
           title: Text(AppLocalizations.t('owner_dashboard')),
           actions: [
@@ -100,33 +107,147 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           ],
         ),
         floatingActionButton: const AIHelpButton(),
+        bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
+            ? NavigationBar(
+                selectedIndex: 0,
+                onDestinationSelected: (index) {
+                  InteractionFeedback.tap();
+                  switch (index) {
+                    case 1:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CashierPOS(cashierName: widget.user.name),
+                        ),
+                      );
+                    case 2:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => InventoryScreen(user: widget.user),
+                        ),
+                      );
+                    case 3:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => SalesReportScreen()),
+                      );
+                  }
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.dashboard_outlined),
+                    selectedIcon: Icon(Icons.dashboard),
+                    label: 'Dashboard',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.point_of_sale_outlined),
+                    selectedIcon: Icon(Icons.point_of_sale),
+                    label: 'POS',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.inventory_2_outlined),
+                    selectedIcon: Icon(Icons.inventory_2),
+                    label: 'Inventory',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.bar_chart_outlined),
+                    selectedIcon: Icon(Icons.bar_chart),
+                    label: 'Reports',
+                  ),
+                ],
+              )
+            : null,
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900),
+            constraints: const BoxConstraints(maxWidth: 1200),
             child: Padding(
-              padding: EdgeInsets.all(ResponsiveUtils.spacingForWidth(MediaQuery.sizeOf(context).width)),
+              padding: ResponsiveUtils.responsivePadding(
+                MediaQuery.sizeOf(context).width,
+              ),
               child: ListView(
                 children: [
-                  // Dashboard welcome section
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Dashboard',
-                          style: Theme.of(context).textTheme.headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Welcome, ${widget.user.name}',
-                          style: Theme.of(context).textTheme.bodyLarge
-                              ?.copyWith(color: Colors.grey[600]),
-                        ),
-                      ],
+                  AppPageHeader(
+                    title: 'Owner dashboard',
+                    subtitle:
+                        'Welcome, ${widget.user.name}. Review operations and choose a workspace.',
+                    breadcrumbs: const ['Home', 'Dashboard'],
+                    action: FilledButton.icon(
+                      onPressed: () {
+                        InteractionFeedback.tap();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CashierPOS(
+                              cashierName: widget.user.name,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.point_of_sale),
+                      label: const Text('Open POS'),
                     ),
                   ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 900
+                          ? 4
+                          : constraints.maxWidth >= 600
+                          ? 2
+                          : 1;
+                      return GridView.count(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: columns == 1 ? 3 : 1.65,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          AppMetricCard(
+                            label: 'Products',
+                            value: '${pos.products.length}',
+                            icon: Icons.inventory_2_outlined,
+                            color: Theme.of(context).colorScheme.primary,
+                            detail: 'Available in inventory',
+                          ),
+                          AppMetricCard(
+                            label: 'Low-stock alerts',
+                            value: '$lowStockCount',
+                            icon: Icons.warning_amber_rounded,
+                            color: lowStockCount == 0
+                                ? AppColors.successGreen
+                                : AppColors.warningOrange,
+                            detail: lowStockCount == 0
+                                ? 'Inventory levels look healthy'
+                                : 'Review items that need restocking',
+                          ),
+                          AppMetricCard(
+                            label: 'Current package',
+                            value: packageService.selectedPackage?.name ?? 'Starter',
+                            icon: Icons.workspace_premium_outlined,
+                            color: Colors.deepPurple,
+                            detail: 'Features available to this business',
+                          ),
+                          const AppMetricCard(
+                            label: 'Quick action',
+                            value: 'POS',
+                            icon: Icons.bolt_outlined,
+                            color: AppColors.accentTeal,
+                            detail: 'Start a customer checkout',
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Workspaces',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
@@ -473,35 +594,6 @@ class _DashboardSquareTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: color,
-                child: Icon(icon, color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return AppActionTile(icon: icon, color: color, title: title, onTap: onTap);
   }
 }
