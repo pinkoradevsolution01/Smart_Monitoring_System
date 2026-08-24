@@ -1,9 +1,9 @@
 const express = require('express');
 const { randomUUID } = require('crypto');
 const { query } = require('../db');
+const { escapeHtml, sendEmail } = require('../services/resend_email');
 
 const router = express.Router();
-const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
 
 function toBool(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
@@ -23,67 +23,6 @@ function buildInClause(values) {
     clause: `(${items.map(() => '?').join(', ')})`,
     params: items,
   };
-}
-
-function getResendConfig() {
-  return {
-    apiKey: String(process.env.RESEND_API_KEY || '').trim(),
-    fromEmail: String(process.env.FROM_EMAIL || '').trim(),
-  };
-}
-
-function escapeHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-async function sendWithResend({ to, subject, text, html }) {
-  const { apiKey, fromEmail } = getResendConfig();
-  const missing = [];
-  if (!apiKey) missing.push('RESEND_API_KEY');
-  if (!fromEmail) missing.push('FROM_EMAIL');
-
-  if (missing.length) {
-    throw new Error(`Resend is not configured. Missing: ${missing.join(', ')}`);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const response = await fetch(RESEND_EMAILS_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from: fromEmail, to: [to], subject, text, html }),
-      signal: controller.signal,
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const detail = payload.message || payload.name || 'Unknown Resend error.';
-      throw new Error(`Resend rejected the email (${response.status}): ${detail}`);
-    }
-
-    if (!payload.id) {
-      throw new Error('Resend accepted the request without returning an email ID.');
-    }
-
-    return payload.id;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw new Error('Resend request timed out after 15 seconds.');
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 async function sendActivationEmail({ to, code, businessName, packageName }) {
@@ -106,7 +45,7 @@ async function sendActivationEmail({ to, code, businessName, packageName }) {
   const safeBusinessName = escapeHtml(businessName);
   const safePackageName = escapeHtml(packageName);
   const safeCode = escapeHtml(code);
-  const messageId = await sendWithResend({
+  const messageId = await sendEmail({
     to,
     subject: `Your activation code for ${packageName}`,
     text:

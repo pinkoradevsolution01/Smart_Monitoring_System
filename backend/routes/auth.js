@@ -7,13 +7,7 @@ const {
   createHash,
 } = require('crypto');
 const { query, execute } = require('../db');
-
-let nodemailer = null;
-try {
-  nodemailer = require('nodemailer');
-} catch (_) {
-  nodemailer = null;
-}
+const { escapeHtml, sendEmail } = require('../services/resend_email');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
@@ -34,33 +28,9 @@ const OAUTH_EXCHANGE_TTL_MS = 2 * 60 * 1000;
 const ANALYTICS_ROLES = new Set(['owner', 'admin', 'manager']);
 const OWNER_PIN_RESET_TTL_MINUTES = 20;
 
-function getSmtpConfig() {
-  const host = process.env.SMTP_HOST || '';
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER || '';
-  const pass = process.env.SMTP_PASS || '';
-  const fromEmail = process.env.FROM_EMAIL || user || '';
-  return { host, port, user, pass, fromEmail };
-}
-
 async function sendOwnerPinResetToken({ to, token }) {
-  const config = getSmtpConfig();
-  if (!config.host || !config.user || !config.pass || !config.fromEmail) {
-    throw new Error('Email service is not configured.');
-  }
-  if (!nodemailer) {
-    throw new Error('nodemailer is not installed.');
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.port === 465,
-    auth: { user: config.user, pass: config.pass },
-  });
-
-  await transporter.sendMail({
-    from: config.fromEmail,
+  const safeToken = escapeHtml(token);
+  await sendEmail({
     to,
     subject: 'Owner PIN reset token',
     text:
@@ -68,6 +38,15 @@ async function sendOwnerPinResetToken({ to, token }) {
       `${token}\n\n` +
       `This token expires in ${OWNER_PIN_RESET_TTL_MINUTES} minutes and can only be used once. ` +
       'If you did not request this, you can ignore this email.',
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <h2>Owner PIN reset token</h2>
+        <p>Your Smart Monitoring System Owner PIN reset token is:</p>
+        <p style="font-size: 18px; font-weight: bold;">${safeToken}</p>
+        <p>This token expires in ${OWNER_PIN_RESET_TTL_MINUTES} minutes and can only be used once.</p>
+        <p>If you did not request this, you can ignore this email.</p>
+      </div>
+    `,
   });
 }
 
