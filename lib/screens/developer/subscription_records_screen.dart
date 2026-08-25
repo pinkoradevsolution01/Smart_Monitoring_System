@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../../services/cloud_subscription_service.dart';
 import '../../models/subscription_record.dart';
 import 'package:intl/intl.dart';
+import '../../theme.dart';
 
 class SubscriptionRecordsScreen extends StatefulWidget {
   final CloudSubscriptionService cloudSubscriptionService;
@@ -20,7 +21,8 @@ class SubscriptionRecordsScreen extends StatefulWidget {
 class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _filterStatus = 'all'; // all, active, expired, cancelled, one_time, saas
+  String _filterStatus =
+      'all'; // all, active, expired, cancelled, one_time, saas
 
   @override
   void initState() {
@@ -74,113 +76,116 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Subscription Records'),
-        backgroundColor: Colors.grey[900],
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            onPressed: _exportToCsv,
-            tooltip: 'Export to CSV',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => widget.cloudSubscriptionService.refresh(),
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.grey[900]!, Colors.grey[800]!],
-          ),
-        ),
-        child: Column(
-          children: [
-            // Search and Filter Bar
-            _buildSearchAndFilterBar(),
-
-            // Subscription List
-            Expanded(
-              child: ListenableBuilder(
-                listenable: widget.cloudSubscriptionService,
-                builder: (context, _) {
-                  if (widget.cloudSubscriptionService.isLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (widget.cloudSubscriptionService.error != null) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.red,
-                            size: 60,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            widget.cloudSubscriptionService.error!,
-                            style: const TextStyle(color: Colors.red),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () =>
-                                widget.cloudSubscriptionService.refresh(),
-                            icon: const Icon(Icons.refresh),
-                            label: const Text('Retry'),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  final subscriptions = _getFilteredSubscriptions();
-
-                  if (subscriptions.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.cloud_off,
-                            size: 80,
-                            color: Colors.grey[600],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            _searchQuery.isNotEmpty
-                                ? 'No subscriptions found matching "$_searchQuery"'
-                                : 'No subscription records found',
-                            style: TextStyle(
-                              color: Colors.grey[400],
-                              fontSize: 16,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: subscriptions.length,
-                    itemBuilder: (context, index) {
-                      final subscription = subscriptions[index];
-                      return _buildSubscriptionCard(subscription);
-                    },
-                  );
-                },
-              ),
+    return Theme(
+      data: DeveloperTheme.dark(context),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Subscription Records'),
+          backgroundColor: Colors.grey[900],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.download),
+              onPressed: _exportToCsv,
+              tooltip: 'Export to CSV',
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () => widget.cloudSubscriptionService.refresh(),
+              tooltip: 'Refresh',
             ),
           ],
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.grey[900]!, Colors.grey[800]!],
+            ),
+          ),
+          child: Column(
+            children: [
+              // Search and Filter Bar
+              _buildSearchAndFilterBar(),
+
+              // Subscription List
+              Expanded(
+                child: ListenableBuilder(
+                  listenable: widget.cloudSubscriptionService,
+                  builder: (context, _) {
+                    if (widget.cloudSubscriptionService.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (widget.cloudSubscriptionService.error != null) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 60,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              widget.cloudSubscriptionService.error!,
+                              style: const TextStyle(color: Colors.red),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () =>
+                                  widget.cloudSubscriptionService.refresh(),
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    final subscriptions = _getFilteredSubscriptions();
+
+                    if (subscriptions.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.cloud_off,
+                              size: 80,
+                              color: Colors.grey[600],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _searchQuery.isNotEmpty
+                                  ? 'No subscriptions found matching "$_searchQuery"'
+                                  : 'No subscription records found',
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 16,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: subscriptions.length,
+                      itemBuilder: (context, index) {
+                        final subscription = subscriptions[index];
+                        return _buildSubscriptionCard(subscription);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -371,9 +376,9 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
               _buildDetailRow(
                 Icons.event,
                 'Expires',
-                      subscription.expiresAt == null
-                          ? 'Perpetual'
-                          : dateFormat.format(subscription.expiresAt!.toLocal()),
+                subscription.expiresAt == null
+                    ? 'Perpetual'
+                    : dateFormat.format(subscription.expiresAt!.toLocal()),
                 isActive ? Colors.green : Colors.red,
               ),
               if (isActive) ...[
@@ -471,76 +476,79 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              subscription.isActive ? Icons.check_circle : Icons.cancel,
-              color: subscription.isActive ? Colors.green : Colors.red,
-            ),
-            const SizedBox(width: 8),
-            const Text('Subscription Details'),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+      builder: (dialogContext) => Theme(
+        data: DeveloperTheme.dark(context),
+        child: AlertDialog(
+          title: Row(
             children: [
-              _buildInfoItem('ID', subscription.id.toString()),
-              _buildInfoItem('Device Name', subscription.deviceName ?? 'N/A'),
-              _buildInfoItem('Device ID', subscription.deviceId),
-              _buildInfoItem('Package', subscription.packageName),
-              _buildInfoItem('Activation Code', subscription.activationCode),
-              _buildInfoItem(
-                'Status',
-                subscription.formattedStatus,
+              Icon(
+                subscription.isActive ? Icons.check_circle : Icons.cancel,
                 color: subscription.isActive ? Colors.green : Colors.red,
               ),
-              const Divider(),
-              _buildInfoItem(
-                'Activated At',
-                dateFormat.format(subscription.activatedAt.toLocal()),
-              ),
-              _buildInfoItem(
-                'Expires At',
-                subscription.expiresAt == null
-                    ? 'Perpetual'
-                    : dateFormat.format(subscription.expiresAt!.toLocal()),
-              ),
-              if (subscription.lastCheckedAt != null)
-                _buildInfoItem(
-                  'Last Checked',
-                  dateFormat.format(subscription.lastCheckedAt!.toLocal()),
-                ),
-              if (subscription.notes != null) ...[
-                const Divider(),
-                _buildInfoItem('Notes', subscription.notes!),
-              ],
+              const SizedBox(width: 8),
+              const Text('Subscription Details'),
             ],
           ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: () {
-              Clipboard.setData(
-                ClipboardData(text: subscription.activationCode),
-              );
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Activation code copied to clipboard'),
-                  behavior: SnackBarBehavior.floating,
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildInfoItem('ID', subscription.id.toString()),
+                _buildInfoItem('Device Name', subscription.deviceName ?? 'N/A'),
+                _buildInfoItem('Device ID', subscription.deviceId),
+                _buildInfoItem('Package', subscription.packageName),
+                _buildInfoItem('Activation Code', subscription.activationCode),
+                _buildInfoItem(
+                  'Status',
+                  subscription.formattedStatus,
+                  color: subscription.isActive ? Colors.green : Colors.red,
                 ),
-              );
-            },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copy Code'),
+                const Divider(),
+                _buildInfoItem(
+                  'Activated At',
+                  dateFormat.format(subscription.activatedAt.toLocal()),
+                ),
+                _buildInfoItem(
+                  'Expires At',
+                  subscription.expiresAt == null
+                      ? 'Perpetual'
+                      : dateFormat.format(subscription.expiresAt!.toLocal()),
+                ),
+                if (subscription.lastCheckedAt != null)
+                  _buildInfoItem(
+                    'Last Checked',
+                    dateFormat.format(subscription.lastCheckedAt!.toLocal()),
+                  ),
+                if (subscription.notes != null) ...[
+                  const Divider(),
+                  _buildInfoItem('Notes', subscription.notes!),
+                ],
+              ],
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(
+                  ClipboardData(text: subscription.activationCode),
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Activation code copied to clipboard'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy),
+              label: const Text('Copy Code'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -554,7 +562,7 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
           Text(
             label,
             style: TextStyle(
-              color: Colors.grey[600],
+              color: DeveloperTheme.mutedText,
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
@@ -563,7 +571,7 @@ class _SubscriptionRecordsScreenState extends State<SubscriptionRecordsScreen> {
           Text(
             value,
             style: TextStyle(
-              color: color ?? Colors.black87,
+              color: color ?? DeveloperTheme.onSurface,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),

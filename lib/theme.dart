@@ -56,9 +56,58 @@ class AppTheme {
       borderRadius: BorderRadius.circular(radiusSmall),
       borderSide: BorderSide(color: colorScheme.outlineVariant),
     );
+    final baseTextTheme = Typography.material2021().black.apply(
+      fontFamily: 'Inter',
+      bodyColor: AppColors.black,
+      displayColor: AppColors.black,
+    );
+    final textTheme = baseTextTheme.copyWith(
+      displayLarge: baseTextTheme.displayLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      displayMedium: baseTextTheme.displayMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      displaySmall: baseTextTheme.displaySmall?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      headlineLarge: baseTextTheme.headlineLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      headlineMedium: baseTextTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      headlineSmall: baseTextTheme.headlineSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      titleLarge: baseTextTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      titleMedium: baseTextTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      titleSmall: baseTextTheme.titleSmall?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      bodyLarge: baseTextTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w400),
+      bodyMedium: baseTextTheme.bodyMedium?.copyWith(
+        fontWeight: FontWeight.w400,
+      ),
+      bodySmall: baseTextTheme.bodySmall?.copyWith(fontWeight: FontWeight.w400),
+      labelLarge: baseTextTheme.labelLarge?.copyWith(
+        fontWeight: FontWeight.w700,
+      ),
+      labelMedium: baseTextTheme.labelMedium?.copyWith(
+        fontWeight: FontWeight.w400,
+      ),
+      labelSmall: baseTextTheme.labelSmall?.copyWith(
+        fontWeight: FontWeight.w400,
+      ),
+    );
 
     return ThemeData(
       useMaterial3: true,
+      fontFamily: 'Inter',
       colorScheme: colorScheme,
       primaryColor: primary,
       scaffoldBackgroundColor: AppColors.lightGrey,
@@ -72,6 +121,7 @@ class AppTheme {
         scrolledUnderElevation: 1,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
+          fontFamily: 'Inter',
           color: colorScheme.onSurface,
           fontSize: 20,
           fontWeight: FontWeight.w700,
@@ -94,6 +144,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(radiusMedium),
         ),
         titleTextStyle: TextStyle(
+          fontFamily: 'Inter',
           color: colorScheme.onSurface,
           fontSize: 20,
           fontWeight: FontWeight.w700,
@@ -136,7 +187,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colorScheme.surface,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
         border: outlinedBorder,
         enabledBorder: outlinedBorder,
         focusedBorder: outlinedBorder.copyWith(
@@ -174,10 +228,101 @@ class AppTheme {
           TextStyle(color: colorScheme.onSurface, fontWeight: FontWeight.w600),
         ),
       ),
-      textTheme: Typography.material2021().black.apply(
-        bodyColor: AppColors.black,
-        displayColor: AppColors.black,
+      textTheme: textTheme,
+    );
+  }
+}
+
+/// Local dark theme for operational developer tools.
+///
+/// Developer screens use dense data and a deliberately dark workspace. Keeping
+/// this theme scoped to those screens prevents the light application theme from
+/// turning default text or input content dark against a dark surface.
+class DeveloperTheme {
+  static const Color background = Color(0xFF111827);
+  static const Color surface = Color(0xFF1F2937);
+  static const Color inputSurface = Color(0xFF273449);
+  static const Color onSurface = Color(0xFFF8FAFC);
+  static const Color mutedText = Color(0xFFCBD5E1);
+
+  static ThemeData dark(BuildContext context) {
+    final appTheme = Theme.of(context);
+    // Professional's near-black primary is excellent on light surfaces, but
+    // needs a lighter accent for focus and selected controls on this dark UI.
+    final selectedPrimary = appTheme.colorScheme.primary;
+    final primary = selectedPrimary.computeLuminance() < 0.12
+        ? const Color(0xFF93C5FD)
+        : selectedPrimary;
+    final onPrimary = primary.computeLuminance() > 0.42
+        ? background
+        : onSurface;
+    final colorScheme =
+        ColorScheme.fromSeed(
+          seedColor: primary,
+          brightness: Brightness.dark,
+          surface: surface,
+        ).copyWith(
+          primary: primary,
+          onPrimary: onPrimary,
+          secondary: primary,
+          onSecondary: onPrimary,
+          onSurface: onSurface,
+          outline: const Color(0xFF64748B),
+          outlineVariant: const Color(0xFF334155),
+        );
+    final textTheme = appTheme.textTheme.apply(
+      fontFamily: 'Inter',
+      bodyColor: onSurface,
+      displayColor: onSurface,
+    );
+    final inputBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      borderSide: const BorderSide(color: Color(0xFF64748B)),
+    );
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      fontFamily: 'Inter',
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: background,
+      textTheme: textTheme,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: onSurface,
+        surfaceTintColor: Colors.transparent,
+        iconTheme: IconThemeData(color: onSurface),
+        actionsIconTheme: IconThemeData(color: onSurface),
+        titleTextStyle: TextStyle(
+          color: onSurface,
+          fontFamily: 'Inter',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
       ),
+      cardTheme: CardThemeData(
+        color: surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          side: const BorderSide(color: Color(0xFF334155)),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: inputSurface,
+        labelStyle: const TextStyle(color: mutedText),
+        hintStyle: const TextStyle(color: mutedText),
+        prefixIconColor: mutedText,
+        suffixIconColor: mutedText,
+        floatingLabelStyle: TextStyle(color: colorScheme.primary),
+        border: inputBorder,
+        enabledBorder: inputBorder,
+        focusedBorder: inputBorder.copyWith(
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(color: Color(0xFF334155)),
     );
   }
 }

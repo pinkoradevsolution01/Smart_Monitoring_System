@@ -36,7 +36,8 @@ class _LoadingScreenState extends State<LoadingScreen>
 
     _rotation = Tween(
       begin: 0.0,
-      end: math.pi * 4,
+      // Keep the full brand artwork steady and comfortable to view.
+      end: math.pi / 12,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
 
     _dot1 = Tween(begin: 0.6, end: 1.15).animate(
@@ -111,7 +112,7 @@ class _LoadingScreenState extends State<LoadingScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // rotating store icon with subtle scale pulse
+                // Branded logo with a subtle scale pulse.
                 AnimatedBuilder(
                   animation: _ctrl,
                   builder: (context, _) {
@@ -156,11 +157,18 @@ class _LoadingScreenState extends State<LoadingScreen>
                                         context,
                                       ).colorScheme.onPrimary,
                                     )
-                                  : Image.asset(
-                                      'SMS_LOGO_NBG.png',
-                                      width: 240,
-                                      height: 240,
-                                      fit: BoxFit.contain,
+                                  : ClipOval(
+                                      child: Transform.scale(
+                                        scale: 1.1,
+                                        child: Image.asset(
+                                          'assets/branding/smart_logo.png',
+                                          width: 250,
+                                          height: 250,
+                                          fit: BoxFit.cover,
+                                          semanticLabel:
+                                              'Smart Monitoring System logo',
+                                        ),
+                                      ),
                                     ),
                             ),
                           ),

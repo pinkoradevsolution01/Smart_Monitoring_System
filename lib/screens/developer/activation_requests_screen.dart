@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/code_request_service.dart';
+import '../../theme.dart';
 
 class ActivationRequestsScreen extends StatefulWidget {
   const ActivationRequestsScreen({super.key});
@@ -45,40 +46,43 @@ class _ActivationRequestsScreenState extends State<ActivationRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('📬 Activation Requests'),
-        backgroundColor: Colors.grey[900],
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadRequests,
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.grey[900]!, Colors.grey[800]!],
-          ),
-        ),
-        child: Column(
-          children: [
-            _buildFilterChips(),
-            _buildStatsBar(),
-            Expanded(
-              child: _isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    )
-                  : _filteredRequests.isEmpty
-                  ? _buildEmptyState()
-                  : _buildRequestsList(),
+    return Theme(
+      data: DeveloperTheme.dark(context),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('📬 Activation Requests'),
+          backgroundColor: Colors.grey[900],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: _loadRequests,
             ),
           ],
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.grey[900]!, Colors.grey[800]!],
+            ),
+          ),
+          child: Column(
+            children: [
+              _buildFilterChips(),
+              _buildStatsBar(),
+              Expanded(
+                child: _isLoading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      )
+                    : _filteredRequests.isEmpty
+                    ? _buildEmptyState()
+                    : _buildRequestsList(),
+              ),
+            ],
+          ),
         ),
       ),
     );

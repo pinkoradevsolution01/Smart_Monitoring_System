@@ -44,12 +44,31 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🔧 Developer Dashboard'),
-        backgroundColor: Colors.grey[900],
+        title: const Row(
+          children: [
+            Icon(Icons.developer_mode_rounded),
+            SizedBox(width: 8),
+            Text('Developer Dashboard'),
+          ],
+        ),
+        // This dashboard intentionally uses a dark header. Set every
+        // foreground explicitly so the global light AppBar theme cannot make
+        // its title, back arrow, or sign-out control low-contrast.
+        backgroundColor: const Color(0xFF172033),
+        foregroundColor: Colors.white,
+        iconTheme: const IconThemeData(color: Colors.white),
+        actionsIconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: const TextStyle(
+          color: Colors.white,
+          fontFamily: 'Inter',
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+        ),
         actions: [
           IconButton(
             tooltip: 'Sign Out',
-            icon: const Icon(Icons.logout),
+            color: Colors.white,
+            icon: const Icon(Icons.logout_rounded),
             onPressed: () async {
               GetIt.I<SupabaseSyncService>().clearBusinessContext();
               await DeveloperAuthScreen.clearAuthentication();

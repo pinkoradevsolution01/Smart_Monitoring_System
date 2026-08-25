@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../services/backend_api_service.dart';
+import '../../theme.dart';
 
 class ActivationCodeGeneratorScreen extends StatefulWidget {
   const ActivationCodeGeneratorScreen({super.key});
@@ -23,54 +24,57 @@ class _ActivationCodeGeneratorScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('🎟️ Activation Code Generator'),
-        backgroundColor: Colors.grey[900],
-        actions: [
-          if (_generatedCodes.isNotEmpty)
-            IconButton(
-              tooltip: 'Export All to CSV',
-              icon: const Icon(Icons.file_download),
-              onPressed: _exportAllToCSV,
-            ),
+    return Theme(
+      data: DeveloperTheme.dark(context),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('🎟️ Activation Code Generator'),
+          backgroundColor: Colors.grey[900],
+          actions: [
+            if (_generatedCodes.isNotEmpty)
+              IconButton(
+                tooltip: 'Export All to CSV',
+                icon: const Icon(Icons.file_download),
+                onPressed: _exportAllToCSV,
+              ),
             if (_generatedCodes.isNotEmpty)
               IconButton(
                 tooltip: 'Import to MySQL',
                 icon: const Icon(Icons.cloud_upload),
                 onPressed: _importCodesToMySql,
               ),
-          if (_generatedCodes.isNotEmpty)
-            IconButton(
-              tooltip: 'Clear All',
-              icon: const Icon(Icons.delete_sweep),
-              onPressed: _showClearAllDialog,
-            ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.grey[900]!, Colors.grey[800]!],
-          ),
-        ),
-        child: Column(
-          children: [
-            // Generator Controls
-            _buildGeneratorControls(),
-
-            // Statistics
-            _buildStatistics(),
-
-            // Generated Codes List
-            Expanded(
-              child: _generatedCodes.isEmpty
-                  ? _buildEmptyState()
-                  : _buildCodesList(),
-            ),
+            if (_generatedCodes.isNotEmpty)
+              IconButton(
+                tooltip: 'Clear All',
+                icon: const Icon(Icons.delete_sweep),
+                onPressed: _showClearAllDialog,
+              ),
           ],
+        ),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.grey[900]!, Colors.grey[800]!],
+            ),
+          ),
+          child: Column(
+            children: [
+              // Generator Controls
+              _buildGeneratorControls(),
+
+              // Statistics
+              _buildStatistics(),
+
+              // Generated Codes List
+              Expanded(
+                child: _generatedCodes.isEmpty
+                    ? _buildEmptyState()
+                    : _buildCodesList(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -383,11 +387,13 @@ class _ActivationCodeGeneratorScreenState
     try {
       // Prepare payload
       final codesPayload = _generatedCodes
-          .map((c) => {
-                'code': c.code,
-                'package_name': c.packageName,
-                'status': c.status,
-              })
+          .map(
+            (c) => {
+              'code': c.code,
+              'package_name': c.packageName,
+              'status': c.status,
+            },
+          )
           .toList();
 
       final body = {'codes': codesPayload};

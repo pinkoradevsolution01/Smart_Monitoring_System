@@ -39,7 +39,8 @@ class _SplashScreenState extends State<SplashScreen>
 
     _rotation = Tween(
       begin: 0.0,
-      end: math.pi * 2,
+      // The detailed brand mark should gently tilt, rather than spin rapidly.
+      end: math.pi / 12,
     ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
 
     _dot1 = Tween(begin: 0.6, end: 1.15).animate(
@@ -96,7 +97,9 @@ class _SplashScreenState extends State<SplashScreen>
 
     // FIRST PRIORITY: Check if owner account exists (including inactive ones)
     // Owner registration must happen before any other setup
-    final ownerAccounts = userService.getUsersByRoleIncludingInactive(UserRole.owner);
+    final ownerAccounts = userService.getUsersByRoleIncludingInactive(
+      UserRole.owner,
+    );
     debugPrint(
       '🔍 Checking owner accounts: Found ${ownerAccounts.length} owner(s)',
     );
@@ -130,12 +133,12 @@ class _SplashScreenState extends State<SplashScreen>
       // Owner exists and package is selected
       if (ownerAccounts.isNotEmpty) {
         final owner = ownerAccounts.first;
-        
+
         // Initialize business context immediately, then let cloud restore run
         // in the background so the app can open without waiting for a full sync.
         try {
           final supabaseSyncService = GetIt.I<SupabaseSyncService>();
-          
+
           // Initialize business context for this owner
           await supabaseSyncService.initializeBusiness(
             businessName: owner.name,
@@ -151,7 +154,7 @@ class _SplashScreenState extends State<SplashScreen>
           debugPrint('⚠️ Warning: Could not initialize business context: $e');
           // App continues - user can still access dashboard but may not sync to cloud
         }
-        
+
         // If owner has set a password, they can login
         // Otherwise, go directly to dashboard for password setup
         if (owner.password.isNotEmpty) {
@@ -164,10 +167,8 @@ class _SplashScreenState extends State<SplashScreen>
           if (!mounted) return;
           Navigator.of(context).pushReplacement(
             MaterialPageRoute(
-              builder: (_) => OwnerDashboard(
-                user: owner,
-                showManageAccount: true,
-              ),
+              builder: (_) =>
+                  OwnerDashboard(user: owner, showManageAccount: true),
             ),
           );
         }
@@ -178,7 +179,7 @@ class _SplashScreenState extends State<SplashScreen>
     } else {
       // Navigate to package selection, passing the owner user if found
       final owner = ownerAccounts.isNotEmpty ? ownerAccounts.first : null;
-      
+
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -251,7 +252,7 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // rotating store icon with subtle scale pulse
+                // Branded logo with a calm scale pulse and gentle tilt.
                 AnimatedBuilder(
                   animation: _ctrl,
                   builder: (context, _) {
@@ -283,12 +284,14 @@ class _SplashScreenState extends State<SplashScreen>
                           child: SizedBox(
                             width: 250,
                             height: 250,
-                            child: Center(
-                              child: Image.asset(
-                                'SMS_LOGO_NBG.png',
-                                width: 240,
-                                height: 240,
-                                fit: BoxFit.contain,
+                            child: ClipOval(
+                              child: Transform.scale(
+                                scale: 1.1,
+                                child: Image.asset(
+                                  'assets/branding/smart_logo.png',
+                                  fit: BoxFit.cover,
+                                  semanticLabel: 'Smart Monitoring System logo',
+                                ),
                               ),
                             ),
                           ),

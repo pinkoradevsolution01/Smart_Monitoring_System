@@ -22,6 +22,7 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
       appBar: AppBar(
         title: const Text('Backend API & Database Test'),
         backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

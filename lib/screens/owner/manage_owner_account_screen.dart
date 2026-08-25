@@ -22,7 +22,6 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _contactController;
-  bool _isEditing = false;
 
   @override
   void initState() {
@@ -59,131 +58,6 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
     _contactController.dispose();
     _userService.removeListener(_onUsersChanged);
     super.dispose();
-  }
-
-  Future<void> _saveChanges() async {
-    if (_nameController.text.isEmpty ||
-        _emailController.text.isEmpty ||
-        !_emailController.text.contains('@')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.t('fill_required_fields'))),
-      );
-      return;
-    }
-
-    if (_owner != null) {
-      final updated = _owner!.copyWith(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        contactNumber: _contactController.text.isNotEmpty
-            ? _contactController.text.trim()
-            : _owner!.contactNumber,
-      );
-
-      if (BackendConfig.useRestBackend) {
-        try {
-          final response = await _api.patchJson(
-            'auth/users/${Uri.encodeComponent(_owner!.id)}',
-            body: {
-              'fullName': updated.name,
-              'email': updated.email,
-              'contactNumber': updated.contactNumber,
-              'role': updated.role.toString().split('.').last,
-            },
-          );
-          if (response is! Map<String, dynamic> || response['success'] != true) {
-            throw Exception('Failed to update owner in backend');
-          }
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to save owner changes to MySQL: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-      }
-
-      final success = await _userService.updateUser(updated);
-      if (!mounted) return;
-      if (success) {
-        setState(() => _isEditing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.t('account_updated_success')),
-          ),
-        );
-      }
-    } else {
-      final provisionalId = 'owner-${DateTime.now().millisecondsSinceEpoch}';
-      var ownerId = provisionalId;
-
-      if (BackendConfig.useRestBackend) {
-        try {
-          final registerResponse = await _api.postJson(
-            'auth/google/register-owner',
-            body: {
-              'id': provisionalId,
-              'email': _emailController.text.trim(),
-              'fullName': _nameController.text.trim(),
-              'contactNumber': _contactController.text.trim(),
-            },
-          );
-          if (registerResponse is! Map<String, dynamic> ||
-              registerResponse['success'] != true ||
-              registerResponse['user'] is! Map) {
-            throw Exception('Failed to create owner in backend');
-          }
-
-          final backendUser =
-              Map<String, dynamic>.from(registerResponse['user'] as Map);
-          ownerId = backendUser['id']?.toString() ?? ownerId;
-
-          final passwordResponse = await _api.patchJson(
-            'auth/users/${Uri.encodeComponent(ownerId)}/password',
-            body: {'newPassword': 'owner'},
-          );
-          if (passwordResponse is! Map<String, dynamic> ||
-              passwordResponse['success'] != true) {
-            throw Exception('Failed to set owner password in backend');
-          }
-        } catch (e) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to create owner in MySQL: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          return;
-        }
-      }
-
-      final user = User(
-        id: ownerId,
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        password: 'owner',
-        pin: null,
-        contactNumber: _contactController.text.trim(),
-        role: UserRole.owner,
-        createdAt: DateTime.now(),
-        isActive: true,
-      );
-
-      final success = await _userService.addUser(user);
-      if (!mounted) return;
-      if (success) {
-        setState(() => _isEditing = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.t('account_created_success')),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _showChangePinDialog() async {
@@ -262,7 +136,10 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PIN reset failed: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('PIN reset failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -396,7 +273,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
           ),
           // ignore: sort_child_properties_last
           ElevatedButton(
-             onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
@@ -442,24 +319,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Manage Owner Account'),
-        actions: [
-          if (!_isEditing)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => setState(() => _isEditing = true),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                setState(() => _isEditing = false);
-                _initializeControllers();
-              },
-            ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Manage Owner Account')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -501,7 +361,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _nameController,
-                  enabled: _isEditing,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: AppLocalizations.t('full_name'),
                     prefixIcon: const Icon(Icons.person),
@@ -513,7 +373,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _emailController,
-                  enabled: _isEditing,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: AppLocalizations.t('email_address'),
                     prefixIcon: const Icon(Icons.email),
@@ -526,7 +386,7 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _contactController,
-                  enabled: _isEditing,
+                  readOnly: true,
                   decoration: InputDecoration(
                     labelText: AppLocalizations.t('account_contact_number'),
                     prefixIcon: const Icon(Icons.phone),
@@ -536,16 +396,6 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
                   ),
                   keyboardType: TextInputType.phone,
                 ),
-                const SizedBox(height: 16),
-                if (_isEditing)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _saveChanges,
-                      icon: const Icon(Icons.save),
-                      label: Text(AppLocalizations.t('save_changes')),
-                    ),
-                  ),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -744,7 +594,9 @@ class _OwnerNewPinDialogState extends State<_OwnerNewPinDialog> {
             final confirmation = _confirmPinController.text.trim();
             if (!RegExp(r'^\d{4}$').hasMatch(pin) || pin != confirmation) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('PINs must match and be 4 digits')),
+                const SnackBar(
+                  content: Text('PINs must match and be 4 digits'),
+                ),
               );
               return;
             }
@@ -879,7 +731,7 @@ class _OwnerChangePasswordDialogState
   @override
   Widget build(BuildContext context) {
     final hasCurrentPassword = widget.owner?.password.isNotEmpty ?? false;
-    
+
     return AlertDialog(
       title: Text(AppLocalizations.t('change_password')),
       content: SingleChildScrollView(
@@ -911,10 +763,7 @@ class _OwnerChangePasswordDialogState
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Colors.blue.shade700,
-                        ),
+                        Icon(Icons.info_outline, color: Colors.blue.shade700),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(

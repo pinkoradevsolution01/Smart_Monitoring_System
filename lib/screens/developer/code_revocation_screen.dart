@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme.dart';
 import 'package:get_it/get_it.dart';
 import 'package:intl/intl.dart';
 import '../../services/license_service.dart';
@@ -176,27 +177,30 @@ class _CodeRevocationScreenState extends State<CodeRevocationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('🚫 Code Revocation'),
-        backgroundColor: Colors.grey[900],
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: _loadUsedCodes,
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.grey[900]!, Colors.grey[800]!],
-          ),
+    return Theme(
+      data: DeveloperTheme.dark(context),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('🚫 Code Revocation'),
+          backgroundColor: Colors.grey[900],
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+              onPressed: _loadUsedCodes,
+            ),
+          ],
         ),
-        child: _buildBody(),
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Colors.grey[900]!, Colors.grey[800]!],
+            ),
+          ),
+          child: _buildBody(),
+        ),
       ),
     );
   }

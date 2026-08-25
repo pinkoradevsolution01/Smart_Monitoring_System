@@ -27,12 +27,11 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
     try {
       final response = await _api.getJson(
         'license/codes/available',
-        queryParameters: {
-          'packageName': _selectedPackage,
-        },
+        queryParameters: {'packageName': _selectedPackage},
       );
 
-      final codes = response is Map<String, dynamic> && response['codes'] is List
+      final codes =
+          response is Map<String, dynamic> && response['codes'] is List
           ? List<Map<String, dynamic>>.from(response['codes'] as List)
           : <Map<String, dynamic>>[];
 
@@ -128,6 +127,7 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
       appBar: AppBar(
         title: const Text('Customer Activation Codes'),
         backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

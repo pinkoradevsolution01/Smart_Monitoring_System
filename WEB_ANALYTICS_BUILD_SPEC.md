@@ -249,6 +249,7 @@ Follow these steps in order. Do not make the web dashboard publicly available un
 
 - Desktop-first responsive dashboard, usable at 1280 px and above and readable on tablet widths.
 - Professional, calm operations design: sidebar navigation, compact header, clear status colors, accessible contrast, keyboard-friendly controls, loading/empty/error states.
+- **Typography (shared with the Flutter system):** use the bundled **Inter** family throughout. Use Inter Bold (700) for page titles, KPI/card labels, navigation, dialog titles, and primary actions; use Inter Regular (400) for paragraphs, table content, captions, form values, and supporting text. Do not mix the alternative Roboto Condensed/Open Sans or IBM Plex Sans/Lato pairs within this product.
 - Use the same selectable theme presets as the Flutter Smart Monitoring System. The user preference must be persisted and applied to charts, tables, focus rings, buttons, navigation, badges, and dialogs:
   - **Professional** (default): `#212121` primary; neutral white and soft-gray surfaces for focused operational work.
   - **Indigo**: `#5E72E4` primary; cool indigo accents while retaining the same contrast and semantic status colors.
