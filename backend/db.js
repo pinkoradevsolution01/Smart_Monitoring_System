@@ -82,7 +82,7 @@ async function primaryKeyColumns(tableName) {
 
 async function productForeignKeyConstraints() {
   const [rows] = await pool.execute(
-    `SELECT DISTINCT table_name, constraint_name
+    `SELECT DISTINCT table_name AS tableName, constraint_name AS constraintName
        FROM information_schema.key_column_usage
       WHERE table_schema = DATABASE()
         AND referenced_table_name = 'products'
