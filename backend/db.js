@@ -133,7 +133,7 @@ async function ensureTenantScopedProductIdentity() {
     const foreignKeys = await productForeignKeyConstraints();
     for (const foreignKey of foreignKeys) {
       await pool.execute(
-        `ALTER TABLE ${quoteIdentifier(foreignKey.table_name)} DROP FOREIGN KEY ${quoteIdentifier(foreignKey.constraint_name)}`,
+        `ALTER TABLE ${quoteIdentifier(foreignKey.tableName)} DROP FOREIGN KEY ${quoteIdentifier(foreignKey.constraintName)}`,
       );
     }
     await pool.execute('ALTER TABLE products DROP PRIMARY KEY, ADD PRIMARY KEY (business_id, id)');
