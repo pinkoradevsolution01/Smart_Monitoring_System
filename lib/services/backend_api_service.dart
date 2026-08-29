@@ -20,8 +20,9 @@ class ApiClient {
     final headers = Map<String, String>.from(BackendConfig.defaultHeaders);
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_sessionTokenKey);
-    if (token != null && token.isNotEmpty)
+    if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
+    }
     return headers;
   }
 
