@@ -90,6 +90,9 @@ class SupabaseSyncService extends ChangeNotifier {
 
       debugPrint('✅ Business initialized: $_businessId');
       startAutoSync();
+      // A backend outage or an expired session may have left local records
+      // unsynced. Upload them as soon as the owner has a fresh tenant token.
+      queuePushAllData(delay: Duration.zero);
       notifyListeners();
     } catch (e) {
       debugPrint('❌ Error initializing business: $e');
@@ -238,7 +241,13 @@ class SupabaseSyncService extends ChangeNotifier {
 
     _autoSyncTimer?.cancel();
     _autoSyncTimer = Timer.periodic(_autoSyncInterval, (_) async {
-      if (!isConfigured || _isSyncing) {
+      if (!isConfigured) {
+        return;
+      }
+      if (_isSyncing) {
+        // Do not lose a local write just because a pull or another push is in
+        // progress. Schedule one follow-up upload instead.
+        queuePushAllData(delay: _queuedPushDelay);
         return;
       }
 
@@ -290,7 +299,13 @@ class SupabaseSyncService extends ChangeNotifier {
 
     _queuedPushTimer?.cancel();
     _queuedPushTimer = Timer(_queuedPushDelay, () async {
-      if (!isConfigured || _isSyncing) {
+      if (!isConfigured) {
+        return;
+      }
+      if (_isSyncing) {
+        // Do not lose a local write just because a pull or another push is in
+        // progress. Schedule one follow-up upload instead.
+        queuePushAllData(delay: _queuedPushDelay);
         return;
       }
 
