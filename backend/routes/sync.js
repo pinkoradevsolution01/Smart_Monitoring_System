@@ -146,10 +146,9 @@ router.post('/push', async (req, res) => {
       for (const customer of customers) {
         await connection.execute(
           `INSERT INTO customers
-            (id, business_id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, barcode_value, created_at, updated_at, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (business_id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, barcode_value, created_at, updated_at, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
-              customer_code = VALUES(customer_code),
               full_name = VALUES(full_name),
               phone_number = VALUES(phone_number),
               email = VALUES(email),
@@ -160,7 +159,6 @@ router.post('/push', async (req, res) => {
               updated_at = VALUES(updated_at),
               is_active = VALUES(is_active)`,
           [
-            customer.id,
             resolvedBusinessId,
             customer.customer_code,
             customer.full_name,

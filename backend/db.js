@@ -67,6 +67,42 @@ async function ensureColumn(tableName, columnName, definition) {
   }
 }
 
+async function primaryKeyColumns(tableName) {
+  const [rows] = await pool.execute(
+    `SELECT column_name
+       FROM information_schema.key_column_usage
+      WHERE table_schema = DATABASE()
+        AND table_name = ?
+        AND constraint_name = 'PRIMARY'
+      ORDER BY ordinal_position`,
+    [tableName],
+  );
+  return rows.map((row) => row.column_name);
+}
+
+async function ensureTenantScopedProductIdentity() {
+  const columns = await primaryKeyColumns('products');
+  if (columns.length === 2 && columns[0] === 'business_id' && columns[1] === 'id') return;
+
+  // IDs are created in each local app database, so they are unique only per business.
+  if (await constraintExists('damage_reports', 'fk_damage_reports_product')) {
+    await pool.execute('ALTER TABLE damage_reports DROP FOREIGN KEY fk_damage_reports_product');
+  }
+  await pool.execute('ALTER TABLE products DROP PRIMARY KEY, ADD PRIMARY KEY (business_id, id)');
+
+  const [unmatched] = await pool.execute(
+    `SELECT COUNT(*) AS count FROM damage_reports d
+       LEFT JOIN products p ON p.business_id = d.business_id AND p.id = d.product_id
+      WHERE d.product_id IS NOT NULL AND p.id IS NULL`,
+  );
+  if (!unmatched[0].count) {
+    await pool.execute(
+      'ALTER TABLE damage_reports ADD CONSTRAINT fk_damage_reports_product FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id) ON DELETE RESTRICT ON UPDATE CASCADE',
+    );
+  } else {
+    console.warn('Skipped product foreign-key recreation because legacy damage reports have no matching tenant product.');
+  }
+}
 async function ensureUsersTableColumns() {
   await ensureColumn('users', 'pin_hash', 'VARCHAR(255) NULL');
   await ensureColumn('users', 'business_id', 'VARCHAR(64) NULL');
@@ -172,11 +208,7 @@ async function ensureSalesAndCustomerRelations() {
     );
   }
 
-  if (!(await constraintExists('damage_reports', 'fk_damage_reports_product'))) {
-    await pool.execute(
-      'ALTER TABLE damage_reports ADD CONSTRAINT fk_damage_reports_product FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT ON UPDATE CASCADE',
-    );
-  }
+  await ensureTenantScopedProductIdentity();
 
   if (!(await uniqueIndexExists('attendance_archive', 'uq_attendance_archive_business_user_date'))) {
     await pool.execute(
