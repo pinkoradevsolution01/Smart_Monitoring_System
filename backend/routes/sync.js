@@ -1,6 +1,34 @@
 const express = require('express');
 const { query, getConnection } = require('../db');
 const router = express.Router();
+const SYNC_ROLES = new Set(['owner', 'admin', 'manager']);
+
+async function resolveAuthenticatedBusiness(req) {
+  const auth = req.auth;
+  if (!auth?.userId || !auth?.businessId || !SYNC_ROLES.has(String(auth.role || '').toLowerCase())) {
+    return { status: 401, message: 'A valid owner session is required for synchronization.' };
+  }
+
+  const rows = await query(
+    `SELECT u.business_id FROM users u INNER JOIN businesses b ON b.id = u.business_id
+      WHERE u.id = ? AND u.business_id = ? AND u.is_active = 1 AND b.is_active = 1 LIMIT 1`,
+    [auth.userId, auth.businessId],
+  );
+  if (!rows.length) return { status: 403, message: 'The account or business is inactive.' };
+  return { businessId: rows[0].business_id };
+}
+
+function hasMismatchedRecordBusiness(payload, businessId) {
+  const collections = ['users', 'customers', 'loyaltyLedger', 'cameras', 'cctvTimestamps', 'attendanceEntries', 'attendanceLeaves', 'attendanceArchive', 'activityLogs', 'products', 'suppliers', 'sales', 'saleItems', 'purchaseOrders', 'purchaseOrderItems', 'inventoryMovements', 'damageReports'];
+  for (const name of collections) {
+    if (!Array.isArray(payload[name])) continue;
+    for (const record of payload[name]) {
+      const recordBusinessId = record?.business_id || record?.businessId;
+      if (recordBusinessId && String(recordBusinessId) !== String(businessId)) return name;
+    }
+  }
+  return null;
+}
 
 router.post('/push', async (req, res) => {
   const {
@@ -25,12 +53,19 @@ router.post('/push', async (req, res) => {
     damageReports,
   } = req.body;
 
-  const resolvedBusinessId = businessId || req.headers['x-business-id'] || req.auth?.businessId || null;
-
-  if (!resolvedBusinessId) {
-    return res.status(400).json({ success: false, message: 'businessId is required.' });
+  const authenticated = await resolveAuthenticatedBusiness(req);
+  if (!authenticated.businessId) {
+    return res.status(authenticated.status).json({ success: false, message: authenticated.message });
   }
-
+  const resolvedBusinessId = authenticated.businessId;
+  const submittedBusinessId = businessId || req.headers['x-business-id'];
+  if (submittedBusinessId && String(submittedBusinessId) !== String(resolvedBusinessId)) {
+    return res.status(403).json({ success: false, message: 'Sync business does not match the signed-in owner.' });
+  }
+  const mismatchedCollection = hasMismatchedRecordBusiness(req.body, resolvedBusinessId);
+  if (mismatchedCollection) {
+    return res.status(403).json({ success: false, message: `Sync payload contains records for another business (${mismatchedCollection}).` });
+  }
   // A deactivated subscriber's local client may still retry a queued payload.
   // Do not recreate child records for a business that was intentionally purged.
   const existingBusiness = await query(
@@ -674,11 +709,15 @@ router.post('/push', async (req, res) => {
 });
 
 router.get('/pull', async (req, res) => {
-  const businessId = req.query.businessId || req.query.business_id || req.headers['x-business-id'] || req.auth?.businessId || null;
-  if (!businessId) {
-    return res.status(400).json({ success: false, message: 'businessId query parameter is required.' });
+  const authenticated = await resolveAuthenticatedBusiness(req);
+  if (!authenticated.businessId) {
+    return res.status(authenticated.status).json({ success: false, message: authenticated.message });
   }
-
+  const businessId = authenticated.businessId;
+  const submittedBusinessId = req.query.businessId || req.query.business_id || req.headers['x-business-id'];
+  if (submittedBusinessId && String(submittedBusinessId) !== String(businessId)) {
+    return res.status(403).json({ success: false, message: 'Sync business does not match the signed-in owner.' });
+  }
   try {
     const [
       users,

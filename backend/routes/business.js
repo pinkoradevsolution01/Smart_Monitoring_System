@@ -1,6 +1,21 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const { query, getConnection } = require('../db');
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET;
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function issueBusinessSession(user) {
+  if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured.');
+  return jwt.sign(
+    { userId: user.id, email: user.email, role: user.role, businessId: user.business_id },
+    JWT_SECRET,
+    { expiresIn: '12h' },
+  );
+}
 
 function buildInClause(values) {
   const items = Array.isArray(values)
@@ -23,10 +38,18 @@ router.post('/init', async (req, res) => {
     return res.status(400).json({ success: false, message: 'Business name and owner email are required.' });
   }
 
+  const normalizedEmail = normalizeEmail(ownerEmail);
+  if (!req.auth?.userId || normalizeEmail(req.auth.email) !== normalizedEmail) {
+    return res.status(401).json({ success: false, message: 'Sign in as the business owner before initializing sync.' });
+  }
+  if (ownerId && String(ownerId) !== String(req.auth.userId)) {
+    return res.status(403).json({ success: false, message: 'The supplied owner does not match the signed-in owner.' });
+  }
+
   try {
     const cancelledRows = await query(
       'SELECT id FROM cancelled_subscribers WHERE email = ? LIMIT 1',
-      [ownerEmail.trim().toLowerCase()],
+      [normalizedEmail],
     );
     if (cancelledRows.length) {
       return res.status(403).json({
@@ -35,57 +58,53 @@ router.post('/init', async (req, res) => {
       });
     }
 
-    if (existingBusinessId) {
-      const existing = await query('SELECT id, owner_id FROM businesses WHERE id = ?', [existingBusinessId]);
-      if (existing.length) {
-        if (ownerId && existing[0].owner_id !== ownerId) {
-          await query(
-            'UPDATE businesses SET owner_id = ?, name = ?, updated_at = NOW() WHERE id = ?',
-            [ownerId, businessName, existingBusinessId],
-          );
-        }
-        if (ownerId) {
-          await query(
-            'UPDATE users SET business_id = ? WHERE id = ?',
-            [existingBusinessId, ownerId],
-          );
-        }
-        return res.json({ success: true, businessId: existingBusinessId });
-      }
-      return res.status(404).json({ success: false, message: 'Existing business ID not found.' });
-    }
-
-    const existing = await query('SELECT id, owner_id FROM businesses WHERE owner_email = ?', [ownerEmail]);
+    // A device can retain a business ID from a previous owner. The authenticated
+    // owner email is canonical and always wins over cached client state.
+    const existing = await query(
+      'SELECT id FROM businesses WHERE LOWER(owner_email) = ? LIMIT 1',
+      [normalizedEmail],
+    );
+    let businessId;
     if (existing.length) {
-      if (ownerId && existing[0].owner_id !== ownerId) {
+      businessId = existing[0].id;
+      if (existingBusinessId && String(existingBusinessId) !== String(businessId)) {
+        console.warn(`Ignoring stale business ID ${existingBusinessId} for ${normalizedEmail}.`);
+      }
+    } else {
+      if (existingBusinessId) {
+        const requested = await query('SELECT owner_email FROM businesses WHERE id = ? LIMIT 1', [existingBusinessId]);
+        if (requested.length && normalizeEmail(requested[0].owner_email) !== normalizedEmail) {
+          return res.status(403).json({ success: false, message: 'The requested business does not belong to the signed-in owner.' });
+        }
+      }
+
+      businessId = existingBusinessId || `b-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      if (!existingBusinessId) {
         await query(
-          'UPDATE businesses SET owner_id = ?, name = ?, updated_at = NOW() WHERE id = ?',
-          [ownerId, businessName, existing[0].id],
+          'INSERT INTO businesses (id, name, owner_email, owner_id, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+          [businessId, businessName, normalizedEmail, req.auth.userId, 1],
         );
       }
-      if (ownerId) {
-        await query('UPDATE users SET business_id = ? WHERE id = ?', [existing[0].id, ownerId]);
-      }
-      return res.json({ success: true, businessId: existing[0].id });
     }
 
-    const businessId = `b-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     await query(
-      'INSERT INTO businesses (id, name, owner_email, owner_id, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-      [businessId, businessName, ownerEmail, ownerId || `owner-${Date.now()}`, 1],
+      'UPDATE users SET business_id = ? WHERE id = ? AND LOWER(email) = ?',
+      [businessId, req.auth.userId, normalizedEmail],
     );
-
-    if (ownerId) {
-      await query('UPDATE users SET business_id = ? WHERE id = ?', [businessId, ownerId]);
+    const users = await query(
+      'SELECT id, business_id, email, role FROM users WHERE id = ? AND business_id = ? AND LOWER(email) = ? LIMIT 1',
+      [req.auth.userId, businessId, normalizedEmail],
+    );
+    if (!users.length) {
+      return res.status(403).json({ success: false, message: 'The signed-in owner is not assigned to this business.' });
     }
 
-    return res.json({ success: true, businessId });
+    return res.json({ success: true, businessId, token: issueBusinessSession(users[0]) });
   } catch (error) {
     console.error('Business init error:', error);
     return res.status(500).json({ success: false, message: 'Failed to initialize business.' });
   }
 });
-
 router.delete('/purge', async (req, res) => {
   const ownerEmail = String(req.query.ownerEmail || req.body?.ownerEmail || '').trim();
   const ownerId = String(req.query.ownerId || req.body?.ownerId || '').trim();

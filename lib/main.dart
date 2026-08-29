@@ -36,6 +36,7 @@ import 'services/shared_api_service.dart';
 import 'services/license_service.dart';
 import 'services/backend_config.dart';
 import 'services/backend_server_resolver.dart';
+import 'services/google_auth_service.dart';
 import 'services/supabase_sync_service.dart';
 import 'screens/shared/trial_locked_screen.dart';
 
@@ -48,7 +49,9 @@ Future<void> main() async {
       '⚠️ GOOGLE_WEB_CLIENT_ID is not set. Pass --dart-define=GOOGLE_WEB_CLIENT_ID=... when launching Flutter.',
     );
   } else {
-    debugPrint('✅ GOOGLE_WEB_CLIENT_ID configured: ${BackendConfig.googleWebClientId}');
+    debugPrint(
+      '✅ GOOGLE_WEB_CLIENT_ID configured: ${BackendConfig.googleWebClientId}',
+    );
   }
   debugPrint('✅ Backend API base URL: ${BackendConfig.apiBaseUrl}');
 
@@ -71,6 +74,7 @@ Future<void> main() async {
   await MotionController.init();
 
   final selectedBackend = await BackendServerResolver.initialize();
+  await GoogleAuthService().restoreSession();
   debugPrint('✅ Active backend selected: $selectedBackend');
 
   // Initialize Business Info Service

@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'backend_config.dart';
 
 class ApiClient {
+  static const String _sessionTokenKey = 'backend_access_token';
   final http.Client _client;
 
   ApiClient([http.Client? client]) : _client = client ?? http.Client();
@@ -12,6 +14,15 @@ class ApiClient {
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
     final uri = Uri.parse('$baseUrl/$normalizedPath');
     return uri.replace(queryParameters: queryParameters);
+  }
+
+  Future<Map<String, String>> _authorizedHeaders() async {
+    final headers = Map<String, String>.from(BackendConfig.defaultHeaders);
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_sessionTokenKey);
+    if (token != null && token.isNotEmpty)
+      headers['Authorization'] = 'Bearer $token';
+    return headers;
   }
 
   Future<Map<String, dynamic>> get(
@@ -43,45 +54,36 @@ class ApiClient {
     final uri = _buildUri(path, queryParameters);
     final response = await _client.get(
       uri,
-      headers: BackendConfig.defaultHeaders,
+      headers: await _authorizedHeaders(),
     );
     return _processResponse(response);
   }
 
-  Future<dynamic> postJson(
-    String path, {
-    Map<String, dynamic>? body,
-  }) async {
+  Future<dynamic> postJson(String path, {Map<String, dynamic>? body}) async {
     final uri = _buildUri(path);
     final response = await _client.post(
       uri,
-      headers: BackendConfig.defaultHeaders,
+      headers: await _authorizedHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
     return _processResponse(response);
   }
 
-  Future<dynamic> patchJson(
-    String path, {
-    Map<String, dynamic>? body,
-  }) async {
+  Future<dynamic> patchJson(String path, {Map<String, dynamic>? body}) async {
     final uri = _buildUri(path);
     final response = await _client.patch(
       uri,
-      headers: BackendConfig.defaultHeaders,
+      headers: await _authorizedHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
     return _processResponse(response);
   }
 
-  Future<dynamic> putJson(
-    String path, {
-    Map<String, dynamic>? body,
-  }) async {
+  Future<dynamic> putJson(String path, {Map<String, dynamic>? body}) async {
     final uri = _buildUri(path);
     final response = await _client.put(
       uri,
-      headers: BackendConfig.defaultHeaders,
+      headers: await _authorizedHeaders(),
       body: body == null ? null : jsonEncode(body),
     );
     return _processResponse(response);
@@ -94,7 +96,7 @@ class ApiClient {
     final uri = _buildUri(path, queryParameters);
     final response = await _client.delete(
       uri,
-      headers: BackendConfig.defaultHeaders,
+      headers: await _authorizedHeaders(),
     );
     return _processResponse(response);
   }

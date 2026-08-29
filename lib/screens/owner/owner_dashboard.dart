@@ -20,6 +20,7 @@ import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import '../../services/package_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/google_auth_service.dart';
 import '../../services/pos_service.dart';
 import '../../theme.dart';
 import '../../utils/interaction_feedback.dart';
@@ -95,8 +96,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
             IconButton(
               tooltip: AppLocalizations.t('sign_out'),
               icon: const Icon(Icons.logout),
-              onPressed: () {
+              onPressed: () async {
                 GetIt.I<SupabaseSyncService>().clearBusinessContext();
+                await GoogleAuthService().clearSession();
+                if (!mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (_) => LoginScreen()),
@@ -179,9 +182,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => CashierPOS(
-                              cashierName: widget.user.name,
-                            ),
+                            builder: (_) =>
+                                CashierPOS(cashierName: widget.user.name),
                           ),
                         );
                       },
@@ -224,7 +226,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                           ),
                           AppMetricCard(
                             label: 'Current package',
-                            value: packageService.selectedPackage?.name ?? 'Starter',
+                            value:
+                                packageService.selectedPackage?.name ??
+                                'Starter',
                             icon: Icons.workspace_premium_outlined,
                             color: Colors.deepPurple,
                             detail: 'Features available to this business',
@@ -250,7 +254,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                   const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
+                      final cols = ResponsiveUtils.columnsForWidth(
+                        constraints.maxWidth,
+                      );
 
                       final items = <Widget>[
                         _DashboardSquareTile(
@@ -559,7 +565,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                           crossAxisCount: cols,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: ResponsiveUtils.isMobile(context) ? 1.05 : 1,
+                          childAspectRatio: ResponsiveUtils.isMobile(context)
+                              ? 1.05
+                              : 1,
                         ),
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),

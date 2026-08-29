@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../models/product.dart';
 import '../models/shoe_size.dart';
@@ -58,20 +59,32 @@ class SupabaseSyncService extends ChangeNotifier {
     }
 
     try {
-      if (existingBusinessId != null) {
-        // Use existing business ID
-        _businessId = existingBusinessId;
-      } else {
-        final response = await _api.postJson(
-          'business/init',
-          body: {
-            'businessName': businessName,
-            'ownerEmail': ownerEmail,
-            'existingBusinessId': existingBusinessId,
-          },
-        );
-        if (response is Map<String, dynamic>) {
-          _businessId = response['businessId']?.toString();
+      // Always ask the backend for the canonical tenant. A cached ID can
+      // belong to an account previously used on this device.
+      final response = await _api.postJson(
+        'business/init',
+        body: {
+          'businessName': businessName,
+          'ownerEmail': ownerEmail,
+          'existingBusinessId': existingBusinessId,
+        },
+      );
+      if (response is Map<String, dynamic>) {
+        final resolvedBusinessId = response['businessId']?.toString();
+        if (resolvedBusinessId == null || resolvedBusinessId.isEmpty) {
+          throw Exception('Backend did not return a business ID.');
+        }
+        if (_businessId != null && _businessId != resolvedBusinessId) {
+          stopAutoSync();
+          debugPrint(
+            'Replaced stale sync business context with $resolvedBusinessId',
+          );
+        }
+        _businessId = resolvedBusinessId;
+        final token = response['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('backend_access_token', token);
         }
       }
 
@@ -770,7 +783,9 @@ class SupabaseSyncService extends ChangeNotifier {
 
     final activeUsers = users.where((u) => u.isActive).toList();
     if (activeUsers.isNotEmpty) {
-      final cashiers = activeUsers.where((u) => u.role == UserRole.cashier).toList();
+      final cashiers = activeUsers
+          .where((u) => u.role == UserRole.cashier)
+          .toList();
       if (cashiers.isNotEmpty) return cashiers.first.id;
       return activeUsers.first.id;
     }
@@ -1193,7 +1208,8 @@ class SupabaseSyncService extends ChangeNotifier {
         await db.insertCCTVTimestamp({
           'id': _asInt(data['id']),
           'timestamp': _asDateTime(data['timestamp']).toIso8601String(),
-          'description': data['description']?.toString() ?? data['label']?.toString(),
+          'description':
+              data['description']?.toString() ?? data['label']?.toString(),
           'videoPath': data['video_path']?.toString(),
           'createdAt': _asDateTime(data['created_at']).toIso8601String(),
         });
@@ -1221,7 +1237,9 @@ class SupabaseSyncService extends ChangeNotifier {
           ? List<Map<String, dynamic>>.from(payload['attendanceLeaves'] as List)
           : <Map<String, dynamic>>[];
       final archiveResponse = payload['attendanceArchive'] is List
-          ? List<Map<String, dynamic>>.from(payload['attendanceArchive'] as List)
+          ? List<Map<String, dynamic>>.from(
+              payload['attendanceArchive'] as List,
+            )
           : <Map<String, dynamic>>[];
       final scheduleResponse = payload['attendanceSchedule'];
 
@@ -1233,7 +1251,9 @@ class SupabaseSyncService extends ChangeNotifier {
           time: _asDateTime(data['time']),
           type: data['type']?.toString() ?? 'IN',
         );
-        groupedEntries.putIfAbsent(userId, () => <AttendanceEntry>[]).add(entry);
+        groupedEntries
+            .putIfAbsent(userId, () => <AttendanceEntry>[])
+            .add(entry);
       }
 
       for (final entry in groupedEntries.entries) {
@@ -1291,7 +1311,10 @@ class SupabaseSyncService extends ChangeNotifier {
                 .toList(),
           );
         }
-        archivesByUser.putIfAbsent(userId, () => <String, List<AttendanceEntry>>{});
+        archivesByUser.putIfAbsent(
+          userId,
+          () => <String, List<AttendanceEntry>>{},
+        );
         archivesByUser[userId]![dateKey] = decodedEntries;
       }
 
@@ -1341,7 +1364,9 @@ class SupabaseSyncService extends ChangeNotifier {
       _syncStats['attendance_entries_pulled'] = entriesResponse.length;
       _syncStats['attendance_leaves_pulled'] = leavesResponse.length;
       _syncStats['attendance_archive_pulled'] = archiveResponse.length;
-      _syncStats['attendance_schedule_pulled'] = scheduleResponse == null ? 0 : 1;
+      _syncStats['attendance_schedule_pulled'] = scheduleResponse == null
+          ? 0
+          : 1;
       debugPrint(
         '✅ Pulled ${entriesResponse.length} attendance entries and ${leavesResponse.length} leaves',
       );
@@ -1387,7 +1412,10 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullProducts(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullProducts(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['products'] is List
           ? List<Map<String, dynamic>>.from(payload['products'] as List)
@@ -1424,7 +1452,10 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullSales(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullSales(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['sales'] is List
           ? List<Map<String, dynamic>>.from(payload['sales'] as List)
@@ -1441,7 +1472,8 @@ class SupabaseSyncService extends ChangeNotifier {
 
       final sales = response.map((data) {
         final cloudSaleId = data['id']?.toString() ?? '';
-        final saleNumber = data['sale_number']?.toString() ??
+        final saleNumber =
+            data['sale_number']?.toString() ??
             data['saleNumber']?.toString() ??
             cloudSaleId;
         final items = (itemsBySale[cloudSaleId] ?? []).map((itemData) {
@@ -1515,10 +1547,15 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullInventoryMovements(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullInventoryMovements(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['inventoryMovements'] is List
-          ? List<Map<String, dynamic>>.from(payload['inventoryMovements'] as List)
+          ? List<Map<String, dynamic>>.from(
+              payload['inventoryMovements'] as List,
+            )
           : <Map<String, dynamic>>[];
 
       final movements = response
@@ -1548,7 +1585,10 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullSuppliers(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullSuppliers(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['suppliers'] is List
           ? List<Map<String, dynamic>>.from(payload['suppliers'] as List)
@@ -1580,18 +1620,24 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullPurchaseOrders(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullPurchaseOrders(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['purchaseOrders'] is List
           ? List<Map<String, dynamic>>.from(payload['purchaseOrders'] as List)
           : <Map<String, dynamic>>[];
       final responseItems = payload['purchaseOrderItems'] is List
-          ? List<Map<String, dynamic>>.from(payload['purchaseOrderItems'] as List)
+          ? List<Map<String, dynamic>>.from(
+              payload['purchaseOrderItems'] as List,
+            )
           : <Map<String, dynamic>>[];
 
       final itemsByOrder = <String, List<Map<String, dynamic>>>{};
       for (final item in responseItems) {
-        final orderId = item['purchase_order_id']?.toString() ?? 
+        final orderId =
+            item['purchase_order_id']?.toString() ??
             item['order_id']?.toString() ??
             '';
         itemsByOrder.putIfAbsent(orderId, () => []).add(item);
@@ -1600,7 +1646,8 @@ class SupabaseSyncService extends ChangeNotifier {
       final orders = <PurchaseOrder>[];
       for (final data in response) {
         final cloudOrderKey = data['id']?.toString() ?? '';
-        final orderNumber = data['order_number']?.toString() ??
+        final orderNumber =
+            data['order_number']?.toString() ??
             data['orderNumber']?.toString() ??
             cloudOrderKey;
         final itemMaps = itemsByOrder[cloudOrderKey] ?? const [];
@@ -1667,7 +1714,10 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  Future<void> _pullDamageReports(DatabaseService db, Map<String, dynamic> payload) async {
+  Future<void> _pullDamageReports(
+    DatabaseService db,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       final response = payload['damageReports'] is List
           ? List<Map<String, dynamic>>.from(payload['damageReports'] as List)
@@ -1684,7 +1734,8 @@ class SupabaseSyncService extends ChangeNotifier {
           quantity: quantity,
           unitPrice: unitPrice,
           totalValue: unitPrice * quantity,
-          reason: data['damage_type']?.toString() ??
+          reason:
+              data['damage_type']?.toString() ??
               data['description']?.toString() ??
               'unknown',
           reportedBy: data['reported_by']?.toString() ?? 'unknown',
@@ -1765,7 +1816,10 @@ class SupabaseSyncService extends ChangeNotifier {
       final decoded = value is String ? jsonDecode(value) : value;
       if (decoded is! List) return const <ShoeSize>[];
       return decoded
-          .map((entry) => ShoeSize.fromMap(Map<String, dynamic>.from(entry as Map)))
+          .map(
+            (entry) =>
+                ShoeSize.fromMap(Map<String, dynamic>.from(entry as Map)),
+          )
           .toList();
     } catch (_) {
       return const <ShoeSize>[];
