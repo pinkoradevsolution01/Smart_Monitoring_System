@@ -80,28 +80,68 @@ async function primaryKeyColumns(tableName) {
   return rows.map((row) => row.column_name);
 }
 
-async function ensureTenantScopedProductIdentity() {
-  const columns = await primaryKeyColumns('products');
-  if (columns.length === 2 && columns[0] === 'business_id' && columns[1] === 'id') return;
+async function productForeignKeyConstraints() {
+  const [rows] = await pool.execute(
+    `SELECT DISTINCT table_name, constraint_name
+       FROM information_schema.key_column_usage
+      WHERE table_schema = DATABASE()
+        AND referenced_table_name = 'products'
+        AND referenced_table_schema = DATABASE()`,
+  );
+  return rows;
+}
 
-  // IDs are created in each local app database, so they are unique only per business.
-  if (await constraintExists('damage_reports', 'fk_damage_reports_product')) {
-    await pool.execute('ALTER TABLE damage_reports DROP FOREIGN KEY fk_damage_reports_product');
+function quoteIdentifier(identifier) {
+  if (!/^[A-Za-z0-9_]+$/.test(identifier)) {
+    throw new Error(`Unsafe database identifier: ${identifier}`);
   }
-  await pool.execute('ALTER TABLE products DROP PRIMARY KEY, ADD PRIMARY KEY (business_id, id)');
+  return `\`${identifier}\``;
+}
+
+async function ensureTenantProductForeignKey(tableName, constraintName) {
+  if (await constraintExists(tableName, constraintName)) return;
 
   const [unmatched] = await pool.execute(
-    `SELECT COUNT(*) AS count FROM damage_reports d
-       LEFT JOIN products p ON p.business_id = d.business_id AND p.id = d.product_id
-      WHERE d.product_id IS NOT NULL AND p.id IS NULL`,
+    `SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)} child
+       LEFT JOIN products p ON p.business_id = child.business_id AND p.id = child.product_id
+      WHERE child.product_id IS NOT NULL AND p.id IS NULL`,
   );
-  if (!unmatched[0].count) {
-    await pool.execute(
-      'ALTER TABLE damage_reports ADD CONSTRAINT fk_damage_reports_product FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id) ON DELETE RESTRICT ON UPDATE CASCADE',
+  if (unmatched[0].count) {
+    console.warn(
+      `Skipped ${constraintName} because ${unmatched[0].count} legacy ${tableName} rows have no matching tenant product.`,
     );
-  } else {
-    console.warn('Skipped product foreign-key recreation because legacy damage reports have no matching tenant product.');
+    return;
   }
+
+  await pool.execute(
+    `ALTER TABLE ${quoteIdentifier(tableName)}
+       ADD CONSTRAINT ${quoteIdentifier(constraintName)}
+       FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id)
+       ON DELETE RESTRICT ON UPDATE CASCADE`,
+  );
+}
+
+async function ensureTenantScopedProductIdentity() {
+  const columns = await primaryKeyColumns('products');
+  const alreadyTenantScoped = columns.length === 2 && columns[0] === 'business_id' && columns[1] === 'id';
+
+  // IDs are created in each local app database, so they are unique only per business.
+  if (!alreadyTenantScoped) {
+    // MySQL will not let the products primary key change until every dependent
+    // foreign key is removed. Discover constraints instead of assuming a name:
+    // older production databases may contain all three product references.
+    const foreignKeys = await productForeignKeyConstraints();
+    for (const foreignKey of foreignKeys) {
+      await pool.execute(
+        `ALTER TABLE ${quoteIdentifier(foreignKey.table_name)} DROP FOREIGN KEY ${quoteIdentifier(foreignKey.constraint_name)}`,
+      );
+    }
+    await pool.execute('ALTER TABLE products DROP PRIMARY KEY, ADD PRIMARY KEY (business_id, id)');
+  }
+
+  await ensureTenantProductForeignKey('damage_reports', 'fk_damage_reports_product');
+  await ensureTenantProductForeignKey('restock_records', 'fk_restock_records_product');
+  await ensureTenantProductForeignKey('purchase_order_items', 'fk_purchase_order_items_product');
 }
 async function ensureUsersTableColumns() {
   await ensureColumn('users', 'pin_hash', 'VARCHAR(255) NULL');

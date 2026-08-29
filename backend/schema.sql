@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS subscription_renewals (
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS products (
-  id VARCHAR(64) PRIMARY KEY,
+  id VARCHAR(64) NOT NULL,
   business_id VARCHAR(64) NOT NULL,
   barcode VARCHAR(255),
   name VARCHAR(255) NOT NULL,
@@ -233,6 +233,7 @@ CREATE TABLE IF NOT EXISTS products (
   KEY idx_products_barcode (barcode),
   KEY idx_products_category (category),
   KEY idx_products_low_stock (business_id, quantity),
+  PRIMARY KEY (business_id, id),
   CONSTRAINT fk_products_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
@@ -394,7 +395,7 @@ CREATE TABLE IF NOT EXISTS damage_reports (
     ON DELETE CASCADE
     ON UPDATE CASCADE,
   CONSTRAINT fk_damage_reports_product
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id)
     ON DELETE RESTRICT
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
@@ -583,7 +584,7 @@ CREATE TABLE IF NOT EXISTS restock_records (
     ON DELETE CASCADE
     ON UPDATE CASCADE,
   CONSTRAINT fk_restock_records_product
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id)
     ON DELETE RESTRICT
     ON UPDATE CASCADE,
   CONSTRAINT fk_restock_records_supplier
@@ -615,7 +616,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     ON DELETE CASCADE
     ON UPDATE CASCADE,
   CONSTRAINT fk_purchase_order_items_product
-    FOREIGN KEY (product_id) REFERENCES products(id)
+    FOREIGN KEY (business_id, product_id) REFERENCES products(business_id, id)
     ON DELETE RESTRICT
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
