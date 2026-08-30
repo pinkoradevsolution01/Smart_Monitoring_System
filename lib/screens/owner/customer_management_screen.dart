@@ -836,63 +836,6 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     );
   }
 
-  Widget _buildCrudGuideCard(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            theme.colorScheme.primary.withValues(alpha: 0.1),
-            theme.colorScheme.primary.withValues(alpha: 0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.colorScheme.primary.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 20,
-                  color: theme.colorScheme.primary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Customer Management',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _CrudChip(icon: Icons.person_add, label: 'Create'),
-                _CrudChip(icon: Icons.visibility, label: 'Read'),
-                _CrudChip(icon: Icons.edit, label: 'Update'),
-                _CrudChip(icon: Icons.delete, label: 'Delete'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -910,7 +853,6 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       ),
       body: Column(
         children: [
-          _buildCrudGuideCard(context),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: TextField(
@@ -1108,17 +1050,5 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         ),
       );
     }
-  }
-}
-
-class _CrudChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _CrudChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Chip(avatar: Icon(icon, size: 18), label: Text(label));
   }
 }

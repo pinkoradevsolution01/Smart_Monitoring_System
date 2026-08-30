@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -228,8 +229,8 @@ class PurchaseOrderPdfService {
               _buildTableCell('${index + 1}'),
               _buildTableCell(item.productName),
               _buildTableCell('${item.quantity}'),
-              _buildTableCell('₱${item.unitPrice.toStringAsFixed(2)}'),
-              _buildTableCell('₱${item.totalPrice.toStringAsFixed(2)}'),
+              _buildTableCell(AppCurrency.peso(item.unitPrice)),
+              _buildTableCell(AppCurrency.peso(item.totalPrice)),
             ],
           );
         }),
@@ -273,7 +274,7 @@ class PurchaseOrderPdfService {
               ),
               pw.SizedBox(height: 5),
               pw.Text(
-                '₱${totalAmount.toStringAsFixed(2)}',
+                AppCurrency.peso(totalAmount),
                 style: pw.TextStyle(
                   fontSize: 18,
                   fontWeight: pw.FontWeight.bold,

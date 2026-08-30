@@ -384,7 +384,8 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                             width: double.infinity,
                             height: 48,
                             child: ElevatedButton.icon(
-                              onPressed: _isActivating || !_hasRequestedFreshCode
+                              onPressed:
+                                  _isActivating || !_hasRequestedFreshCode
                                   ? null
                                   : _activateWithCode,
                               icon: _isActivating

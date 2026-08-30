@@ -58,10 +58,7 @@ class AttendanceService extends ChangeNotifier {
 
     final response = await _api.getJson(
       resource,
-      queryParameters: {
-        'businessId': businessId,
-        'userId': userId,
-      },
+      queryParameters: {'businessId': businessId, 'userId': userId},
     );
     final rows = response is Map<String, dynamic> && response['data'] is List
         ? List<Map<String, dynamic>>.from(response['data'] as List)
@@ -495,17 +492,9 @@ class AttendanceService extends ChangeNotifier {
       // ignore
     }
 
-    await _deleteRemoteRows(
-      'attendance-entries',
-      userId: userId,
-      date: date,
-    );
+    await _deleteRemoteRows('attendance-entries', userId: userId, date: date);
 
-    await _deleteRemoteRows(
-      'attendance-archive',
-      userId: userId,
-      date: date,
-    );
+    await _deleteRemoteRows('attendance-archive', userId: userId, date: date);
 
     notifyListeners();
   }

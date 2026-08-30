@@ -82,10 +82,7 @@ class ThemeController {
         ? hsl.saturation
         : (hsl.saturation * .42).clamp(.12, .34).toDouble();
     final lightness = hsl.lightness.clamp(.34, .46).toDouble();
-    return hsl
-        .withSaturation(saturation)
-        .withLightness(lightness)
-        .toColor();
+    return hsl.withSaturation(saturation).withLightness(lightness).toColor();
   }
 
   // Create an opaque, accessible MaterialColor from a muted accent color.

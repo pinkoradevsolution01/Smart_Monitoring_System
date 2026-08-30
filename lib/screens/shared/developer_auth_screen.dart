@@ -169,7 +169,9 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
 
       if (googleUser == null) {
         setState(() => _isGoogleLoading = false);
-        _showError('Google sign-in was cancelled or the browser flow could not complete.');
+        _showError(
+          'Google sign-in was cancelled or the browser flow could not complete.',
+        );
         return;
       }
 

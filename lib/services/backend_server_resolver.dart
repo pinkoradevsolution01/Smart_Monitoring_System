@@ -23,18 +23,18 @@ class BackendServerResolver {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final savedBaseUrl = prefs.getString(BackendConfig.backendApiBaseUrlPrefsKey);
+    final savedBaseUrl = prefs.getString(
+      BackendConfig.backendApiBaseUrlPrefsKey,
+    );
     final savedBaseUrls = prefs.getString(
       BackendConfig.backendApiBaseUrlsPrefsKey,
     );
 
-    final candidateUrls = normalizeCandidates(
-      [
-        ..._splitCandidates(savedBaseUrl ?? ''),
-        ..._splitCandidates(savedBaseUrls ?? ''),
-        ...(candidates ?? BackendConfig.configuredApiBaseUrls),
-      ],
-    );
+    final candidateUrls = normalizeCandidates([
+      ..._splitCandidates(savedBaseUrl ?? ''),
+      ..._splitCandidates(savedBaseUrls ?? ''),
+      ...(candidates ?? BackendConfig.configuredApiBaseUrls),
+    ]);
     if (candidateUrls.isEmpty) {
       throw StateError('No backend URLs were configured for auto-detection.');
     }
@@ -136,7 +136,10 @@ class BackendServerResolver {
     }
 
     if (normalized.length == 1) {
-      await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, normalized.first);
+      await prefs.setString(
+        BackendConfig.backendApiBaseUrlPrefsKey,
+        normalized.first,
+      );
       await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
       BackendConfig.setResolvedApiBaseUrl(normalized.first);
     } else {

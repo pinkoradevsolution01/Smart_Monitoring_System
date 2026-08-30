@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import '../../services/pos_service.dart';
 import '../../services/database_service.dart';
 import '../../utils/app_localizations.dart';
+import '../../utils/currency_formatter.dart';
 import '../../models/sale.dart';
 import '../../models/product.dart';
 import '../../models/damage_report.dart';
@@ -332,7 +333,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    'PHP ${completedTotal.toStringAsFixed(2)}',
+                    AppCurrency.php(completedTotal),
                     style: pw.TextStyle(
                       fontSize: 16,
                       fontWeight: pw.FontWeight.bold,
@@ -354,7 +355,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'PHP ${cancelledTotal.toStringAsFixed(2)}',
+                      AppCurrency.php(cancelledTotal),
                       style: pw.TextStyle(
                         fontSize: 14,
                         fontWeight: pw.FontWeight.bold,
@@ -378,7 +379,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   DateFormat('yyyy-MM-dd HH:mm').format(s.saleDate),
                   s.cashierName,
                   s.itemCount.toString(),
-                  'PHP ${s.totalAmount.toStringAsFixed(2)}',
+                  AppCurrency.php(s.totalAmount),
                   s.status == SaleStatus.completed ? 'Completed' : 'CANCELLED',
                 ],
             ],
@@ -399,7 +400,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                 ),
               ),
               pw.Text(
-                'PHP ${completedTotal.toStringAsFixed(2)}',
+                AppCurrency.php(completedTotal),
                 style: pw.TextStyle(
                   fontSize: 16,
                   fontWeight: pw.FontWeight.bold,
@@ -493,7 +494,7 @@ class _ReportsScreenState extends State<ReportsScreen>
       }
     }
     debugPrint(
-      '📊 Admin: Found $ewalletCount e-wallet sales with total transfer fees: ₱${transferFees.toStringAsFixed(2)}',
+      '📊 Admin: Found $ewalletCount e-wallet sales with total transfer fees: ${AppCurrency.peso(transferFees)}',
     );
 
     // Group sales by date
@@ -531,7 +532,7 @@ class _ReportsScreenState extends State<ReportsScreen>
             Expanded(
               child: _buildSummaryCard(
                 AppLocalizations.t('total_sales'),
-                '₱${totalSales.toStringAsFixed(2)}',
+                AppCurrency.peso(totalSales),
                 Icons.attach_money,
                 Colors.green,
               ),
@@ -553,7 +554,7 @@ class _ReportsScreenState extends State<ReportsScreen>
             Expanded(
               child: _buildSummaryCard(
                 AppLocalizations.t('transfer_fee'),
-                '₱${transferFees.toStringAsFixed(2)}',
+                AppCurrency.peso(transferFees),
                 Icons.payment,
                 Colors.orange,
               ),
@@ -562,7 +563,7 @@ class _ReportsScreenState extends State<ReportsScreen>
             Expanded(
               child: _buildSummaryCard(
                 AppLocalizations.t('avg_transaction'),
-                '₱${avgTransaction.toStringAsFixed(2)}',
+                AppCurrency.peso(avgTransaction),
                 Icons.trending_up,
                 Colors.purple,
               ),
@@ -653,7 +654,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                         '${AppLocalizations.t('quantity')}: $quantity',
                       ),
                       trailing: Text(
-                        '₱${revenue.toStringAsFixed(2)}',
+                        AppCurrency.peso(revenue),
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -743,7 +744,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '₱${sale.totalAmount.toStringAsFixed(2)}',
+                            AppCurrency.peso(sale.totalAmount),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -815,7 +816,7 @@ class _ReportsScreenState extends State<ReportsScreen>
             Expanded(
               child: _buildSummaryCard(
                 AppLocalizations.t('inventory_value'),
-                '₱${totalValue.toStringAsFixed(2)}',
+                AppCurrency.peso(totalValue),
                 Icons.account_balance_wallet,
                 Colors.green,
               ),
@@ -903,7 +904,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                           '$count ${AppLocalizations.t('products')} • ${AppLocalizations.t('quantity')}: $quantity',
                         ),
                         trailing: Text(
-                          '₱${value.toStringAsFixed(2)}',
+                          AppCurrency.peso(value),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
@@ -1058,7 +1059,7 @@ class _ReportsScreenState extends State<ReportsScreen>
         'title': '${AppLocalizations.t('sale')} ${sale.saleNumber}',
         'subtitle':
             '${sale.cashierName} • ${sale.itemCount} ${AppLocalizations.t('items')}',
-        'amount': '₱${sale.totalAmount.toStringAsFixed(2)}',
+        'amount': AppCurrency.peso(sale.totalAmount),
         'date': sale.saleDate,
       });
     }
@@ -1297,7 +1298,7 @@ class _ReportsScreenState extends State<ReportsScreen>
               reservedSize: 40,
               getTitlesWidget: (value, meta) {
                 return Text(
-                  '₱${value.toInt()}',
+                  AppCurrency.peso(value),
                   style: const TextStyle(fontSize: 10),
                 );
               },
@@ -1481,7 +1482,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                'PHP ${totalDamageValue.toStringAsFixed(2)}',
+                                AppCurrency.php(totalDamageValue),
                                 style: TextStyle(
                                   fontSize: 28,
                                   fontWeight: FontWeight.bold,
@@ -1540,7 +1541,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 ),
                               ),
                               Text(
-                                'PHP ${paidValue.toStringAsFixed(2)}',
+                                AppCurrency.php(paidValue),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.blue.shade600,
@@ -1590,7 +1591,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 ),
                               ),
                               Text(
-                                'PHP ${returnedValue.toStringAsFixed(2)}',
+                                AppCurrency.php(returnedValue),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.green.shade600,
@@ -1640,7 +1641,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                                 ),
                               ),
                               Text(
-                                'PHP ${pendingValue.toStringAsFixed(2)}',
+                                AppCurrency.php(pendingValue),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.red.shade600,
@@ -1772,7 +1773,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                           children: [
                             const SizedBox(height: 4),
                             Text(
-                              '${AppLocalizations.t('quantity')}: ${report.quantity} | ${AppLocalizations.t('value')}: PHP ${report.totalValue.toStringAsFixed(2)}',
+                              '${AppLocalizations.t('quantity')}: ${report.quantity} | ${AppLocalizations.t('value')}: ${AppCurrency.php(report.totalValue)}',
                             ),
                             if (report.reason.isNotEmpty &&
                                 report.reason != 'No reason provided')
@@ -1950,7 +1951,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    'PHP ${totalValue.toStringAsFixed(2)}',
+                    AppCurrency.php(totalValue),
                     style: pw.TextStyle(
                       fontSize: 18,
                       fontWeight: pw.FontWeight.bold,
@@ -1976,7 +1977,7 @@ class _ReportsScreenState extends State<ReportsScreen>
                   DateFormat('yyyy-MM-dd HH:mm').format(report.reportDate),
                   report.productName,
                   report.quantity.toString(),
-                  'PHP ${report.totalValue.toStringAsFixed(2)}',
+                  AppCurrency.php(report.totalValue),
                   report.reason.isEmpty || report.reason == 'No reason provided'
                       ? '-'
                       : report.reason,

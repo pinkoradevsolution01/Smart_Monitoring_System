@@ -111,11 +111,11 @@ class _CustomerActivationScreenState extends State<CustomerActivationScreen> {
   String _getPackagePrice(String package) {
     switch (package) {
       case 'Basic':
-        return '₱1,799/mo';
+        return '₱1,799.00/mo';
       case 'Standard':
-        return '₱3,799/mo';
+        return '₱3,799.00/mo';
       case 'Premium':
-        return '₱6,799/mo';
+        return '₱6,799.00/mo';
       default:
         return '';
     }

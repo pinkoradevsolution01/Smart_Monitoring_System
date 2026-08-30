@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import 'dart:io';
 import 'delivery_pos.dart';
@@ -391,10 +392,10 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                     contentPadding: EdgeInsets.zero,
                     title: Text(item.productName),
                     subtitle: Text(
-                      '${item.quantity} x ₱${item.unitPrice.toStringAsFixed(2)}',
+                      '${item.quantity} x ${AppCurrency.peso(item.unitPrice)}',
                     ),
                     trailing: Text(
-                      '₱${item.subtotal.toStringAsFixed(2)}',
+                      AppCurrency.peso(item.subtotal),
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   );
@@ -444,7 +445,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                   children: [
                     const Text('Subtotal:', style: TextStyle(fontSize: 14)),
                     Text(
-                      '₱${sale.subtotal.toStringAsFixed(2)}',
+                      AppCurrency.peso(sale.subtotal),
                       style: const TextStyle(fontSize: 14),
                     ),
                   ],
@@ -456,7 +457,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                     children: [
                       const Text('Discount:', style: TextStyle(fontSize: 14)),
                       Text(
-                        '-₱${sale.discountAmount.toStringAsFixed(2)}',
+                        '-${AppCurrency.peso(sale.discountAmount)}',
                         style: const TextStyle(fontSize: 14, color: Colors.red),
                       ),
                     ],
@@ -476,7 +477,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                         ),
                       ),
                       Text(
-                        '₱${sale.reservationFee!.toStringAsFixed(2)}',
+                        AppCurrency.peso(sale.reservationFee!),
                         style: const TextStyle(
                           fontSize: 14,
                           color: Colors.orange,
@@ -496,7 +497,9 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                         ),
                       ),
                       Text(
-                        '₱${(sale.totalAmount - sale.reservationFee!).toStringAsFixed(2)}',
+                        AppCurrency.peso(
+                          (sale.totalAmount - sale.reservationFee!),
+                        ),
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -518,7 +521,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
                       ),
                     ),
                     Text(
-                      '₱${sale.totalAmount.toStringAsFixed(2)}',
+                      AppCurrency.peso(sale.totalAmount),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -953,7 +956,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${AppLocalizations.t('remaining_balance')}: ₱${remainingBalance.toStringAsFixed(2)}',
+                  '${AppLocalizations.t('remaining_balance')}: ${AppCurrency.peso(remainingBalance)}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -1341,7 +1344,7 @@ class _DeliveryCard extends StatelessWidget {
                         '${sale.saleDate.month}/${sale.saleDate.day}/${sale.saleDate.year}',
                   ),
                   Text(
-                    '₱${sale.totalAmount.toStringAsFixed(2)}',
+                    AppCurrency.peso(sale.totalAmount),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -1369,7 +1372,7 @@ class _DeliveryCard extends StatelessWidget {
                             ),
                           ),
                           Text(
-                            '₱${(sale.reservationFee ?? 0).toStringAsFixed(2)}',
+                            AppCurrency.peso((sale.reservationFee ?? 0)),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
@@ -1377,7 +1380,7 @@ class _DeliveryCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${AppLocalizations.t('remaining_balance')}: ₱${remainingBalance.toStringAsFixed(2)}',
+                            '${AppLocalizations.t('remaining_balance')}: ${AppCurrency.peso(remainingBalance)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.orange.shade700,

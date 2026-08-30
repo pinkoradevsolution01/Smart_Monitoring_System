@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import '../../services/pos_service.dart';
 import '../../services/database_service.dart';
@@ -172,7 +173,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
       }
     }
     debugPrint(
-      '📊 Owner: Found $ewalletCount e-wallet sales with total transfer fees: ₱${transferFees.toStringAsFixed(2)}',
+      '📊 Owner: Found $ewalletCount e-wallet sales with total transfer fees: ${AppCurrency.peso(transferFees)}',
     );
 
     if (mounted) {
@@ -401,7 +402,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Gross Revenue:'),
               pw.Text(
-                '₱${_grossRevenue.toStringAsFixed(2)}',
+                AppCurrency.peso(_grossRevenue),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -412,7 +413,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Net Revenue:'),
               pw.Text(
-                '₱${_netRevenue.toStringAsFixed(2)}',
+                AppCurrency.peso(_netRevenue),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -441,7 +442,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Operating Costs:'),
               pw.Text(
-                '₱${_operatingCosts.toStringAsFixed(2)}',
+                AppCurrency.peso(_operatingCosts),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -452,7 +453,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Transfer Fees:'),
               pw.Text(
-                '₱${_financialTransferFees.toStringAsFixed(2)}',
+                AppCurrency.peso(_financialTransferFees),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -463,7 +464,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Total Expenses:'),
               pw.Text(
-                '₱${_totalExpenses.toStringAsFixed(2)}',
+                AppCurrency.peso(_totalExpenses),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -481,7 +482,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Gross Profit:'),
               pw.Text(
-                '₱${_grossProfit.toStringAsFixed(2)}',
+                AppCurrency.peso(_grossProfit),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -492,7 +493,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             children: [
               pw.Text('Net Profit:'),
               pw.Text(
-                '₱${_netProfit.toStringAsFixed(2)}',
+                AppCurrency.peso(_netProfit),
                 style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               ),
             ],
@@ -651,7 +652,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                             ),
                           ),
                           Text(
-                            '\u20b1${completedTotal.toStringAsFixed(2)}',
+                            AppCurrency.peso(completedTotal),
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -680,7 +681,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                               ),
                             ),
                             Text(
-                              '\u20b1${cancelledTotal.toStringAsFixed(2)}',
+                              AppCurrency.peso(cancelledTotal),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14,
@@ -710,7 +711,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                             ),
                           ),
                           Text(
-                            '\u20b1${completedTotal.toStringAsFixed(2)}',
+                            AppCurrency.peso(completedTotal),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -889,16 +890,16 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   s.saleDate.toIso8601String(),
                   s.cashierName,
                   s.itemCount.toString(),
-                  'PHP ${s.totalAmount.toStringAsFixed(2)}',
+                  AppCurrency.php(s.totalAmount),
                 ],
             ],
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
             cellAlignment: pw.Alignment.centerLeft,
           ),
           pw.SizedBox(height: 16),
-          pw.Text('Total: PHP ${_dailyTotal.toStringAsFixed(2)}'),
+          pw.Text('Total: ${AppCurrency.php(_dailyTotal)}'),
           pw.Text('Transactions: $_dailyTransactions'),
-          pw.Text('Average: PHP ${_dailyAverage.toStringAsFixed(2)}'),
+          pw.Text('Average: ${AppCurrency.php(_dailyAverage)}'),
         ],
       ),
     );
@@ -986,7 +987,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                                 ),
                               ),
                               Text(
-                                '₱${completedTotal.toStringAsFixed(2)}',
+                                AppCurrency.peso(completedTotal),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -1015,7 +1016,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                                   ),
                                 ),
                                 Text(
-                                  '₱${cancelledTotal.toStringAsFixed(2)}',
+                                  AppCurrency.peso(cancelledTotal),
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 14,
@@ -1045,7 +1046,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                                 ),
                               ),
                               Text(
-                                '₱${completedTotal.toStringAsFixed(2)}',
+                                AppCurrency.peso(completedTotal),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 18,
@@ -1334,7 +1335,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    'PHP ${completedTotal.toStringAsFixed(2)}',
+                    AppCurrency.php(completedTotal),
                     style: pw.TextStyle(
                       fontSize: 16,
                       fontWeight: pw.FontWeight.bold,
@@ -1356,7 +1357,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                     ),
                     pw.SizedBox(height: 4),
                     pw.Text(
-                      'PHP ${cancelledTotal.toStringAsFixed(2)}',
+                      AppCurrency.php(cancelledTotal),
                       style: pw.TextStyle(
                         fontSize: 14,
                         fontWeight: pw.FontWeight.bold,
@@ -1380,7 +1381,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                   s.saleDate.toIso8601String().substring(0, 16),
                   s.cashierName,
                   s.itemCount.toString(),
-                  'PHP ${s.totalAmount.toStringAsFixed(2)}',
+                  AppCurrency.php(s.totalAmount),
                   s.status == SaleStatus.completed ? 'Completed' : 'CANCELLED',
                 ],
             ],
@@ -1401,7 +1402,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                 ),
               ),
               pw.Text(
-                'PHP ${completedTotal.toStringAsFixed(2)}',
+                AppCurrency.php(completedTotal),
                 style: pw.TextStyle(
                   fontSize: 16,
                   fontWeight: pw.FontWeight.bold,
@@ -1494,287 +1495,290 @@ class _SalesReportScreenState extends State<SalesReportScreen>
         controller: _tabController,
         children: [
           // Tab 1: Sales Report
-          Column(
-            children: [
-              // Date / Range banner below header (match Admin reports style)
-              Builder(
-                builder: (context) {
-                  final primaryColor = Theme.of(context).colorScheme.primary;
-                  final isDark =
-                      primaryColor.toARGB32() == 0xFF6F4E37 ||
-                      primaryColor.toARGB32() == 0xFF212121;
-                  final dateFormat = DateFormat('MMM dd, yyyy');
-                  final title = _range != null
-                      ? '${dateFormat.format(_range!.start)} - ${dateFormat.format(_range!.end)}'
-                      : dateFormat.format(_selectedDay);
+          NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    // Date / Range banner below header (match Admin reports style)
+                    Builder(
+                      builder: (context) {
+                        final primaryColor = Theme.of(
+                          context,
+                        ).colorScheme.primary;
+                        final isDark =
+                            primaryColor.toARGB32() == 0xFF6F4E37 ||
+                            primaryColor.toARGB32() == 0xFF212121;
+                        final dateFormat = DateFormat('MMM dd, yyyy');
+                        final title = _range != null
+                            ? '${dateFormat.format(_range!.start)} - ${dateFormat.format(_range!.end)}'
+                            : dateFormat.format(_selectedDay);
 
-                  return Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.grey[850]
-                          : Theme.of(context).colorScheme.primaryContainer,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: DefaultTextStyle(
-                      style: TextStyle(
-                        color: isDark ? Colors.white : Colors.black87,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.calendar_today,
-                            size: 18,
-                            color: isDark ? Colors.white : Colors.black87,
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? Colors.grey[850]
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 8),
-                          Text(title),
-                        ],
+                          child: DefaultTextStyle(
+                            style: TextStyle(
+                              color: isDark ? Colors.white : Colors.black87,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.calendar_today,
+                                  size: 18,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(title),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _DailySummary(
+                      loading: _loadingDaily,
+                      total: _dailyTotal,
+                      transferFees: _dailyTransferFees,
+                      transactions: _dailyTransactions,
+                      average: _dailyAverage,
+                      selectedDay: _selectedDay,
+                      onPickDay: _pickDailyDate,
+                      onRefresh: () => _loadDailySummary(_selectedDay),
+                      onExportCsv: _exportCsv,
+                      onExportPdf: _exportPdf,
+                    ),
+                    const SizedBox(height: 8),
+                    // Search Bar
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText:
+                              'Search by sale number, cashier, or reference...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
                       ),
                     ),
-                  );
-                },
-              ),
-              _DailySummary(
-                loading: _loadingDaily,
-                total: _dailyTotal,
-                transferFees: _dailyTransferFees,
-                transactions: _dailyTransactions,
-                average: _dailyAverage,
-                selectedDay: _selectedDay,
-                onPickDay: _pickDailyDate,
-                onRefresh: () => _loadDailySummary(_selectedDay),
-                onExportCsv: _exportCsv,
-                onExportPdf: _exportPdf,
-              ),
-              const SizedBox(height: 8),
-              // Search Bar
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search by sale number, cashier, or reference...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1000),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _loadingSearch
+                                          ? 'Loading all sales...'
+                                          : _searchQuery.isEmpty
+                                          ? 'Showing ${sales.length} sales'
+                                          : 'Found ${sales.length} of ${allSales.length} sales',
+                                      style: TextStyle(color: null),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Card(
+                                    elevation: 2,
+                                    color: Colors.blue.shade50,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12.0,
+                                        vertical: 8.0,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'Total',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                          ),
+                                          Text(
+                                            AppCurrency.peso(total),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 18,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
+                    const Divider(height: 1),
+                  ],
                 ),
               ),
-              const SizedBox(height: 12),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1000),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12.0),
+            ],
+            body: _loadingSearch
+                ? const Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Loading all sales...'),
+                      ],
+                    ),
+                  )
+                : sales.isEmpty
+                ? Center(
+                    child: Text(
+                      _searchQuery.isEmpty
+                          ? 'No sales yet'
+                          : 'No sales found matching "$_searchQuery"',
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: sales.length,
+                    itemBuilder: (context, idx) {
+                      final s = sales[idx];
+                      final isCancelled = s.status == SaleStatus.cancelled;
+                      return ListTile(
+                        leading: s.imagePath != null && s.imagePath!.isNotEmpty
+                            ? const Icon(Icons.camera_alt, color: Colors.green)
+                            : const Icon(Icons.receipt),
+                        title: Row(
                           children: [
                             Expanded(
                               child: Text(
-                                _loadingSearch
-                                    ? 'Loading all sales...'
-                                    : _searchQuery.isEmpty
-                                    ? 'Showing ${sales.length} sales'
-                                    : 'Found ${sales.length} of ${allSales.length} sales',
-                                style: TextStyle(color: null),
+                                isCancelled
+                                    ? 'Sale ${s.saleNumber} - Cancelled'
+                                    : 'Sale ${s.saleNumber}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: isCancelled ? Colors.red : null,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Card(
-                              elevation: 2,
-                              color: Colors.blue.shade50,
-                              child: Padding(
+                            if (isCancelled)
+                              Container(
                                 padding: const EdgeInsets.symmetric(
-                                  horizontal: 12.0,
-                                  vertical: 8.0,
+                                  horizontal: 6,
+                                  vertical: 2,
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      'Total',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey.shade700,
-                                      ),
-                                    ),
-                                    Text(
-                                      '₱${total.toStringAsFixed(2)}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                      ),
-                                    ),
-                                  ],
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  AppLocalizations.t('cancelled'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const Divider(),
-              Expanded(
-                child: _loadingSearch
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('Loading all sales...'),
+                            Text(
+                              '${s.itemCount} items • ${s.formattedDate}\nCashier: ${s.cashierName}${s.referenceCode != null ? "\nRef: ${s.referenceCode}" : ""}${isCancelled && s.cancelledReason != null ? "\nReason: ${s.cancelledReason}" : ""}',
+                            ),
+                            // Show shoe sizes if any items have them
+                            if (s.items.any((item) => item.shoeSize != null))
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: s.items
+                                      .where((item) => item.shoeSize != null)
+                                      .map(
+                                        (item) => Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primaryContainer
+                                                .withValues(alpha: 0.5),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '👟 ${item.productName} (${item.shoeSize})',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimaryContainer,
+                                            ),
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              ),
                           ],
                         ),
-                      )
-                    : sales.isEmpty
-                    ? Center(
-                        child: Text(
-                          _searchQuery.isEmpty
-                              ? 'No sales yet'
-                              : 'No sales found matching "$_searchQuery"',
+                        trailing: Text(
+                          s.formattedTotal,
+                          style: TextStyle(
+                            decoration: isCancelled
+                                ? TextDecoration.lineThrough
+                                : null,
+                            color: isCancelled ? Colors.grey : null,
+                          ),
                         ),
-                      )
-                    : ListView.builder(
-                        itemCount: sales.length,
-                        itemBuilder: (context, idx) {
-                          final s = sales[idx];
-                          final isCancelled = s.status == SaleStatus.cancelled;
-                          return ListTile(
-                            leading:
-                                s.imagePath != null && s.imagePath!.isNotEmpty
-                                ? const Icon(
-                                    Icons.camera_alt,
-                                    color: Colors.green,
-                                  )
-                                : const Icon(Icons.receipt),
-                            title: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    isCancelled
-                                        ? 'Sale ${s.saleNumber} - Cancelled'
-                                        : 'Sale ${s.saleNumber}',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: isCancelled ? Colors.red : null,
-                                    ),
-                                  ),
-                                ),
-                                if (isCancelled)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      AppLocalizations.t('cancelled'),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '${s.itemCount} items • ${s.formattedDate}\nCashier: ${s.cashierName}${s.referenceCode != null ? "\nRef: ${s.referenceCode}" : ""}${isCancelled && s.cancelledReason != null ? "\nReason: ${s.cancelledReason}" : ""}',
-                                ),
-                                // Show shoe sizes if any items have them
-                                if (s.items.any(
-                                  (item) => item.shoeSize != null,
-                                ))
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Wrap(
-                                      spacing: 4,
-                                      runSpacing: 4,
-                                      children: s.items
-                                          .where(
-                                            (item) => item.shoeSize != null,
-                                          )
-                                          .map(
-                                            (item) => Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primaryContainer
-                                                    .withValues(alpha: 0.5),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                '👟 ${item.productName} (${item.shoeSize})',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: Theme.of(context)
-                                                      .colorScheme
-                                                      .onPrimaryContainer,
-                                                ),
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            trailing: Text(
-                              s.formattedTotal,
-                              style: TextStyle(
-                                decoration: isCancelled
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                                color: isCancelled ? Colors.grey : null,
-                              ),
-                            ),
-                            onTap: () => _showSaleDetailDialog(s),
-                          );
-                        },
-                      ),
-              ),
-            ],
+                        onTap: () => _showSaleDetailDialog(s),
+                      );
+                    },
+                  ),
           ),
           // Tab 2: Financial Reports
           _FinancialReportsTab(
@@ -1894,7 +1898,7 @@ class _DailySummary extends StatelessWidget {
                         child: _buildSummaryCard(
                           context,
                           AppLocalizations.t('today_total_sales'),
-                          '₱${total.toStringAsFixed(2)}',
+                          AppCurrency.peso(total),
                           Icons.attach_money,
                           Colors.green,
                         ),
@@ -1918,7 +1922,7 @@ class _DailySummary extends StatelessWidget {
                         child: _buildSummaryCard(
                           context,
                           AppLocalizations.t('transfer_fee'),
-                          '₱${transferFees.toStringAsFixed(2)}',
+                          AppCurrency.peso(transferFees),
                           Icons.payment,
                           Colors.orange,
                         ),
@@ -1928,7 +1932,7 @@ class _DailySummary extends StatelessWidget {
                         child: _buildSummaryCard(
                           context,
                           AppLocalizations.t('average_sale_value'),
-                          '₱${average.toStringAsFixed(2)}',
+                          AppCurrency.peso(average),
                           Icons.trending_up,
                           Colors.purple,
                         ),
@@ -2077,14 +2081,14 @@ extension _SaleDetailDialog on _SalesReportScreenState {
                                 ),
                               ),
                             Text(
-                              '${item.quantity} x ₱${item.unitPrice.toStringAsFixed(2)}',
+                              '${item.quantity} x ${AppCurrency.peso(item.unitPrice)}',
                               style: TextStyle(fontSize: 12),
                             ),
                           ],
                         ),
                       ),
                       Text(
-                        '₱${item.subtotal.toStringAsFixed(2)}',
+                        AppCurrency.peso(item.subtotal),
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -2096,7 +2100,7 @@ extension _SaleDetailDialog on _SalesReportScreenState {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Subtotal:'),
-                  Text('₱${sale.subtotal.toStringAsFixed(2)}'),
+                  Text(AppCurrency.peso(sale.subtotal)),
                 ],
               ),
               if (sale.discountAmount > 0)
@@ -2104,7 +2108,7 @@ extension _SaleDetailDialog on _SalesReportScreenState {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Discount:'),
-                    Text('-₱${sale.discountAmount.toStringAsFixed(2)}'),
+                    Text('-${AppCurrency.peso(sale.discountAmount)}'),
                   ],
                 ),
               if (sale.taxAmount > 0)
@@ -2112,7 +2116,7 @@ extension _SaleDetailDialog on _SalesReportScreenState {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Tax:'),
-                    Text('₱${sale.taxAmount.toStringAsFixed(2)}'),
+                    Text(AppCurrency.peso(sale.taxAmount)),
                   ],
                 ),
               const Divider(),
@@ -2124,7 +2128,7 @@ extension _SaleDetailDialog on _SalesReportScreenState {
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                   Text(
-                    '₱${sale.totalAmount.toStringAsFixed(2)}',
+                    AppCurrency.peso(sale.totalAmount),
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -2479,11 +2483,11 @@ class _FinancialReportsTab extends StatelessWidget {
               children: [
                 _buildMetricRow(
                   AppLocalizations.t('gross_revenue'),
-                  '₱${grossRevenue.toStringAsFixed(2)}',
+                  AppCurrency.peso(grossRevenue),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('net_revenue'),
-                  '₱${netRevenue.toStringAsFixed(2)}',
+                  AppCurrency.peso(netRevenue),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('growth_rate'),
@@ -2501,15 +2505,15 @@ class _FinancialReportsTab extends StatelessWidget {
               children: [
                 _buildMetricRow(
                   AppLocalizations.t('operating_costs'),
-                  '₱${operatingCosts.toStringAsFixed(2)}',
+                  AppCurrency.peso(operatingCosts),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('transfer_fees'),
-                  '₱${transferFees.toStringAsFixed(2)}',
+                  AppCurrency.peso(transferFees),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('total_expenses'),
-                  '₱${totalExpenses.toStringAsFixed(2)}',
+                  AppCurrency.peso(totalExpenses),
                 ),
               ],
             ),
@@ -2522,11 +2526,11 @@ class _FinancialReportsTab extends StatelessWidget {
               children: [
                 _buildMetricRow(
                   AppLocalizations.t('gross_profit'),
-                  '₱${grossProfit.toStringAsFixed(2)}',
+                  AppCurrency.peso(grossProfit),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('net_profit'),
-                  '₱${netProfit.toStringAsFixed(2)}',
+                  AppCurrency.peso(netProfit),
                 ),
                 _buildMetricRow(
                   AppLocalizations.t('profit_margin'),

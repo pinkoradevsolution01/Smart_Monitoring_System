@@ -264,7 +264,10 @@ class UserService extends ChangeNotifier {
   }
 
   /// Reactivate a soft-deleted user
-  Future<bool> reactivateUser(String userId, {bool queueCloudSync = true}) async {
+  Future<bool> reactivateUser(
+    String userId, {
+    bool queueCloudSync = true,
+  }) async {
     if (!_users.containsKey(userId)) {
       return false;
     }

@@ -206,7 +206,9 @@ class CashierDashboard extends StatelessWidget {
                   const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
+                      final cols = ResponsiveUtils.columnsForWidth(
+                        constraints.maxWidth,
+                      );
 
                       final items = <Widget>[
                         if (packageService.hasAttendanceAccess)
@@ -323,7 +325,9 @@ class CashierDashboard extends StatelessWidget {
                           crossAxisCount: cols,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: ResponsiveUtils.isMobile(context) ? 1.05 : 1,
+                          childAspectRatio: ResponsiveUtils.isMobile(context)
+                              ? 1.05
+                              : 1,
                         ),
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),

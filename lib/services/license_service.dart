@@ -240,7 +240,8 @@ class LicenseService extends ChangeNotifier {
       debugPrint('LicenseService: Checking code via backend...');
 
       final codeResponse = await _api.getJson('license/code/$code');
-      if (codeResponse is! Map<String, dynamic> || codeResponse['code'] == null) {
+      if (codeResponse is! Map<String, dynamic> ||
+          codeResponse['code'] == null) {
         return ActivationResult(
           success: false,
           message: 'Invalid activation code',
@@ -278,11 +279,16 @@ class LicenseService extends ChangeNotifier {
 
       String businessName = 'Unknown Business';
       try {
-        final requestResponse = await _api.getJson('license/requests/by-code/$code');
+        final requestResponse = await _api.getJson(
+          'license/requests/by-code/$code',
+        );
         if (requestResponse is Map<String, dynamic> &&
             requestResponse['request'] is Map) {
-          final request = Map<String, dynamic>.from(requestResponse['request'] as Map);
-          businessName = request['business_name'] as String? ?? 'Unknown Business';
+          final request = Map<String, dynamic>.from(
+            requestResponse['request'] as Map,
+          );
+          businessName =
+              request['business_name'] as String? ?? 'Unknown Business';
         } else if (GetIt.I.isRegistered<UserService>()) {
           final userService = GetIt.I.get<UserService>();
           final owners = userService.getUsersByRole(UserRole.owner);

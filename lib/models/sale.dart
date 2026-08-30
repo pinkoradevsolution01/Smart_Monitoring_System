@@ -1,4 +1,5 @@
 import 'package:intl/intl.dart';
+import '../utils/currency_formatter.dart';
 import 'sale_item.dart';
 
 enum SaleStatus { completed, pending, cancelled, returned }
@@ -216,5 +217,5 @@ class Sale {
 
   String get formattedDate =>
       DateFormat('MMM dd, yyyy - HH:mm').format(saleDate);
-  String get formattedTotal => '₱${totalAmount.toStringAsFixed(2)}';
+  String get formattedTotal => AppCurrency.peso(totalAmount);
 }

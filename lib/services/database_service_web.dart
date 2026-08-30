@@ -121,7 +121,10 @@ class DatabaseService {
       _store.putIfAbsent('products', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('sales', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('purchase_orders', () => <Map<String, dynamic>>[]);
-      _store.putIfAbsent('purchase_order_items', () => <Map<String, dynamic>>[]);
+      _store.putIfAbsent(
+        'purchase_order_items',
+        () => <Map<String, dynamic>>[],
+      );
       _store.putIfAbsent('inventory_movements', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('customers', () => <Map<String, dynamic>>[]);
       _store.putIfAbsent('loyalty_ledger', () => <Map<String, dynamic>>[]);
@@ -399,7 +402,7 @@ class DatabaseService {
         .where((item) => (item['id'] as int?) != id)
         .toList();
     await _save();
-      await _deleteRemoteRecord('customers', id);
+    await _deleteRemoteRecord('customers', id);
     _queueCloudSync();
   }
 
@@ -565,9 +568,11 @@ class DatabaseService {
     }
 
     rawSales.sort((a, b) {
-      final aDate = DateTime.tryParse(a['saleDate']?.toString() ?? '') ??
+      final aDate =
+          DateTime.tryParse(a['saleDate']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
-      final bDate = DateTime.tryParse(b['saleDate']?.toString() ?? '') ??
+      final bDate =
+          DateTime.tryParse(b['saleDate']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
       final dateCompare = bDate.compareTo(aDate);
       if (dateCompare != 0) return dateCompare;
@@ -745,9 +750,9 @@ class DatabaseService {
     if (idx >= 0) {
       final existingId = orders[idx]['id'] as int;
       orders[idx] = order.copyWith(id: existingId).toMap();
-      final items = List.from(_store['purchase_order_items'] as List<dynamic>)
-          .where((m) => m['orderId'] != existingId)
-          .toList();
+      final items = List.from(
+        _store['purchase_order_items'] as List<dynamic>,
+      ).where((m) => m['orderId'] != existingId).toList();
       for (final item in order.items) {
         final itemId = item.id ?? _nextId('purchase_order_item');
         items.add(item.copyWith(id: itemId, orderId: existingId).toMap());
@@ -766,7 +771,9 @@ class DatabaseService {
     final List items = _store['purchase_order_items'] as List<dynamic>;
     return items
         .where((m) => (m as Map)['orderId'] == orderId)
-        .map((e) => PurchaseOrderItem.fromMap(Map<String, dynamic>.from(e as Map)))
+        .map(
+          (e) => PurchaseOrderItem.fromMap(Map<String, dynamic>.from(e as Map)),
+        )
         .toList();
   }
 
@@ -809,7 +816,9 @@ class DatabaseService {
     return null;
   }
 
-  Future<List<PurchaseOrder>> getPurchaseOrdersBySupplier(int supplierId) async {
+  Future<List<PurchaseOrder>> getPurchaseOrdersBySupplier(
+    int supplierId,
+  ) async {
     final orders = await getAllPurchaseOrders();
     return orders.where((order) => order.supplierId == supplierId).toList();
   }
@@ -825,9 +834,9 @@ class DatabaseService {
     final idx = orders.indexWhere((m) => m['id'] == order.id);
     if (idx == -1) return 0;
     orders[idx] = order.toMap();
-    final items = List.from(_store['purchase_order_items'] as List<dynamic>)
-        .where((m) => m['orderId'] != order.id)
-        .toList();
+    final items = List.from(
+      _store['purchase_order_items'] as List<dynamic>,
+    ).where((m) => m['orderId'] != order.id).toList();
     for (final item in order.items) {
       final itemId = item.id ?? _nextId('purchase_order_item');
       items.add(item.copyWith(id: itemId, orderId: order.id!).toMap());
@@ -865,7 +874,8 @@ class DatabaseService {
     final orders = List.from(_store['purchase_orders'] as List<dynamic>);
     final idx = orders.indexWhere((m) => m['id'] == orderId);
     if (idx == -1) return 0;
-    final updated = Map<String, dynamic>.from(orders[idx] as Map)..['status'] = status;
+    final updated = Map<String, dynamic>.from(orders[idx] as Map)
+      ..['status'] = status;
     orders[idx] = updated;
     _store['purchase_orders'] = orders;
     await _save();
@@ -877,9 +887,9 @@ class DatabaseService {
     await _load();
     final orders = List.from(_store['purchase_orders'] as List<dynamic>);
     orders.removeWhere((m) => m['id'] == id);
-    final items = List.from(_store['purchase_order_items'] as List<dynamic>)
-        .where((m) => m['orderId'] != id)
-        .toList();
+    final items = List.from(
+      _store['purchase_order_items'] as List<dynamic>,
+    ).where((m) => m['orderId'] != id).toList();
     _store['purchase_orders'] = orders;
     _store['purchase_order_items'] = items;
     await _save();
@@ -951,8 +961,8 @@ class DatabaseService {
               m.movementDate.isBefore(endDate.add(const Duration(seconds: 1))),
         )
         .toList();
-      results.sort((a, b) => b.movementDate.compareTo(a.movementDate));
-      return results;
+    results.sort((a, b) => b.movementDate.compareTo(a.movementDate));
+    return results;
   }
 
   /// Replace all inventory movements with a restored set from cloud sync.
@@ -1029,7 +1039,7 @@ class DatabaseService {
     final id = timestamp['id'] is int
         ? timestamp['id'] as int
         : int.tryParse(timestamp['id']?.toString() ?? '') ??
-            _nextId('cctv_timestamp');
+              _nextId('cctv_timestamp');
     _bumpCounter('cctv_timestamp', id);
     final timestamps = List<Map<String, dynamic>>.from(
       (_store['cctv_timestamps'] as List<dynamic>?) ?? [],
@@ -1159,7 +1169,10 @@ class DatabaseService {
     final logs = List<Map<String, dynamic>>.from(
       (_store['activity_logs'] as List<dynamic>?) ?? [],
     );
-    return logs.where((row) => (row['sent'] as int? ?? 0) == 0).take(limit).toList();
+    return logs
+        .where((row) => (row['sent'] as int? ?? 0) == 0)
+        .take(limit)
+        .toList();
   }
 
   Future<void> markActivityLogsSent(List<int> ids) async {

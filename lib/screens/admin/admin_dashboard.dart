@@ -54,7 +54,9 @@ class AdminDashboard extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: Padding(
-            padding: EdgeInsets.all(ResponsiveUtils.spacingForWidth(MediaQuery.sizeOf(context).width)),
+            padding: EdgeInsets.all(
+              ResponsiveUtils.spacingForWidth(MediaQuery.sizeOf(context).width),
+            ),
             child: ListView(
               children: [
                 // Dashboard welcome section
@@ -80,14 +82,18 @@ class AdminDashboard extends StatelessWidget {
                 ),
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final cols = ResponsiveUtils.columnsForWidth(constraints.maxWidth);
+                    final cols = ResponsiveUtils.columnsForWidth(
+                      constraints.maxWidth,
+                    );
 
                     return GridView(
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: cols,
                         crossAxisSpacing: 12,
                         mainAxisSpacing: 12,
-                        childAspectRatio: ResponsiveUtils.isMobile(context) ? 1.05 : 1,
+                        childAspectRatio: ResponsiveUtils.isMobile(context)
+                            ? 1.05
+                            : 1,
                       ),
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),

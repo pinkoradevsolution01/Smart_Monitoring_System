@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
@@ -751,14 +752,14 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Gross Pay'),
-                          Text('₱${gross.toStringAsFixed(2)}'),
+                          Text(AppCurrency.peso(gross)),
                         ],
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text('Total Deductions'),
-                          Text('₱${deductions.toStringAsFixed(2)}'),
+                          Text(AppCurrency.peso(deductions)),
                         ],
                       ),
                       Row(
@@ -766,7 +767,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                         children: [
                           const Text('Net Pay'),
                           Text(
-                            '₱${net.toStringAsFixed(2)}',
+                            AppCurrency.peso(net),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -1098,7 +1099,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
             ),
           ),
           pw.Text(
-            '₱${amount.toStringAsFixed(2)}',
+            AppCurrency.peso(amount),
             style: pw.TextStyle(
               fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
               fontSize: fontSize,
@@ -1200,27 +1201,15 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                 const SizedBox(height: 8),
                 _detailRow(
                   'Basic Rate/Day',
-                  '₱${p.basicRatePerDay.toStringAsFixed(2)}',
+                  AppCurrency.peso(p.basicRatePerDay),
                 ),
-                _detailRow(
-                  'Regular Pay',
-                  '₱${p.regularPay.toStringAsFixed(2)}',
-                ),
-                _detailRow(
-                  'Overtime Pay',
-                  '₱${p.overtimePay.toStringAsFixed(2)}',
-                ),
-                _detailRow(
-                  'Night Differential',
-                  '₱${p.nightDiff.toStringAsFixed(2)}',
-                ),
-                _detailRow(
-                  'Special Holiday',
-                  '₱${p.specHoliday.toStringAsFixed(2)}',
-                ),
-                _detailRow('COLA', '₱${p.cola.toStringAsFixed(2)}'),
-                _detailRow('13th Month', '₱${p.thirteenth.toStringAsFixed(2)}'),
-                _detailRow('Adjustment', '₱${p.adjustment.toStringAsFixed(2)}'),
+                _detailRow('Regular Pay', AppCurrency.peso(p.regularPay)),
+                _detailRow('Overtime Pay', AppCurrency.peso(p.overtimePay)),
+                _detailRow('Night Differential', AppCurrency.peso(p.nightDiff)),
+                _detailRow('Special Holiday', AppCurrency.peso(p.specHoliday)),
+                _detailRow('COLA', AppCurrency.peso(p.cola)),
+                _detailRow('13th Month', AppCurrency.peso(p.thirteenth)),
+                _detailRow('Adjustment', AppCurrency.peso(p.adjustment)),
                 const SizedBox(height: 12),
 
                 // Allowances Section
@@ -1239,16 +1228,13 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                _detailRow('Meal', '₱${p.allowanceMeal.toStringAsFixed(2)}'),
-                _detailRow(
-                  'Lodging',
-                  '₱${p.allowanceLodging.toStringAsFixed(2)}',
-                ),
+                _detailRow('Meal', AppCurrency.peso(p.allowanceMeal)),
+                _detailRow('Lodging', AppCurrency.peso(p.allowanceLodging)),
                 _detailRow(
                   'Transportation',
-                  '₱${p.allowanceTranspo.toStringAsFixed(2)}',
+                  AppCurrency.peso(p.allowanceTranspo),
                 ),
-                _detailRow('Other', '₱${p.allowanceOther.toStringAsFixed(2)}'),
+                _detailRow('Other', AppCurrency.peso(p.allowanceOther)),
                 const SizedBox(height: 12),
 
                 // Gross Pay Box
@@ -1261,7 +1247,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                   ),
                   child: _detailRow(
                     'GROSS PAY',
-                    '₱${p.grossPay.toStringAsFixed(2)}',
+                    AppCurrency.peso(p.grossPay),
                     isBold: true,
                     fontSize: 16,
                   ),
@@ -1284,30 +1270,18 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                _detailRow('Absent', '₱${p.absentAmount.toStringAsFixed(2)}'),
-                _detailRow('Late', '₱${p.lateAmount.toStringAsFixed(2)}'),
-                _detailRow(
-                  'Undertime',
-                  '₱${p.undertimeAmount.toStringAsFixed(2)}',
-                ),
-                _detailRow('SSS', '₱${p.sss.toStringAsFixed(2)}'),
-                _detailRow('HDMF', '₱${p.hdmf.toStringAsFixed(2)}'),
-                _detailRow('PhilHealth', '₱${p.phi.toStringAsFixed(2)}'),
-                _detailRow('Withholding Tax', '₱${p.wtax.toStringAsFixed(2)}'),
-                _detailRow(
-                  'Insurance',
-                  '₱${p.otherInsurance.toStringAsFixed(2)}',
-                ),
-                _detailRow(
-                  'Voluntary',
-                  '₱${p.otherVoluntary.toStringAsFixed(2)}',
-                ),
-                _detailRow('HMO', '₱${p.otherHmo.toStringAsFixed(2)}'),
-                _detailRow(
-                  'Other Deductions',
-                  '₱${p.otherOther.toStringAsFixed(2)}',
-                ),
-                _detailRow('Loan', '₱${p.loanDeductions.toStringAsFixed(2)}'),
+                _detailRow('Absent', AppCurrency.peso(p.absentAmount)),
+                _detailRow('Late', AppCurrency.peso(p.lateAmount)),
+                _detailRow('Undertime', AppCurrency.peso(p.undertimeAmount)),
+                _detailRow('SSS', AppCurrency.peso(p.sss)),
+                _detailRow('HDMF', AppCurrency.peso(p.hdmf)),
+                _detailRow('PhilHealth', AppCurrency.peso(p.phi)),
+                _detailRow('Withholding Tax', AppCurrency.peso(p.wtax)),
+                _detailRow('Insurance', AppCurrency.peso(p.otherInsurance)),
+                _detailRow('Voluntary', AppCurrency.peso(p.otherVoluntary)),
+                _detailRow('HMO', AppCurrency.peso(p.otherHmo)),
+                _detailRow('Other Deductions', AppCurrency.peso(p.otherOther)),
+                _detailRow('Loan', AppCurrency.peso(p.loanDeductions)),
                 const SizedBox(height: 12),
 
                 // Total Deductions Box
@@ -1320,7 +1294,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                   ),
                   child: _detailRow(
                     'TOTAL DEDUCTIONS',
-                    '₱${p.totalDeductions.toStringAsFixed(2)}',
+                    AppCurrency.peso(p.totalDeductions),
                     isBold: true,
                     fontSize: 16,
                   ),
@@ -1337,7 +1311,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                   ),
                   child: _detailRow(
                     'NET PAY',
-                    '₱${p.netPay.toStringAsFixed(2)}',
+                    AppCurrency.peso(p.netPay),
                     isBold: true,
                     fontSize: 18,
                   ),
@@ -1783,7 +1757,7 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                     ),
                     const Spacer(),
                     Text(
-                      'Total Net: ₱${payrolls.fold(0.0, (sum, p) => sum + p.netPay).toStringAsFixed(2)}',
+                      'Total Net: ${AppCurrency.peso(payrolls.fold<double>(0.0, (sum, p) => sum + p.netPay))}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -1806,14 +1780,14 @@ class _AdminPayrollScreenState extends State<AdminPayrollScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '₱${p.grossPay.toStringAsFixed(2)}',
+                            AppCurrency.peso(p.grossPay),
                             style: const TextStyle(
                               fontSize: 12,
                               color: Colors.blue,
                             ),
                           ),
                           Text(
-                            '₱${p.netPay.toStringAsFixed(2)}',
+                            AppCurrency.peso(p.netPay),
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,

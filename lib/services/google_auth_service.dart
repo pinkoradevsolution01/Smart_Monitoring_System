@@ -11,10 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
 
-enum GoogleAuthProfile {
-  owner,
-  developer,
-}
+enum GoogleAuthProfile { owner, developer }
 
 /// Google authentication helper backed by the Node/MySQL backend.
 ///
@@ -76,9 +73,7 @@ class GoogleAuthService {
           'still running from a stale build. Rebuild the app after flutter pub get.',
         );
       }
-      debugPrint(
-        'ERROR: Google sign in platform error: $message',
-      );
+      debugPrint('ERROR: Google sign in platform error: $message');
       return null;
     } catch (e) {
       debugPrint('ERROR: Google sign in error: $e');
@@ -231,20 +226,14 @@ class GoogleAuthService {
 
   Future<void> _openUrlInBrowser(String url) async {
     final uri = Uri.parse(url);
-    final launched = await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    );
+    final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (launched) {
       return;
     }
 
     if (_isDesktop) {
       if (Platform.isWindows) {
-        await Process.start('rundll32', [
-          'url.dll,FileProtocolHandler',
-          url,
-        ]);
+        await Process.start('rundll32', ['url.dll,FileProtocolHandler', url]);
         return;
       }
       if (Platform.isMacOS) {

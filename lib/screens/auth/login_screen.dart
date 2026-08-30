@@ -8,6 +8,8 @@ import '../../services/user_service.dart';
 import '../../services/admin_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/backend_config.dart';
+import '../../services/google_auth_service.dart';
+import '../../services/supabase_sync_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../widgets/ai_help_button.dart';
@@ -33,6 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _password = TextEditingController();
   final ApiClient _api = ApiClient();
   bool _obscure = true;
+  bool _isGoogleOwnerSigningIn = false;
   int _devTapCount = 0;
 
   final UserService _userService = GetIt.I.get<UserService>();
@@ -129,6 +132,80 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _signInWithGoogleAsOwner() async {
+    if (_isGoogleOwnerSigningIn) return;
+    setState(() => _isGoogleOwnerSigningIn = true);
+
+    try {
+      final googleAuth = GoogleAuthService();
+      final googleUser = await googleAuth.signInWithGoogle(
+        profile: GoogleAuthProfile.owner,
+      );
+      if (googleUser == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Google sign-in was cancelled or could not finish.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      final email = googleUser['email']?.toString().trim().toLowerCase() ?? '';
+      final owner = _userService.getUserByEmail(email);
+      if (owner == null || owner.role != user_model.UserRole.owner) {
+        await googleAuth.clearSession();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Use the Google account registered as this business owner.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      if (!owner.isActive) {
+        await googleAuth.clearSession();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This owner account is inactive.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      await GetIt.I<SupabaseSyncService>().initializeBusiness(
+        businessName: owner.name,
+        ownerEmail: owner.email,
+        existingBusinessId: owner.businessId,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) =>
+              LoadingScreen(destination: OwnerDashboard(user: owner)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Owner Google sign-in could not initialize sync: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isGoogleOwnerSigningIn = false);
+    }
+  }
+
   Future<String?> _promptOwnerEmail() async {
     final controller = TextEditingController(text: _email.text.trim());
     return showDialog<String>(
@@ -204,7 +281,9 @@ class _LoginScreenState extends State<LoginScreen> {
               if (!RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(token)) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Please enter the complete 64-character reset token'),
+                    content: Text(
+                      'Please enter the complete 64-character reset token',
+                    ),
                   ),
                 );
                 return;
@@ -294,7 +373,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('A backend connection is required to reset the Owner PIN.'),
+          content: Text(
+            'A backend connection is required to reset the Owner PIN.',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -323,7 +404,8 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(
           content: Text(
             request is Map<String, dynamic>
-                ? (request['message']?.toString() ?? 'Failed to send reset token.')
+                ? (request['message']?.toString() ??
+                      'Failed to send reset token.')
                 : 'Failed to send reset token.',
           ),
           backgroundColor: Colors.red,
@@ -333,9 +415,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Reset token sent to $email')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Reset token sent to $email')));
 
     final token = await _promptResetToken(email);
     if (token == null || token.isEmpty) return;
@@ -347,11 +429,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       verification = await _api.postJson(
         'auth/owner-pin-reset/verify',
-        body: {
-          'email': email,
-          'token': token,
-          'newPin': newPin,
-        },
+        body: {'email': email, 'token': token, 'newPin': newPin},
       );
     } catch (e) {
       if (!mounted) return;
@@ -364,13 +442,15 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (verification is! Map<String, dynamic> || verification['success'] != true) {
+    if (verification is! Map<String, dynamic> ||
+        verification['success'] != true) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             verification is Map<String, dynamic>
-                ? (verification['message']?.toString() ?? 'Reset token verification failed')
+                ? (verification['message']?.toString() ??
+                      'Reset token verification failed')
                 : 'Reset token verification failed',
           ),
           backgroundColor: Colors.red,
@@ -446,16 +526,22 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: EdgeInsets.all(ResponsiveUtils.responsivePadding(width).left),
+          padding: EdgeInsets.all(
+            ResponsiveUtils.responsivePadding(width).left,
+          ),
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: width < 600 ? double.infinity : 480),
+            constraints: BoxConstraints(
+              maxWidth: width < 600 ? double.infinity : 480,
+            ),
             child: Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
               elevation: 6,
               child: Padding(
-                padding: EdgeInsets.all(ResponsiveUtils.isMobile(context) ? 20 : 28),
+                padding: EdgeInsets.all(
+                  ResponsiveUtils.isMobile(context) ? 20 : 28,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -514,6 +600,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: Text(AppLocalizations.t('login')),
                     ),
                     const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _isGoogleOwnerSigningIn
+                          ? null
+                          : _signInWithGoogleAsOwner,
+                      icon: _isGoogleOwnerSigningIn
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.account_circle_outlined),
+                      label: Text(
+                        _isGoogleOwnerSigningIn
+                            ? 'Signing in with Google...'
+                            : 'Continue with Google (Owner)',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     // Owner PIN helpers
                     Center(
                       child: TextButton(
@@ -559,17 +663,23 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (entered.length != 4) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Please enter a 4-digit PIN')),
+                              SnackBar(
+                                content: Text('Please enter a 4-digit PIN'),
+                              ),
                             );
                             return;
                           }
 
                           // Find owner users and verify PIN
-                          final owners = _userService.getUsersByRole(user_model.UserRole.owner);
+                          final owners = _userService.getUsersByRole(
+                            user_model.UserRole.owner,
+                          );
                           if (owners.isEmpty) {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('No owner account configured')),
+                              SnackBar(
+                                content: Text('No owner account configured'),
+                              ),
                             );
                             return;
                           }
@@ -583,7 +693,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   'auth/owner-pin/verify',
                                   body: {'email': o.email, 'pin': entered},
                                 );
-                                valid = response is Map<String, dynamic> &&
+                                valid =
+                                    response is Map<String, dynamic> &&
                                     response['success'] == true;
                               } catch (_) {
                                 valid = false;

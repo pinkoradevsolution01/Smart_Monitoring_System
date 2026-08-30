@@ -71,7 +71,7 @@ Future<bool> showActivationCodeRequestDialog({
       content: Text(
         success
             ? 'Your activation code request has been sent to the developer.\n\n'
-                'You will receive the activation code via email at:\n${data.contactEmail}'
+                  'You will receive the activation code via email at:\n${data.contactEmail}'
             : 'Failed to send request. Please check your internet connection and try again.',
       ),
       actions: [

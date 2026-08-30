@@ -7,6 +7,7 @@ import '../../services/database_service.dart';
 import '../../services/user_service.dart';
 import '../../services/package_service.dart';
 import '../../utils/app_localizations.dart';
+import '../../utils/currency_formatter.dart';
 import '../../utils/receipt_generator.dart';
 import '../../models/product.dart';
 import '../../models/shoe_size.dart';
@@ -343,7 +344,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                 ),
               ),
               Text(
-                '${AppLocalizations.t('total_value')}: ₱${totalValue.toStringAsFixed(2)}',
+                '${AppLocalizations.t('total_value')}: ${AppCurrency.peso(totalValue)}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   color: Colors.black,
@@ -480,7 +481,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                Text('₱${product.sellingPrice.toStringAsFixed(2)}'),
+                Text(AppCurrency.peso(product.sellingPrice)),
               ],
             ),
             if (product.hasShoeVariants)
@@ -644,13 +645,13 @@ class _InventoryScreenState extends State<InventoryScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${AppLocalizations.t('buying_price')}: ₱${p.buyingPrice.toStringAsFixed(2)}',
+                              '${AppLocalizations.t('buying_price')}: ${AppCurrency.peso(p.buyingPrice)}',
                             ),
                             Text(
-                              '${AppLocalizations.t('selling_price')}: ₱${p.sellingPrice.toStringAsFixed(2)}',
+                              '${AppLocalizations.t('selling_price')}: ${AppCurrency.peso(p.sellingPrice)}',
                             ),
                             Text(
-                              '${AppLocalizations.t('profit_margin')}: ₱${profit.toStringAsFixed(2)} (${margin.toStringAsFixed(1)}%)',
+                              '${AppLocalizations.t('profit_margin')}: ${AppCurrency.peso(profit)} (${margin.toStringAsFixed(1)}%)',
                               style: TextStyle(
                                 color: profit > 0 ? Colors.green : Colors.red,
                                 fontWeight: FontWeight.bold,
@@ -707,15 +708,15 @@ class _InventoryScreenState extends State<InventoryScreen>
                   ),
                   _detailRow(
                     AppLocalizations.t('buying_price'),
-                    '₱${product.buyingPrice.toStringAsFixed(2)}',
+                    AppCurrency.peso(product.buyingPrice),
                   ),
                   _detailRow(
                     AppLocalizations.t('selling_price'),
-                    '₱${product.sellingPrice.toStringAsFixed(2)}',
+                    AppCurrency.peso(product.sellingPrice),
                   ),
                   _detailRow(
                     AppLocalizations.t('profit'),
-                    '₱${product.profit.toStringAsFixed(2)}',
+                    AppCurrency.peso(product.profit),
                   ),
 
                   // Show shoe sizes if applicable
@@ -940,7 +941,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '₱${profit.toStringAsFixed(2)} (${margin.toStringAsFixed(1)}%)',
+                          '${AppCurrency.peso(profit)} (${margin.toStringAsFixed(1)}%)',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -1579,7 +1580,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'PHP ${totalDamageValue.toStringAsFixed(2)}',
+                          AppCurrency.php(totalDamageValue),
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -1715,7 +1716,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                                     '${AppLocalizations.t('quantity')}: ${report.quantity}',
                                   ),
                                   Text(
-                                    '${AppLocalizations.t('value')}: PHP ${report.totalValue.toStringAsFixed(2)}',
+                                    '${AppLocalizations.t('value')}: ${AppCurrency.php(report.totalValue)}',
                                   ),
                                   if (report.reason.isNotEmpty)
                                     Text(
@@ -1900,7 +1901,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                         '${AppLocalizations.t('quantity')}: ${report.quantity}',
                       ),
                       Text(
-                        '${AppLocalizations.t('total_value')}: PHP ${report.totalValue.toStringAsFixed(2)}',
+                        '${AppLocalizations.t('total_value')}: ${AppCurrency.php(report.totalValue)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.red,
@@ -2228,7 +2229,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                     ),
                     _receiptRow(
                       '${AppLocalizations.t('unit_price')}:',
-                      'PHP ${sale.items.first.unitPrice.toStringAsFixed(2)}',
+                      AppCurrency.php(sale.items.first.unitPrice),
                     ),
                     const Divider(height: 20),
                     _receiptRow(
@@ -2248,7 +2249,7 @@ class _InventoryScreenState extends State<InventoryScreen>
                           ),
                         ),
                         Text(
-                          'PHP ${sale.totalAmount.toStringAsFixed(2)}',
+                          AppCurrency.php(sale.totalAmount),
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 18,

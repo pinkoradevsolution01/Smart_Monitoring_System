@@ -10,6 +10,7 @@ import '../../services/license_service.dart';
 import '../../services/user_service.dart';
 import '../../services/code_request_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../utils/currency_formatter.dart';
 import '../owner/owner_dashboard.dart';
 import '../cashier/cashier_dashboard.dart';
 
@@ -20,7 +21,7 @@ class PackageSelectionScreen extends StatefulWidget {
   final User? currentUser; // Optional: User who is selecting package
 
   const PackageSelectionScreen({
-    super.key, 
+    super.key,
     required this.packageService,
     this.currentUser,
   });
@@ -270,8 +271,6 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
     }
   }
 
-
-
   Widget _buildPackageCard(PricingPackage package) {
     final isHovered = _hoveredPackage == package;
     final isRecommended = package.recommended;
@@ -372,30 +371,20 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                                       package.type != PackageType.enterprise &&
                                       package.price.contains(RegExp(r'\d')) &&
                                       _pricingModel == _PricingModel.saas) {
-                                    final priceStr = displayPrice.replaceAll(
-                                      RegExp(r'[^0-9]'),
-                                      '',
-                                    );
                                     final original =
-                                        int.tryParse(priceStr) ?? 0;
+                                        AppCurrency.parsePriceText(
+                                          displayPrice,
+                                        )?.round() ??
+                                        0;
                                     final discounted =
                                         (original - _subscriptionDiscount!)
                                             .clamp(0, original);
-                                    // Format with thousand separator
-                                    final formattedDiscount = discounted
-                                        .toString()
-                                        .replaceAllMapped(
-                                          RegExp(
-                                            r'(\d{1,3})(?=(\d{3})+(?!\d))',
-                                          ),
-                                          (Match m) => '${m[1]},',
-                                        );
                                     return Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          '₱$formattedDiscount',
+                                          AppCurrency.peso(discounted),
                                           style: TextStyle(
                                             fontSize: 42,
                                             fontWeight: FontWeight.bold,
@@ -441,7 +430,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                                             top: 6.0,
                                           ),
                                           child: Text(
-                                            package.oldPrice!,
+                                            AppCurrency.pesoFromText(
+                                              package.oldPrice!,
+                                            ),
                                             style: TextStyle(
                                               fontSize: 16,
                                               color: Colors.grey.shade600,
@@ -469,9 +460,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                           ),
                           if (displayPeriod.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(
-                                top: 8.0,
-                              ),
+                              padding: const EdgeInsets.only(top: 8.0),
                               child: Text(
                                 displayPeriod,
                                 style: TextStyle(
@@ -531,8 +520,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                             package.type == PackageType.enterprise
                                 ? 'Contact Sales'
                                 : (_pricingModel == _PricingModel.oneTimeLicense
-                                    ? 'Request One-time License'
-                                    : 'Get Started - Monthly'),
+                                      ? 'Request One-time License'
+                                      : 'Get Started - Monthly'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -753,35 +742,25 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         if (!oneTimeLicense) {
           try {
             final prefs = await SharedPreferences.getInstance();
-            // Parse numeric value from package.price like '₱1,999'
-            final priceStr = package.price.replaceAll(RegExp(r'[^0-9]'), '');
-            if (priceStr.isNotEmpty) {
-              final original = int.tryParse(priceStr) ?? 0;
+            // Parse a package price such as `₱1,999` or `₱1,999.00`.
+            final original = AppCurrency.parsePriceText(package.price)?.round();
+            if (original != null) {
               final discount = 200; // fixed monthly discount
               final discounted = (original - discount) > 0
                   ? (original - discount)
                   : 0;
-              // Format with thousand separators
-              final formattedDiscounted = discounted.toString().replaceAllMapped(
-                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                (Match m) => '${m[1]},',
-              );
-              final formattedOriginal = original.toString().replaceAllMapped(
-                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                (Match m) => '${m[1]},',
-              );
               // Save discount and computed price for later use in settings or receipts
               await prefs.setInt('subscription_discount', discount);
               await prefs.setInt('subscription_price', discounted);
               await prefs.setInt('subscription_original_price', original);
-              // Human-readable display with thousand separators
+              // Human-readable display with grouped thousands and cents.
               await prefs.setString(
                 'subscription_price_display',
-                '₱$formattedDiscounted',
+                AppCurrency.peso(discounted),
               );
               await prefs.setString(
                 'subscription_original_price_display',
-                '₱$formattedOriginal',
+                AppCurrency.peso(original),
               );
             }
           } catch (e) {
@@ -924,7 +903,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
             actions: [
               ElevatedButton(
                 onPressed: () {
-                  debugPrint('✅ User clicked button - closing dialog with confirmation');
+                  debugPrint(
+                    '✅ User clicked button - closing dialog with confirmation',
+                  );
                   Navigator.pop(context, true);
                 },
                 style: ElevatedButton.styleFrom(
@@ -942,12 +923,14 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
         );
 
         if (confirmed == true && mounted) {
-          debugPrint('🎯 Activation confirmed - initializing business sync and navigating to dashboard');
-          
+          debugPrint(
+            '🎯 Activation confirmed - initializing business sync and navigating to dashboard',
+          );
+
           // Initialize business in Supabase for cloud sync if owner is registered
           try {
             User? user = widget.currentUser;
-            
+
             // If no currentUser, try to fetch owner from database first
             if (user == null) {
               final userService = GetIt.I<UserService>();
@@ -956,7 +939,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                 user = owners.first;
               }
             }
-            
+
             // Initialize business for cloud sync
             if (user != null && user.role == UserRole.owner) {
               final supabaseSyncService = GetIt.I<SupabaseSyncService>();
@@ -968,14 +951,16 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
               debugPrint('✅ Business initialized in Supabase for cloud sync');
             }
           } catch (e) {
-            debugPrint('⚠️ Warning: Could not initialize business in Supabase: $e');
+            debugPrint(
+              '⚠️ Warning: Could not initialize business in Supabase: $e',
+            );
             // App continues - does not block dashboard navigation
           }
-          
+
           // Navigate based on whether user is logged in or exists in database
           User? user = widget.currentUser;
           debugPrint('📋 widget.currentUser: ${user?.email ?? "null"}');
-          
+
           // If no currentUser, try to fetch owner from database
           if (user == null) {
             debugPrint('❌ No currentUser, fetching from database...');
@@ -989,19 +974,20 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           } else {
             debugPrint('✅ Using currentUser from parameter: ${user.email}');
           }
-          
+
           if (user != null) {
-            debugPrint('🚀 Navigating to ${user.role} dashboard for ${user.email}');
+            debugPrint(
+              '🚀 Navigating to ${user.role} dashboard for ${user.email}',
+            );
             // User exists (either from parameter or database), navigate to dashboard
             Widget dashboard;
-            
+
             switch (user.role) {
               case UserRole.owner:
-                debugPrint('📍 Creating OwnerDashboard with showManageAccount=true');
-                dashboard = OwnerDashboard(
-                  user: user,
-                  showManageAccount: true,
+                debugPrint(
+                  '📍 Creating OwnerDashboard with showManageAccount=true',
                 );
+                dashboard = OwnerDashboard(user: user, showManageAccount: true);
                 break;
               case UserRole.cashier:
                 dashboard = CashierDashboard(user: user);
@@ -1012,11 +998,11 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
                 Navigator.pushReplacementNamed(context, '/login');
                 return;
             }
-            
+
             debugPrint('✅ Pushing replacement route to dashboard');
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => dashboard),
-            );
+            Navigator.of(
+              context,
+            ).pushReplacement(MaterialPageRoute(builder: (_) => dashboard));
             debugPrint('✅ Navigation completed');
           } else {
             debugPrint('⚠️ No user found - going to login');
@@ -1024,7 +1010,9 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
             Navigator.pushReplacementNamed(context, '/login');
           }
         } else {
-          debugPrint('⚠️ Confirmation was not true or not mounted. confirmed=$confirmed, mounted=$mounted');
+          debugPrint(
+            '⚠️ Confirmation was not true or not mounted. confirmed=$confirmed, mounted=$mounted',
+          );
         }
       } else {
         // Show error dialog
@@ -1092,9 +1080,7 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Start a free 14-day trial for this plan?',
-            ),
+            const Text('Start a free 14-day trial for this plan?'),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -1292,8 +1278,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           content: Text(
             success
                 ? 'Your activation code request has been sent to the developer.\n\n'
-                  'You will receive the activation code via email at:\n${requestData.contactEmail}\n\n'
-                  'Once the code is emailed, it will be valid for 24 hours.'
+                      'You will receive the activation code via email at:\n${requestData.contactEmail}\n\n'
+                      'Once the code is emailed, it will be valid for 24 hours.'
                 : 'Failed to send request. Please check your internet connection and try again, or contact support directly.',
           ),
           actions: [
@@ -1347,14 +1333,16 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
   String _priceFor(PricingPackage package) {
     if (_pricingModel == _PricingModel.oneTimeLicense &&
         package.oneTimePrice.isNotEmpty) {
-      return package.oneTimePrice;
+      return AppCurrency.pesoFromText(package.oneTimePrice);
     }
-    return package.price;
+    return AppCurrency.pesoFromText(package.price);
   }
 
   String _periodFor(PricingPackage package) {
     if (package.type == PackageType.enterprise) return '';
-    return _pricingModel == _PricingModel.oneTimeLicense ? 'one-time' : '/month';
+    return _pricingModel == _PricingModel.oneTimeLicense
+        ? 'one-time'
+        : '/month';
   }
 }
 
@@ -1434,14 +1422,14 @@ class _ActivationCodeDialogState extends State<_ActivationCodeDialog> {
                     Text(
                       widget.oneTimeLicense
                           ? 'One-time License:\n'
-                            '1. Complete your one-time payment\n'
-                            '2. Enter the activation code provided by the developer\n'
-                            '3. Activate your permanent license'
+                                '1. Complete your one-time payment\n'
+                                '2. Enter the activation code provided by the developer\n'
+                                '3. Activate your permanent license'
                           : 'Monthly Rental System:\n'
-                            '1. Complete payment for this month\n'
-                            '2. Developer will send activation code\n'
-                            '3. Enter code below (valid 1 month)\n'
-                            '4. Renew monthly with new code',
+                                '1. Complete payment for this month\n'
+                                '2. Developer will send activation code\n'
+                                '3. Enter code below (valid 1 month)\n'
+                                '4. Renew monthly with new code',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade700,

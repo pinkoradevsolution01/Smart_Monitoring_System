@@ -287,7 +287,6 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
                     );
                   },
                 ),
-
               ],
             ),
           ),
@@ -318,8 +317,8 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
         final name = devService.displayName.isNotEmpty
             ? devService.displayName
             : (devService.username.isNotEmpty
-                ? devService.username
-                : 'Developer');
+                  ? devService.username
+                  : 'Developer');
 
         return Card(
           color: Colors.grey[850],

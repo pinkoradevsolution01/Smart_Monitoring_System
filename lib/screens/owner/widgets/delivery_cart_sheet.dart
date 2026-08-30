@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../utils/currency_formatter.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -313,9 +314,7 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
 
   Future<void> _pickImageFile() async {
     try {
-      final file = await FilePicker.pickFile(
-        type: FileType.image,
-      );
+      final file = await FilePicker.pickFile(type: FileType.image);
 
       if (file?.path != null) {
         setState(() {
@@ -519,7 +518,9 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                     ],
                                     const SizedBox(height: 4),
                                     Text(
-                                      '₱${item.product.sellingPrice.toStringAsFixed(2)}',
+                                      AppCurrency.peso(
+                                        item.product.sellingPrice,
+                                      ),
                                       style: TextStyle(
                                         color: Colors.grey[600],
                                         fontSize: 13,
@@ -610,7 +611,7 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                               CrossAxisAlignment.end,
                                           children: [
                                             Text(
-                                              '₱${itemTotal.toStringAsFixed(2)}',
+                                              AppCurrency.peso(itemTotal),
                                               style: TextStyle(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 16,
@@ -797,7 +798,9 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                   ),
                                 ),
                                 Text(
-                                  '₱${(widget.pos.cartTotal - _cashTendered).toStringAsFixed(2)}',
+                                  AppCurrency.peso(
+                                    (widget.pos.cartTotal - _cashTendered),
+                                  ),
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 18,
@@ -834,7 +837,7 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                   ),
                                 ),
                                 Text(
-                                  '₱${_change.toStringAsFixed(2)}',
+                                  AppCurrency.peso(_change),
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 18,
@@ -900,7 +903,13 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                     ),
                                   ),
                                   Text(
-                                    '₱${(widget.pos.cartTotal - (double.tryParse(_amountController.text) ?? 0.0)).toStringAsFixed(2)}',
+                                    AppCurrency.peso(
+                                      (widget.pos.cartTotal -
+                                          (double.tryParse(
+                                                _amountController.text,
+                                              ) ??
+                                              0.0)),
+                                    ),
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 18,
@@ -1110,7 +1119,7 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      '$estimatedLoyaltyPoints points · ₱${estimatedRedemptionValue.toStringAsFixed(2)} value',
+                                      '$estimatedLoyaltyPoints points · ${AppCurrency.peso(estimatedRedemptionValue)} value',
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodyMedium,
@@ -1145,7 +1154,7 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                           ),
                           const Spacer(),
                           Text(
-                            '₱${widget.pos.cartTotal.toStringAsFixed(2)}',
+                            AppCurrency.peso(widget.pos.cartTotal),
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,

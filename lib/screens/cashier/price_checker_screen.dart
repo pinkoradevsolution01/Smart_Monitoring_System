@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../models/product.dart';
@@ -540,7 +541,7 @@ class _PriceCheckerScreenState extends State<PriceCheckerScreen> {
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
                               child: Text(
-                                '₱${product.sellingPrice.toStringAsFixed(2)}',
+                                AppCurrency.peso(product.sellingPrice),
                                 style: const TextStyle(
                                   fontSize: 48,
                                   fontWeight: FontWeight.bold,
@@ -820,7 +821,7 @@ class _PriceCheckerScreenState extends State<PriceCheckerScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '₱${product.sellingPrice.toStringAsFixed(2)}',
+                          AppCurrency.peso(product.sellingPrice),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

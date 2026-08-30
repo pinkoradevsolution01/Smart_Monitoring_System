@@ -79,14 +79,14 @@ class Camera {
     if (username == null || password == null || username!.isEmpty) {
       return url;
     }
-    
+
     // Parse the URL and inject credentials
     final uri = Uri.parse(url);
     if (uri.scheme == 'rtsp') {
       // Format: rtsp://username:password@host:port/path
       return 'rtsp://$username:$password@${uri.host}:${uri.port}${uri.path}';
     }
-    
+
     return url;
   }
 }

@@ -25,10 +25,10 @@ class CameraPlayerWidget extends StatefulWidget {
 class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
   // Video player for iOS and HTTP streams
   VideoPlayerController? _videoController;
-  
+
   // VLC player for RTSP and desktop
   VlcPlayerController? _vlcController;
-  
+
   bool _isLoading = true;
   String? _errorMessage;
   bool _useVlc = false;
@@ -77,10 +77,10 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
     // Use VLC for RTSP streams and desktop platforms
     // VLC has better RTSP support than video_player
     if (kIsWeb) return false; // VLC not supported on web
-    
+
     final url = widget.camera.url.toLowerCase();
     final isRtsp = url.startsWith('rtsp://');
-    
+
     // Use VLC for RTSP or on desktop platforms
     if (isRtsp) return true;
     if (defaultTargetPlatform == TargetPlatform.windows ||
@@ -88,7 +88,7 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
         defaultTargetPlatform == TargetPlatform.macOS) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -98,7 +98,8 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
     // Add authentication if provided
     if (widget.camera.username != null && widget.camera.username!.isNotEmpty) {
       final uri = Uri.parse(widget.camera.url);
-      final userInfo = '${widget.camera.username}:${widget.camera.password ?? ''}';
+      final userInfo =
+          '${widget.camera.username}:${widget.camera.password ?? ''}';
       streamUrl = widget.camera.url.replaceFirst(
         '${uri.scheme}://',
         '${uri.scheme}://$userInfo@',
@@ -110,12 +111,8 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
       hwAcc: HwAcc.full,
       autoPlay: true,
       options: VlcPlayerOptions(
-        advanced: VlcAdvancedOptions([
-          VlcAdvancedOptions.networkCaching(1000),
-        ]),
-        rtp: VlcRtpOptions([
-          VlcRtpOptions.rtpOverRtsp(true),
-        ]),
+        advanced: VlcAdvancedOptions([VlcAdvancedOptions.networkCaching(1000)]),
+        rtp: VlcRtpOptions([VlcRtpOptions.rtpOverRtsp(true)]),
         video: VlcVideoOptions([
           VlcVideoOptions.dropLateFrames(true),
           VlcVideoOptions.skipFrames(true),
@@ -162,7 +159,8 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
       if (mounted) {
         if (_videoController!.value.hasError) {
           setState(() {
-            _errorMessage = _videoController!.value.errorDescription ??
+            _errorMessage =
+                _videoController!.value.errorDescription ??
                 'Failed to connect to camera';
             _isLoading = false;
           });
@@ -238,9 +236,7 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: theme.colorScheme.primary,
-            ),
+            CircularProgressIndicator(color: theme.colorScheme.primary),
             const SizedBox(height: 16),
             Text(
               'Connecting to ${widget.camera.name}...',
@@ -269,11 +265,7 @@ class _CameraPlayerWidgetState extends State<CameraPlayerWidget> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.red[300],
-            ),
+            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
             const SizedBox(height: 16),
             Text(
               'Connection Failed',

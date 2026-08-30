@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import '../../services/package_service.dart';
 import 'dart:io';
@@ -7,6 +8,8 @@ import '../../widgets/header_clock.dart';
 import '../../services/pos_service.dart';
 import '../../services/user_service.dart';
 import '../../models/product.dart';
+import '../../models/cart_item.dart';
+import '../../models/shoe_size.dart';
 import '../../models/sale.dart';
 import 'package:smart_monitoring_system/screens/owner/cctv_screen.dart';
 import 'widgets/cart_sheet.dart';
@@ -29,6 +32,7 @@ class _CashierPOSState extends State<CashierPOS> {
   List<String> _categories = ['All'];
   final String _selectedPaymentMethod = 'cash';
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, TextEditingController> _quantityControllers = {};
   String _searchQuery = '';
   bool _cartPulsing = false;
 
@@ -50,6 +54,7 @@ class _CashierPOSState extends State<CashierPOS> {
 
   void _onPosChanged() {
     if (mounted) {
+      _syncQuantityControllers();
       _updateCategories();
       setState(() {});
     }
@@ -67,6 +72,9 @@ class _CashierPOSState extends State<CashierPOS> {
   @override
   void dispose() {
     _searchController.dispose();
+    for (final controller in _quantityControllers.values) {
+      controller.dispose();
+    }
     pos.removeListener(_onPosChanged);
     super.dispose();
   }
@@ -75,6 +83,7 @@ class _CashierPOSState extends State<CashierPOS> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (context) => CartSheet(
         pos: pos,
@@ -223,21 +232,15 @@ class _CashierPOSState extends State<CashierPOS> {
                 onTap: isAvailable
                     ? () {
                         Navigator.pop(context);
-                        // Add product to cart with specific size
-                        pos.addToCart(
-                          product,
-                          quantity: 1,
-                          selectedShoeSize: size,
-                        );
-                        _celebrateCartAdd();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              '${product.name} (Size: ${size.usSize}) ${AppLocalizations.t('added_to_cart')}',
-                            ),
-                            duration: const Duration(seconds: 1),
-                          ),
-                        );
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            _showAddToCartQuantityDialog(
+                              product,
+                              availableStock: size.quantity,
+                              selectedShoeSize: size,
+                            );
+                          }
+                        });
                       }
                     : null,
               );
@@ -250,6 +253,137 @@ class _CashierPOSState extends State<CashierPOS> {
             child: Text(AppLocalizations.t('cancel')),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showAddToCartQuantityDialog(
+    Product product, {
+    required int availableStock,
+    ShoeSize? selectedShoeSize,
+  }) async {
+    final existingQuantity = pos.cart
+        .where(
+          (item) =>
+              item.product.id == product.id &&
+              item.selectedShoeSize?.usSize == selectedShoeSize?.usSize,
+        )
+        .fold<int>(0, (total, item) => total + item.quantity);
+    final maxToAdd = availableStock - existingQuantity;
+
+    if (maxToAdd <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'All available stock for ${product.name} is in the cart.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    var quantity = 1;
+    final quantityController = TextEditingController(text: '$quantity');
+    final selectedQuantity = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void setQuantity(int value) {
+            final safeValue = value.clamp(1, maxToAdd).toInt();
+            setDialogState(() {
+              quantity = safeValue;
+              quantityController.value = TextEditingValue(
+                text: '$safeValue',
+                selection: TextSelection.collapsed(offset: '$safeValue'.length),
+              );
+            });
+          }
+
+          return AlertDialog(
+            title: Text('Add ${product.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  selectedShoeSize == null
+                      ? '$maxToAdd available to add'
+                      : 'Size ${selectedShoeSize.usSize} • $maxToAdd available to add',
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton.filledTonal(
+                      tooltip: 'Decrease quantity',
+                      onPressed: quantity > 1
+                          ? () => setQuantity(quantity - 1)
+                          : null,
+                      icon: const Icon(Icons.remove),
+                    ),
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 76,
+                      child: TextField(
+                        controller: quantityController,
+                        autofocus: true,
+                        keyboardType: TextInputType.number,
+                        textAlign: TextAlign.center,
+                        decoration: const InputDecoration(
+                          labelText: 'Qty',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          final parsed = int.tryParse(value);
+                          if (parsed != null && parsed >= 1) {
+                            setQuantity(parsed);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    IconButton.filledTonal(
+                      tooltip: 'Increase quantity',
+                      onPressed: quantity < maxToAdd
+                          ? () => setQuantity(quantity + 1)
+                          : null,
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(AppLocalizations.t('cancel')),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, quantity),
+                icon: const Icon(Icons.add_shopping_cart),
+                label: Text(AppLocalizations.t('added_to_cart')),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    quantityController.dispose();
+
+    if (selectedQuantity == null || !mounted) return;
+    pos.addToCart(
+      product,
+      quantity: selectedQuantity,
+      selectedShoeSize: selectedShoeSize,
+    );
+    _celebrateCartAdd();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${product.name}${selectedShoeSize == null ? '' : ' (Size: ${selectedShoeSize.usSize})'} × $selectedQuantity ${AppLocalizations.t('added_to_cart')}',
+        ),
+        duration: const Duration(seconds: 1),
       ),
     );
   }
@@ -273,28 +407,7 @@ class _CashierPOSState extends State<CashierPOS> {
                   return;
                 }
 
-                // Check if adding would exceed stock
-                final existingItems = pos.cart.where(
-                  (item) => item.product.id == p.id,
-                );
-                final existingInCart = existingItems.isEmpty
-                    ? 0
-                    : existingItems.first.quantity;
-
-                if (existingInCart >= p.quantity) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Cannot add more. Only ${p.quantity} in stock',
-                      ),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
-
-                pos.addToCart(p, quantity: 1);
-                _celebrateCartAdd();
+                _showAddToCartQuantityDialog(p, availableStock: p.quantity);
               },
         onLongPress: () async {
           if (p.imagePath != null && p.imagePath!.isNotEmpty) {
@@ -416,7 +529,7 @@ class _CashierPOSState extends State<CashierPOS> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '₱${p.sellingPrice.toStringAsFixed(2)}',
+                    AppCurrency.peso(p.sellingPrice),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
@@ -431,9 +544,9 @@ class _CashierPOSState extends State<CashierPOS> {
                     status: isOutOfStock
                         ? AppStatus.danger
                         : (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
-                                p.reorderLevel
-                            ? AppStatus.warning
-                            : AppStatus.success,
+                              p.reorderLevel
+                        ? AppStatus.warning
+                        : AppStatus.success,
                   ),
                 ],
               ),
@@ -561,7 +674,7 @@ class _CashierPOSState extends State<CashierPOS> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '₱${s.totalAmount.toStringAsFixed(2)}',
+                            AppCurrency.peso(s.totalAmount),
                             style: TextStyle(
                               decoration: isCancelled
                                   ? TextDecoration.lineThrough
@@ -647,11 +760,9 @@ class _CashierPOSState extends State<CashierPOS> {
                                   ],
                                 ),
                                 subtitle: Text(
-                                  '${item.quantity} x ₱${item.unitPrice.toStringAsFixed(2)}',
+                                  '${item.quantity} x ${AppCurrency.peso(item.unitPrice)}',
                                 ),
-                                trailing: Text(
-                                  '₱${item.subtotal.toStringAsFixed(2)}',
-                                ),
+                                trailing: Text(AppCurrency.peso(item.subtotal)),
                               );
                             }).toList(),
                     );
@@ -692,7 +803,7 @@ class _CashierPOSState extends State<CashierPOS> {
               ),
               const SizedBox(height: 8),
               Text(
-                '${AppLocalizations.t('total_prefix')}${sale.totalAmount.toStringAsFixed(2)}',
+                '${AppLocalizations.t('total_prefix')}${AppCurrency.amount(sale.totalAmount)}',
                 style: TextStyle(fontSize: 14, color: Colors.grey[600]),
               ),
               const SizedBox(height: 16),
@@ -1115,12 +1226,92 @@ class _CashierPOSState extends State<CashierPOS> {
                       const Divider(height: 1),
                   itemBuilder: (context, idx) {
                     final item = cart[idx];
+                    final maxStock =
+                        item.selectedShoeSize?.quantity ??
+                        item.product.quantity;
+                    final quantityController = _quantityControllerFor(item);
                     return ListTile(
                       title: Text(item.product.name),
-                      subtitle: Text(
-                        '${item.quantity} x ₱${item.product.sellingPrice.toStringAsFixed(2)}',
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(AppCurrency.peso(item.product.sellingPrice)),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 2,
+                            runSpacing: 2,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text('Qty'),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'Decrease quantity',
+                                onPressed: item.quantity > 1
+                                    ? () => _changeOrderItemQuantity(
+                                        index: idx,
+                                        delta: -1,
+                                        maxStock: maxStock,
+                                        controller: quantityController,
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.remove_circle_outline),
+                              ),
+                              SizedBox(
+                                width: 52,
+                                child: TextFormField(
+                                  controller: quantityController,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.center,
+                                  textInputAction: TextInputAction.done,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 8,
+                                    ),
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onFieldSubmitted: (value) =>
+                                      _updateOrderItemQuantity(
+                                        index: idx,
+                                        value: value,
+                                        maxStock: maxStock,
+                                        controller: quantityController,
+                                      ),
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'Increase quantity',
+                                onPressed: item.quantity < maxStock
+                                    ? () => _changeOrderItemQuantity(
+                                        index: idx,
+                                        delta: 1,
+                                        maxStock: maxStock,
+                                        controller: quantityController,
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.add_circle_outline),
+                              ),
+                              Text('of $maxStock'),
+                            ],
+                          ),
+                        ],
                       ),
-                      trailing: Text('₱${item.subtotal.toStringAsFixed(2)}'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(AppCurrency.peso(item.subtotal)),
+                          IconButton(
+                            tooltip: AppLocalizations.t('remove_item'),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.red,
+                            ),
+                            onPressed: () => pos.removeFromCart(idx),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -1134,7 +1325,7 @@ class _CashierPOSState extends State<CashierPOS> {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             Text(
-              '₱${pos.cartSubtotal.toStringAsFixed(2)}',
+              AppCurrency.peso(pos.cartSubtotal),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ],
@@ -1146,6 +1337,85 @@ class _CashierPOSState extends State<CashierPOS> {
           label: Text(AppLocalizations.t('open_cart_tooltip')),
         ),
       ],
+    );
+  }
+
+  void _updateOrderItemQuantity({
+    required int index,
+    required String value,
+    required int maxStock,
+    required TextEditingController controller,
+  }) {
+    final requestedQuantity = int.tryParse(value);
+    if (requestedQuantity == null || requestedQuantity < 1) {
+      if (index >= 0 && index < pos.cart.length) {
+        _setQuantityControllerValue(controller, pos.cart[index].quantity);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a quantity of at least 1.')),
+      );
+      return;
+    }
+
+    final quantity = requestedQuantity.clamp(1, maxStock).toInt();
+    pos.updateCartItem(index, quantity);
+    _setQuantityControllerValue(controller, quantity);
+    if (requestedQuantity > maxStock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Only $maxStock item(s) are available in stock.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  TextEditingController _quantityControllerFor(CartItem item) {
+    final key = _cartItemKey(item);
+    return _quantityControllers.putIfAbsent(
+      key,
+      () => TextEditingController(text: '${item.quantity}'),
+    );
+  }
+
+  String _cartItemKey(CartItem item) {
+    final size = item.selectedShoeSize?.usSize ?? '';
+    return '${item.product.id ?? item.product.barcode}:$size';
+  }
+
+  void _syncQuantityControllers() {
+    for (final item in pos.cart) {
+      final controller = _quantityControllers[_cartItemKey(item)];
+      if (controller != null && controller.text != '${item.quantity}') {
+        _setQuantityControllerValue(controller, item.quantity);
+      }
+    }
+  }
+
+  void _changeOrderItemQuantity({
+    required int index,
+    required int delta,
+    required int maxStock,
+    required TextEditingController controller,
+  }) {
+    final currentQuantity =
+        int.tryParse(controller.text) ?? pos.cart[index].quantity;
+    _updateOrderItemQuantity(
+      index: index,
+      value: '${currentQuantity + delta}',
+      maxStock: maxStock,
+      controller: controller,
+    );
+  }
+
+  void _setQuantityControllerValue(
+    TextEditingController controller,
+    int quantity,
+  ) {
+    final value = '$quantity';
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
     );
   }
 }

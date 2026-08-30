@@ -19,7 +19,8 @@ class User {
   final String? businessId; // Links user to a business for multi-device sync
   final DateTime createdAt;
   final bool isActive;
-  final String authMethod; // 'password' or 'google' - used to identify OAuth users
+  final String
+  authMethod; // 'password' or 'google' - used to identify OAuth users
 
   User({
     required this.id,
@@ -53,11 +54,12 @@ class User {
 
   factory User.fromMap(Map<String, dynamic> map) {
     final rawPin = map['pin']?.toString();
-    final rawContactNumber =
-        (map['contactNumber'] ?? map['contact_number'])?.toString();
+    final rawContactNumber = (map['contactNumber'] ?? map['contact_number'])
+        ?.toString();
     // Older versions incorrectly stored the owner's phone number in `pin`.
     // Recover that legacy value as a contact number while preserving real 4-digit PINs.
-    final legacyContactNumber = rawContactNumber == null &&
+    final legacyContactNumber =
+        rawContactNumber == null &&
             rawPin != null &&
             !RegExp(r'^\d{4}$').hasMatch(rawPin)
         ? rawPin
@@ -97,15 +99,18 @@ class User {
     }
 
     final createdAtValue =
-        map['createdAt'] ?? map['created_at'] ?? DateTime.now().toIso8601String();
+        map['createdAt'] ??
+        map['created_at'] ??
+        DateTime.now().toIso8601String();
     final isActiveValue = map['isActive'] ?? map['is_active'] ?? true;
-    final authMethodValue = map['authMethod'] ?? map['auth_method'] ?? 'password';
+    final authMethodValue =
+        map['authMethod'] ?? map['auth_method'] ?? 'password';
     final isActive = isActiveValue is bool
         ? isActiveValue
         : isActiveValue is num
         ? isActiveValue == 1
         : isActiveValue.toString() == '1' ||
-            isActiveValue.toString().toLowerCase() == 'true';
+              isActiveValue.toString().toLowerCase() == 'true';
 
     return User(
       id: map['id'] ?? '',

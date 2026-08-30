@@ -3,31 +3,32 @@ import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart' as win32;
 import 'dart:io' show Platform;
 
-typedef _LogonUserNative = Int32 Function(
-  Pointer<Utf16> lpszUsername,
-  Pointer<Utf16> lpszDomain,
-  Pointer<Utf16> lpszPassword,
-  Uint32 dwLogonType,
-  Uint32 dwLogonProvider,
-  Pointer<IntPtr> phToken,
-);
+typedef _LogonUserNative =
+    Int32 Function(
+      Pointer<Utf16> lpszUsername,
+      Pointer<Utf16> lpszDomain,
+      Pointer<Utf16> lpszPassword,
+      Uint32 dwLogonType,
+      Uint32 dwLogonProvider,
+      Pointer<IntPtr> phToken,
+    );
 
-typedef _LogonUserDart = int Function(
-  Pointer<Utf16> lpszUsername,
-  Pointer<Utf16> lpszDomain,
-  Pointer<Utf16> lpszPassword,
-  int dwLogonType,
-  int dwLogonProvider,
-  Pointer<IntPtr> phToken,
-);
+typedef _LogonUserDart =
+    int Function(
+      Pointer<Utf16> lpszUsername,
+      Pointer<Utf16> lpszDomain,
+      Pointer<Utf16> lpszPassword,
+      int dwLogonType,
+      int dwLogonProvider,
+      Pointer<IntPtr> phToken,
+    );
 
 _LogonUserDart? _logonUser;
 
 _LogonUserDart get _logonUserFn {
-  return _logonUser ??= DynamicLibrary.open('advapi32.dll').lookupFunction<
-    _LogonUserNative,
-    _LogonUserDart
-  >('LogonUserW');
+  return _logonUser ??= DynamicLibrary.open(
+    'advapi32.dll',
+  ).lookupFunction<_LogonUserNative, _LogonUserDart>('LogonUserW');
 }
 
 // Constants for LogonUser

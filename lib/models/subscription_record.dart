@@ -68,7 +68,9 @@ class SubscriptionRecord {
   /// Check if subscription is expired
   bool get isExpired =>
       status == 'expired' ||
-      (status == 'active' && expiresAt != null && DateTime.now().isAfter(expiresAt!));
+      (status == 'active' &&
+          expiresAt != null &&
+          DateTime.now().isAfter(expiresAt!));
 
   /// Get remaining days until expiry
   int? get remainingDays => expiresAt?.difference(DateTime.now()).inDays;
@@ -78,7 +80,9 @@ class SubscriptionRecord {
     if (status == 'cancelled') {
       return 'Cancelled';
     } else if (isActive) {
-      return expiresAt == null ? 'Active (Perpetual)' : 'Active ($remainingDays days left)';
+      return expiresAt == null
+          ? 'Active (Perpetual)'
+          : 'Active ($remainingDays days left)';
     } else if (isExpired) {
       return 'Expired';
     } else {

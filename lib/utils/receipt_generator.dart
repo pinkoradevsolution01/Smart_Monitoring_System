@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'currency_formatter.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -152,13 +153,13 @@ class ReceiptGenerator {
                   if (sale.reservationFee != null &&
                       sale.status == SaleStatus.pending) ...[
                     pw.Text(
-                      'Reservation Fee: ₱${sale.reservationFee!.toStringAsFixed(2)}',
+                      'Reservation Fee: ${AppCurrency.peso(sale.reservationFee!)}',
                       style: font != null
                           ? pw.TextStyle(font: font, fontSize: 7)
                           : const pw.TextStyle(fontSize: 7),
                     ),
                     pw.Text(
-                      'Remaining Balance: ₱${(sale.totalAmount - sale.reservationFee!).toStringAsFixed(2)}',
+                      'Remaining Balance: ${AppCurrency.peso((sale.totalAmount - sale.reservationFee!))}',
                       style: font != null
                           ? pw.TextStyle(font: font, fontSize: 7)
                           : const pw.TextStyle(fontSize: 7),
@@ -208,7 +209,7 @@ class ReceiptGenerator {
                               width: 12 * PdfPageFormat.mm,
                               alignment: pw.Alignment.centerRight,
                               child: pw.Text(
-                                'PHP ${it.subtotal.toStringAsFixed(2)}',
+                                AppCurrency.php(it.subtotal),
                                 style: font != null
                                     ? pw.TextStyle(font: font, fontSize: 8)
                                     : const pw.TextStyle(fontSize: 8),
@@ -236,7 +237,7 @@ class ReceiptGenerator {
                       width: 14 * PdfPageFormat.mm,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        '₱${sale.subtotal.toStringAsFixed(2)}',
+                        AppCurrency.peso(sale.subtotal),
                         style: font != null
                             ? pw.TextStyle(font: font, fontSize: 8)
                             : const pw.TextStyle(fontSize: 8),
@@ -258,7 +259,7 @@ class ReceiptGenerator {
                       width: 14 * PdfPageFormat.mm,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        '-₱${(sale.subtotal - sale.totalAmount).toStringAsFixed(2)}',
+                        '-${AppCurrency.peso((sale.subtotal - sale.totalAmount))}',
                         style: font != null
                             ? pw.TextStyle(font: font, fontSize: 8)
                             : const pw.TextStyle(fontSize: 8),
@@ -287,7 +288,7 @@ class ReceiptGenerator {
                       width: 14 * PdfPageFormat.mm,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        '₱${sale.totalAmount.toStringAsFixed(2)}',
+                        AppCurrency.peso(sale.totalAmount),
                         style: fontBold != null
                             ? pw.TextStyle(
                                 font: fontBold,
@@ -435,11 +436,11 @@ class ReceiptGenerator {
                   if (sale.reservationFee != null &&
                       sale.status == SaleStatus.pending) ...[
                     pw.Text(
-                      'Reservation Fee: ₱${sale.reservationFee!.toStringAsFixed(2)}',
+                      'Reservation Fee: ${AppCurrency.peso(sale.reservationFee!)}',
                       style: font != null ? pw.TextStyle(font: font) : null,
                     ),
                     pw.Text(
-                      'Remaining Balance: ₱${(sale.totalAmount - sale.reservationFee!).toStringAsFixed(2)}',
+                      'Remaining Balance: ${AppCurrency.peso((sale.totalAmount - sale.reservationFee!))}',
                       style: font != null ? pw.TextStyle(font: font) : null,
                     ),
                   ],
@@ -482,7 +483,7 @@ class ReceiptGenerator {
                           width: 12 * PdfPageFormat.mm,
                           alignment: pw.Alignment.centerRight,
                           child: pw.Text(
-                            '₱${it.subtotal.toStringAsFixed(2)}',
+                            AppCurrency.peso(it.subtotal),
                             style: font != null
                                 ? pw.TextStyle(font: font, fontSize: 8)
                                 : const pw.TextStyle(fontSize: 8),
@@ -507,7 +508,7 @@ class ReceiptGenerator {
                       width: 14 * PdfPageFormat.mm,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        '₱${sale.subtotal.toStringAsFixed(2)}',
+                        AppCurrency.peso(sale.subtotal),
                         style: font != null
                             ? pw.TextStyle(font: font, fontSize: 8)
                             : const pw.TextStyle(fontSize: 8),
@@ -536,7 +537,7 @@ class ReceiptGenerator {
                       width: 14 * PdfPageFormat.mm,
                       alignment: pw.Alignment.centerRight,
                       child: pw.Text(
-                        '₱${sale.totalAmount.toStringAsFixed(2)}',
+                        AppCurrency.peso(sale.totalAmount),
                         style: fontBold != null
                             ? pw.TextStyle(
                                 font: fontBold,

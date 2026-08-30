@@ -1,4 +1,5 @@
 import 'package:mailer/mailer.dart';
+import '../utils/currency_formatter.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:flutter/foundation.dart';
 
@@ -245,7 +246,7 @@ class EmailNotificationService {
               <div class="content">
                 <div class="stat-box">
                   <p><span class="label">Total Sales:</span></p>
-                  <p class="amount">₱${totalSales.toStringAsFixed(2)}</p>
+                  <p class="amount">${AppCurrency.peso(totalSales)}</p>
                 </div>
                 <div class="stat-box">
                   <p><span class="label">Total Transactions:</span> $transactionCount</p>

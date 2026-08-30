@@ -109,7 +109,7 @@ class AdminService extends ChangeNotifier {
     try {
       final userService = GetIt.I.get<UserService>();
       final owners = userService.getUsersByRole(UserRole.owner);
-      
+
       for (var owner in owners) {
         if (owner.password == password) {
           return true; // Password already used by an owner
@@ -128,14 +128,14 @@ class AdminService extends ChangeNotifier {
     if (newPassword.length < 6) {
       return false;
     }
-    
+
     // Check if password is same as any owner's password
     final conflictsWithOwner = await isPasswordUsedByOwner(newPassword);
     if (conflictsWithOwner) {
       debugPrint('Admin password cannot be same as owner password');
       return false;
     }
-    
+
     _adminAccount = _adminAccount.copyWith(
       password: newPassword,
       lastModified: DateTime.now(),

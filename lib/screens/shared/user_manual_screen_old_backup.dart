@@ -486,7 +486,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
                   ),
 
                   // Right Content Area
-                   Expanded(
+                  Expanded(
                     child: ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(24),

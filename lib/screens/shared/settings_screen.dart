@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import '../../utils/app_localizations.dart';
+import '../../utils/currency_formatter.dart';
 import '../../utils/locale_controller.dart';
 import '../../utils/theme_controller.dart';
 import '../../utils/motion_controller.dart';
@@ -9,6 +10,7 @@ import '../../utils/policy_dialogs.dart';
 import '../../services/package_service.dart';
 import '../../services/license_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
 import '../../services/backend_server_resolver.dart';
 import '../../models/pricing_package.dart';
@@ -16,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/print_settings.dart';
 import 'user_manual_screen.dart';
 import 'activation_code_request_dialog.dart';
+import '../auth/login_screen.dart';
 import 'dart:math' as math;
 
 class SettingsScreen extends StatefulWidget {
@@ -52,8 +55,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _savedThemeKey = _selectedThemeKey;
     _selectedReduceMotion = MotionController.reduceMotion.value;
     _savedReduceMotion = _selectedReduceMotion;
-    _backendUrlController.text = BackendConfig.resolvedApiBaseUrl ??
-        BackendConfig.apiBaseUrl;
+    _backendUrlController.text =
+        BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
     // Load saved default paper size and update shared notifier
     SharedPreferences.getInstance().then((prefs) {
       final saved = prefs.getString('default_receipt_paper_size');
@@ -96,8 +99,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             originalDisplay != null) {
           setState(() {
             _subscriptionDiscount = discount;
-            _subscriptionPriceDisplay = priceDisplay;
-            _subscriptionOriginalPriceDisplay = originalDisplay;
+            _subscriptionPriceDisplay = priceDisplay == null
+                ? null
+                : AppCurrency.pesoFromText(priceDisplay);
+            _subscriptionOriginalPriceDisplay = originalDisplay == null
+                ? null
+                : AppCurrency.pesoFromText(originalDisplay);
           });
         }
         setState(() => _isActivated = activated);
@@ -216,6 +223,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() => _isSavingBackendUrl = false);
       }
     }
+  }
+
+  Future<void> _logoutOwnerAccount() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Log out Owner Account?'),
+        content: const Text(
+          'This signs out the current Google owner session and stops cloud sync on this device. It does not delete the registered owner account or local business data. Sign in again with the registered owner Google account to restore sync access.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.logout_rounded),
+            label: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (shouldLogout != true) return;
+
+    GetIt.I<SupabaseSyncService>().clearBusinessContext();
+    await GoogleAuthService().signOut();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('is_google_auth');
+
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   // ======================== CLOUD SYNC HANDLERS ========================
@@ -584,7 +626,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           .map(
                             (size) => DropdownMenuItem(
                               value: size,
-                              child: Text(size, overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                size,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           )
                           .toList(),
@@ -596,7 +641,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     await prefs.setString('default_receipt_paper_size', value);
                     PrintSettings.paperSize.value = value;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Default paper size saved: $value')),
+                      SnackBar(
+                        content: Text('Default paper size saved: $value'),
+                      ),
                     );
                   },
                 );
@@ -636,6 +683,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
             // Cloud Sync Section - Standard Package Required
             _buildCloudSyncSection(context),
+
+            const SizedBox(height: 32),
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'Owner Account',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(
+                Icons.logout_rounded,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: const Text('Log out Owner Account'),
+              subtitle: const Text(
+                'Sign out of Google, stop cloud sync, then sign in again as the registered owner.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _logoutOwnerAccount,
+            ),
 
             const SizedBox(height: 32),
             const Divider(),
@@ -1098,10 +1166,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Add custom color if it exists
     final colors = <MapEntry<String, Color>>[
       ...entries.map(
-        (entry) => MapEntry(
-          entry.key,
-          ThemeController.previewColor(entry.key),
-        ),
+        (entry) => MapEntry(entry.key, ThemeController.previewColor(entry.key)),
       ),
       if (selectedKey == 'custom')
         MapEntry('custom', ThemeController.previewColor('custom')),
@@ -1181,7 +1246,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _showCustomColorPicker(BuildContext context) async {
-    await showDialog(context: context, builder: (ctx) => _CustomColorPickerDialog());
+    await showDialog(
+      context: context,
+      builder: (ctx) => _CustomColorPickerDialog(),
+    );
     if (!mounted || ThemeController.themeKey.value != 'custom') return;
     setState(() => _selectedThemeKey = 'custom');
     _markAsChanged();
@@ -1299,7 +1367,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               decoration: BoxDecoration(
                                 color: Colors.green.withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.green.shade200),
+                                border: Border.all(
+                                  color: Colors.green.shade200,
+                                ),
                               ),
                               child: Row(
                                 children: [
@@ -1334,8 +1404,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     _subscriptionMode == 'one_time_license' &&
                             package.oneTimePrice.isNotEmpty
-                        ? package.oneTimePrice
-                        : package.price,
+                        ? AppCurrency.pesoFromText(package.oneTimePrice)
+                        : AppCurrency.pesoFromText(package.price),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.primary,
@@ -1569,7 +1639,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                 ),
                                 child: Text(
-                                  '-₱${_subscriptionDiscount!}',
+                                  '-${AppCurrency.peso(_subscriptionDiscount!)}',
                                   style: TextStyle(
                                     color: Colors.green.shade700,
                                     fontWeight: FontWeight.bold,
@@ -1734,7 +1804,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Unable to determine the current subscription package.'),
+            content: Text(
+              'Unable to determine the current subscription package.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -2227,7 +2299,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildBackendConnectionCard(BuildContext context) {
-    final activeUrl = BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
+    final activeUrl =
+        BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
 
     return Card(
       child: Padding(
@@ -2257,7 +2330,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: _backendUrlController,
               decoration: const InputDecoration(
                 labelText: 'Backend URL(s)',
-                hintText: 'http://152.42.185.35:3000/api, http://192.168.x.x:3000/api',
+                hintText:
+                    'http://152.42.185.35:3000/api, http://192.168.x.x:3000/api',
                 border: OutlineInputBorder(),
               ),
               keyboardType: TextInputType.url,
@@ -2287,9 +2361,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 8),
             Text(
               'Active URL: $activeUrl',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[700],
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
             ),
           ],
         ),

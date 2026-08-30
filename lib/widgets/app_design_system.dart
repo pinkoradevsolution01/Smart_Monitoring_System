@@ -285,7 +285,11 @@ class AppStatusBadge extends StatelessWidget {
   final String label;
   final AppStatus status;
 
-  const AppStatusBadge({super.key, required this.label, this.status = AppStatus.neutral});
+  const AppStatusBadge({
+    super.key,
+    required this.label,
+    this.status = AppStatus.neutral,
+  });
 
   @override
   Widget build(BuildContext context) {

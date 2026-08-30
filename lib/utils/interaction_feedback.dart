@@ -65,7 +65,8 @@ class InteractionFeedback {
       final progress = index / sampleCount;
       final envelope = math.pow(1 - progress, 4).toDouble();
       final frequency = 880 - (progress * 240);
-      final sample = math.sin(2 * math.pi * frequency * index / sampleRate) *
+      final sample =
+          math.sin(2 * math.pi * frequency * index / sampleRate) *
           envelope *
           0.72;
       bytes.setInt16(44 + index * 2, (sample * 32767).round(), Endian.little);

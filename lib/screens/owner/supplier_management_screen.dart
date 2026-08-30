@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import '../../models/supplier.dart';
 import '../../models/restock_record.dart';
 import '../../models/purchase_order.dart';
@@ -1222,7 +1223,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
               '${AppLocalizations.t('quantity_damaged')}: ${report.quantity}',
             ),
             Text(
-              '${AppLocalizations.t('total_value')}: ₱${report.totalValue.toStringAsFixed(2)}',
+              '${AppLocalizations.t('total_value')}: ${AppCurrency.peso(report.totalValue)}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.red,
@@ -1371,11 +1372,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
               ),
               _buildDetailRow(
                 AppLocalizations.t('unit_price'),
-                '₱${report.unitPrice.toStringAsFixed(2)}',
+                AppCurrency.peso(report.unitPrice),
               ),
               _buildDetailRow(
                 AppLocalizations.t('total_value'),
-                '₱${report.totalValue.toStringAsFixed(2)}',
+                AppCurrency.peso(report.totalValue),
               ),
               _buildDetailRow(
                 AppLocalizations.t('reported_by'),
@@ -1679,7 +1680,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
               '${AppLocalizations.t('order_date')}: ${_formatOrderDate(order.orderDate)}',
             ),
             Text(
-              '${AppLocalizations.t('total_value')}: ₱${order.totalAmount.toStringAsFixed(2)}',
+              '${AppLocalizations.t('total_value')}: ${AppCurrency.peso(order.totalAmount)}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.green,
@@ -1992,13 +1993,13 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                           child: ListTile(
                             title: Text(item.productName),
                             subtitle: Text(
-                              '${AppLocalizations.t('quantity')}: ${item.quantity} × ₱${item.unitPrice.toStringAsFixed(2)}',
+                              '${AppLocalizations.t('quantity')}: ${item.quantity} × ${AppCurrency.peso(item.unitPrice)}',
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '₱${item.totalPrice.toStringAsFixed(2)}',
+                                  AppCurrency.peso(item.totalPrice),
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                   ),
@@ -2038,7 +2039,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                               ),
                             ),
                             Text(
-                              '₱${total.toStringAsFixed(2)}',
+                              AppCurrency.peso(total),
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -2352,10 +2353,10 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     child: ListTile(
                       title: Text(item.productName),
                       subtitle: Text(
-                        '${item.quantity} × ₱${item.unitPrice.toStringAsFixed(2)}',
+                        '${item.quantity} × ${AppCurrency.peso(item.unitPrice)}',
                       ),
                       trailing: Text(
-                        '₱${item.totalPrice.toStringAsFixed(2)}',
+                        AppCurrency.peso(item.totalPrice),
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -2379,7 +2380,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                         ),
                       ),
                       Text(
-                        '₱${order.totalAmount.toStringAsFixed(2)}',
+                        AppCurrency.peso(order.totalAmount),
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -2557,7 +2558,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${AppLocalizations.t('total_value')}: ₱${report.totalValue.toStringAsFixed(2)}',
+                        '${AppLocalizations.t('total_value')}: ${AppCurrency.peso(report.totalValue)}',
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.red,

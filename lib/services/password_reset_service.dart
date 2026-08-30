@@ -19,21 +19,25 @@ class PasswordResetService {
   static Future<String?> sendPasswordResetEmail(String email) async {
     try {
       debugPrint('[PasswordReset] Sending reset email to: $email');
-      
-      final resp = await http.post(
-        Uri.parse(_sendResetUrl),
-        body: jsonEncode({'email': email}),
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SupabaseConfig.supabaseAnonKey,
-          'Authorization': 'Bearer ${SupabaseConfig.supabaseAnonKey}',
-        },
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Request timeout - please check your internet connection');
-        },
-      );
+
+      final resp = await http
+          .post(
+            Uri.parse(_sendResetUrl),
+            body: jsonEncode({'email': email}),
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SupabaseConfig.supabaseAnonKey,
+              'Authorization': 'Bearer ${SupabaseConfig.supabaseAnonKey}',
+            },
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Request timeout - please check your internet connection',
+              );
+            },
+          );
 
       debugPrint('[PasswordReset] Response status: ${resp.statusCode}');
       debugPrint('[PasswordReset] Response body: ${resp.body}');
@@ -42,7 +46,7 @@ class PasswordResetService {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final success = data['success'] == true;
         final token = data['token'] as String?;
-        
+
         if (success && token != null) {
           debugPrint('[PasswordReset] ✅ Reset email sent successfully');
           return token;
@@ -54,7 +58,8 @@ class PasswordResetService {
         // Try to parse error message
         try {
           final errorData = jsonDecode(resp.body) as Map<String, dynamic>;
-          final errorMsg = errorData['error'] ?? errorData['message'] ?? 'Unknown error';
+          final errorMsg =
+              errorData['error'] ?? errorData['message'] ?? 'Unknown error';
           debugPrint('[PasswordReset] ❌ Server error: $errorMsg');
         } catch (_) {
           debugPrint('[PasswordReset] ❌ Server error: ${resp.statusCode}');
@@ -76,25 +81,26 @@ class PasswordResetService {
   }) async {
     try {
       debugPrint('[PasswordReset] Verifying token and resetting password...');
-      
+
       // First, verify the token with the Edge Function
-      final resp = await http.post(
-        Uri.parse(_verifyResetUrl),
-        body: jsonEncode({
-          'token': token,
-          'newPassword': newPassword,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': SupabaseConfig.supabaseAnonKey,
-          'Authorization': 'Bearer ${SupabaseConfig.supabaseAnonKey}',
-        },
-      ).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () {
-          throw Exception('Request timeout - please check your internet connection');
-        },
-      );
+      final resp = await http
+          .post(
+            Uri.parse(_verifyResetUrl),
+            body: jsonEncode({'token': token, 'newPassword': newPassword}),
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SupabaseConfig.supabaseAnonKey,
+              'Authorization': 'Bearer ${SupabaseConfig.supabaseAnonKey}',
+            },
+          )
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () {
+              throw Exception(
+                'Request timeout - please check your internet connection',
+              );
+            },
+          );
 
       debugPrint('[PasswordReset] Verify response status: ${resp.statusCode}');
       debugPrint('[PasswordReset] Verify response body: ${resp.body}');
@@ -103,21 +109,16 @@ class PasswordResetService {
       final success = data['success'] == true;
 
       if (!success) {
-        final errorMsg = data['error'] ?? data['message'] ?? 'Token verification failed';
+        final errorMsg =
+            data['error'] ?? data['message'] ?? 'Token verification failed';
         debugPrint('[PasswordReset] ❌ Verification failed: $errorMsg');
-        return {
-          'success': false,
-          'error': errorMsg,
-        };
+        return {'success': false, 'error': errorMsg};
       }
 
       // Token is valid, get the email
       final email = data['email'] as String?;
       if (email == null) {
-        return {
-          'success': false,
-          'error': 'Invalid response from server',
-        };
+        return {'success': false, 'error': 'Invalid response from server'};
       }
 
       debugPrint('[PasswordReset] ✅ Token verified for email: $email');
@@ -144,7 +145,7 @@ class PasswordResetService {
       );
 
       await userService.updateUser(updatedOwner);
-      
+
       debugPrint('[PasswordReset] ✅ Password updated successfully in database');
 
       return {
@@ -155,10 +156,7 @@ class PasswordResetService {
     } catch (e, stackTrace) {
       debugPrint('[PasswordReset] ❌ Exception: $e');
       debugPrint('[PasswordReset] Stack trace: $stackTrace');
-      return {
-        'success': false,
-        'error': e.toString(),
-      };
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -167,9 +165,7 @@ class PasswordResetService {
     try {
       final userService = GetIt.I.get<UserService>();
       final owners = userService.getUsersByRole(user_model.UserRole.owner);
-      return owners.any(
-        (u) => u.email.toLowerCase() == email.toLowerCase(),
-      );
+      return owners.any((u) => u.email.toLowerCase() == email.toLowerCase());
     } catch (e) {
       debugPrint('[PasswordReset] Error checking owner email: $e');
       return false;

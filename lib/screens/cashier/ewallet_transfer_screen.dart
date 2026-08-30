@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:camera/camera.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
@@ -152,7 +153,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Tendered amount must be at least ₱${totalWithFee.toStringAsFixed(2)} (including ₱${fee.toStringAsFixed(2)} fee)',
+            'Tendered amount must be at least ${AppCurrency.peso(totalWithFee)} (including ${AppCurrency.peso(fee)} fee)',
           ),
         ),
       );
@@ -164,7 +165,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Transfer amount must be greater than fee (₱${fee.toStringAsFixed(2)})',
+              'Transfer amount must be greater than fee (${AppCurrency.peso(fee)})',
             ),
           ),
         );
@@ -192,19 +193,18 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Amount: ₱${amount.toStringAsFixed(2)}'),
-              Text('Transfer Fee: ₱${fee.toStringAsFixed(2)}'),
+              Text('Amount: ${AppCurrency.peso(amount)}'),
+              Text('Transfer Fee: ${AppCurrency.peso(fee)}'),
               if (_transactionType == 'cash_in') ...[
                 Text(
-                  'Total: ₱${totalWithFee.toStringAsFixed(2)}',
+                  'Total: ${AppCurrency.peso(totalWithFee)}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                Text('Tendered: ₱${tendered.toStringAsFixed(2)}'),
-                if (_change >= 0)
-                  Text('Change: ₱${_change.toStringAsFixed(2)}'),
+                Text('Tendered: ${AppCurrency.peso(tendered)}'),
+                if (_change >= 0) Text('Change: ${AppCurrency.peso(_change)}'),
               ] else ...[
                 Text(
-                  'Cash to Give: ₱${tendered.toStringAsFixed(2)}',
+                  'Cash to Give: ${AppCurrency.peso(tendered)}',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -271,8 +271,8 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
         paymentMethod: _transactionType == 'cash_in' ? 'Cash-In' : 'Cash-Out',
         status: SaleStatus.completed,
         notes: _transactionType == 'cash_in'
-            ? 'Transfer: ₱${amount.toStringAsFixed(2)} | Fee: ₱${fee.toStringAsFixed(2)}${_referenceController.text.isNotEmpty ? " | Ref: ${_referenceController.text}" : ""}'
-            : 'Transfer: ₱${amount.toStringAsFixed(2)} | Fee: ₱${fee.toStringAsFixed(2)}${_referenceController.text.isNotEmpty ? " | Ref: ${_referenceController.text}" : ""}',
+            ? 'Transfer: ${AppCurrency.peso(amount)} | Fee: ${AppCurrency.peso(fee)}${_referenceController.text.isNotEmpty ? " | Ref: ${_referenceController.text}" : ""}'
+            : 'Transfer: ${AppCurrency.peso(amount)} | Fee: ${AppCurrency.peso(fee)}${_referenceController.text.isNotEmpty ? " | Ref: ${_referenceController.text}" : ""}',
         cashierName: widget.cashierName,
         saleDate: now,
         referenceCode: _referenceController.text.isNotEmpty
@@ -283,7 +283,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
 
       final saleId = await dbService.insertSale(sale);
       debugPrint(
-        '✅ E-wallet sale recorded successfully! Sale ID: $saleId, Sale Number: $saleNumber, Type: ${sale.paymentMethod}, Amount: ₱${sale.totalAmount.toStringAsFixed(2)}',
+        '✅ E-wallet sale recorded successfully! Sale ID: $saleId, Sale Number: $saleNumber, Type: ${sale.paymentMethod}, Amount: ${AppCurrency.peso(sale.totalAmount)}',
       );
 
       // Refresh POSService to update reports
@@ -427,7 +427,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                           : const pw.TextStyle(fontSize: 11),
                     ),
                     pw.Text(
-                      'PHP ${amount.toStringAsFixed(2)}',
+                      AppCurrency.php(amount),
                       style: font != null
                           ? pw.TextStyle(font: font, fontSize: 11)
                           : const pw.TextStyle(fontSize: 11),
@@ -444,7 +444,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                           : const pw.TextStyle(fontSize: 11),
                     ),
                     pw.Text(
-                      'PHP ${fee.toStringAsFixed(2)}',
+                      AppCurrency.php(fee),
                       style: font != null
                           ? pw.TextStyle(font: font, fontSize: 11)
                           : const pw.TextStyle(fontSize: 11),
@@ -468,7 +468,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                             ),
                     ),
                     pw.Text(
-                      'PHP ${totalWithFee.toStringAsFixed(2)}',
+                      AppCurrency.php(totalWithFee),
                       style: fontBold != null
                           ? pw.TextStyle(
                               font: fontBold,
@@ -493,7 +493,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                             : const pw.TextStyle(fontSize: 11),
                       ),
                       pw.Text(
-                        'PHP ${tendered.toStringAsFixed(2)}',
+                        AppCurrency.php(tendered),
                         style: font != null
                             ? pw.TextStyle(font: font, fontSize: 11)
                             : const pw.TextStyle(fontSize: 11),
@@ -511,7 +511,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                               : const pw.TextStyle(fontSize: 11),
                         ),
                         pw.Text(
-                          'PHP ${_change.toStringAsFixed(2)}',
+                          AppCurrency.php(_change),
                           style: font != null
                               ? pw.TextStyle(font: font, fontSize: 11)
                               : const pw.TextStyle(fontSize: 11),
@@ -529,7 +529,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                             : const pw.TextStyle(fontSize: 11),
                       ),
                       pw.Text(
-                        'PHP ${tendered.toStringAsFixed(2)}',
+                        AppCurrency.php(tendered),
                         style: font != null
                             ? pw.TextStyle(font: font, fontSize: 11)
                             : const pw.TextStyle(fontSize: 11),
@@ -788,7 +788,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                                       ),
                                     ),
                                     Text(
-                                      '₱${_transferFee.toStringAsFixed(2)}',
+                                      AppCurrency.peso(_transferFee),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 16,
@@ -821,8 +821,20 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                                     ),
                                     Text(
                                       _transactionType == 'cash_in'
-                                          ? '₱${((double.tryParse(_amountController.text) ?? 0.0) + _transferFee).toStringAsFixed(2)}'
-                                          : '₱${((double.tryParse(_amountController.text) ?? 0.0) - _transferFee).toStringAsFixed(2)}',
+                                          ? AppCurrency.peso(
+                                              ((double.tryParse(
+                                                        _amountController.text,
+                                                      ) ??
+                                                      0.0) +
+                                                  _transferFee),
+                                            )
+                                          : AppCurrency.peso(
+                                              ((double.tryParse(
+                                                        _amountController.text,
+                                                      ) ??
+                                                      0.0) -
+                                                  _transferFee),
+                                            ),
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 18,
@@ -866,7 +878,7 @@ class _EWalletTransferScreenState extends State<EWalletTransferScreen> {
                                     ),
                                     Flexible(
                                       child: Text(
-                                        '₱${_change.toStringAsFixed(2)}',
+                                        AppCurrency.peso(_change),
                                         style: TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 18,

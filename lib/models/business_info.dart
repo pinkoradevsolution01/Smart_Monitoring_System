@@ -1,10 +1,10 @@
- class BusinessInfo {
+class BusinessInfo {
   final String storeName;
   final String businessType;
   final String? storeAddress;
   final String? logoPath;
 
-  BusinessInfo({ 
+  BusinessInfo({
     required this.storeName,
     required this.businessType,
     this.storeAddress,

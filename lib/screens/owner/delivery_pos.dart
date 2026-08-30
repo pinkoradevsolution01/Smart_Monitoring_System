@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import 'dart:io';
 import '../../utils/app_localizations.dart';
@@ -224,7 +225,7 @@ class _DeliveryPOSState extends State<DeliveryPOS> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '₱${p.sellingPrice.toStringAsFixed(2)}',
+                    AppCurrency.peso(p.sellingPrice),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,

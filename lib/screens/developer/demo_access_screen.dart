@@ -36,7 +36,9 @@ class DemoAccessScreen extends StatelessWidget {
         color: const Color(0xFFF4F6FB),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final width = constraints.maxWidth > 1100 ? 1060.0 : double.infinity;
+            final width = constraints.maxWidth > 1100
+                ? 1060.0
+                : double.infinity;
             final columns = constraints.maxWidth >= 760 ? 2 : 1;
             return Center(
               child: SizedBox(
@@ -101,7 +103,11 @@ class DemoAccessScreen extends StatelessWidget {
     );
   }
 
-  void _startDemo(BuildContext context, DemoAccessService service, String role) {
+  void _startDemo(
+    BuildContext context,
+    DemoAccessService service,
+    String role,
+  ) {
     final user = service.createDemoUser(role);
     if (user == null) return;
 

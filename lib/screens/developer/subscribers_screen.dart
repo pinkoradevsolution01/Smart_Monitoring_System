@@ -10,6 +10,7 @@ class SubscribersScreen extends StatefulWidget {
   @override
   State<SubscribersScreen> createState() => _SubscribersScreenState();
 }
+
 class _SubscribersScreenState extends State<SubscribersScreen>
     with WidgetsBindingObserver {
   final SubscriberService _svc = SubscriberService();
@@ -23,9 +24,13 @@ class _SubscribersScreenState extends State<SubscribersScreen>
     _svc.addListener(_onChange);
     // Auto-sync when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      debugPrint('=============================================================');
+      debugPrint(
+        '=============================================================',
+      );
       debugPrint('📊 SUBSCRIBERS SCREEN OPENED - AUTO-SYNCING');
-      debugPrint('=============================================================');
+      debugPrint(
+        '=============================================================',
+      );
       _syncSubscribers();
     });
     _refreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
@@ -62,7 +67,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              newCount > 0 
+              newCount > 0
                   ? '✅ Synced successfully! Added $newCount new subscriber${newCount == 1 ? '' : 's'}'
                   : '✅ Sync complete. All subscribers up to date',
             ),
@@ -132,13 +137,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                 decoration: BoxDecoration(
                   color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.blue.withValues(alpha: 0.3),
-                  ),
+                  border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.blue,
+                      size: 20,
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
@@ -191,7 +198,9 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                                 s.status == 'cancelled'
                                     ? Icons.cancel_outlined
                                     : Icons.person_outline,
-                                color: s.status == 'cancelled' ? Colors.red : null,
+                                color: s.status == 'cancelled'
+                                    ? Colors.red
+                                    : null,
                               ),
                               title: Text(s.name),
                               subtitle: Text(
@@ -319,15 +328,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
     if (cloudService.subscriptions.isEmpty) {
       await cloudService.fetchSubscriptions();
     }
-    
+
     // Find subscriptions for this subscriber (by device ID or email match)
     final subscriberSubscriptions = cloudService.subscriptions.where((sub) {
-      return sub.deviceId == s.id || 
-             sub.deviceName?.toLowerCase() == s.email.toLowerCase();
+      return sub.deviceId == s.id ||
+          sub.deviceName?.toLowerCase() == s.email.toLowerCase();
     }).toList();
-    
+
     if (!mounted) return;
-    
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -345,15 +354,22 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             children: [
               _buildDetailRow('📧 Email', s.email),
               _buildDetailRow('Status', s.status.toUpperCase()),
-              if (s.contactNumber != null) 
+              if (s.contactNumber != null)
                 _buildDetailRow('📱 Contact', s.contactNumber!),
-              _buildDetailRow('📅 Registered', s.createdAt.toLocal().toString().split('.')[0]),
+              _buildDetailRow(
+                '📅 Registered',
+                s.createdAt.toLocal().toString().split('.')[0],
+              ),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  const Icon(Icons.cloud_outlined, size: 20, color: Colors.blue),
+                  const Icon(
+                    Icons.cloud_outlined,
+                    size: 20,
+                    color: Colors.blue,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Cloud Subscriptions (${subscriberSubscriptions.length})',
@@ -386,52 +402,57 @@ class _SubscribersScreenState extends State<SubscribersScreen>
                   ),
                 )
               else
-                ...subscriberSubscriptions.map((sub) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: sub.isActive 
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
+                ...subscriberSubscriptions.map(
+                  (sub) => Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
                       color: sub.isActive
-                          ? Colors.green.withValues(alpha: 0.3)
-                          : Colors.red.withValues(alpha: 0.3),
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: sub.isActive
+                            ? Colors.green.withValues(alpha: 0.3)
+                            : Colors.red.withValues(alpha: 0.3),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            sub.isActive ? Icons.check_circle : Icons.cancel,
-                            size: 16,
-                            color: sub.isActive ? Colors.green : Colors.red,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            sub.packageName,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              sub.isActive ? Icons.check_circle : Icons.cancel,
+                              size: 16,
                               color: sub.isActive ? Colors.green : Colors.red,
                             ),
+                            const SizedBox(width: 6),
+                            Text(
+                              sub.packageName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: sub.isActive ? Colors.green : Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Status: ${sub.formattedStatus}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        Text(
+                          'Activated: ${sub.activatedAt.toLocal().toString().split('.')[0]}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Status: ${sub.formattedStatus}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      Text(
-                        'Activated: ${sub.activatedAt.toLocal().toString().split('.')[0]}',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
-                )),
+                ),
             ],
           ),
         ),
@@ -468,10 +489,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(color: Colors.grey),
-            ),
+            child: Text(value, style: const TextStyle(color: Colors.grey)),
           ),
         ],
       ),

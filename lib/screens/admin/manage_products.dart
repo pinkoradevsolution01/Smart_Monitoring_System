@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -332,14 +333,14 @@ class ProductListTile extends StatelessWidget {
               '${AppLocalizations.t('barcode')}: ${product.barcode} | ${AppLocalizations.t('category')}: ${product.category}',
             ),
             Text(
-              '${AppLocalizations.t('stock')}: ${product.quantity} | ${AppLocalizations.t('selling_price')}: ₱${product.sellingPrice.toStringAsFixed(2)}',
+              '${AppLocalizations.t('stock')}: ${product.quantity} | ${AppLocalizations.t('selling_price')}: ${AppCurrency.peso(product.sellingPrice)}',
               style: TextStyle(
                 color: isLowStock ? Colors.red : null,
                 fontWeight: isLowStock ? FontWeight.bold : null,
               ),
             ),
             Text(
-              '${AppLocalizations.t('reorder_level')}: ${product.reorderLevel} | ${AppLocalizations.t('profit')}: ₱${product.profit.toStringAsFixed(2)}',
+              '${AppLocalizations.t('reorder_level')}: ${product.reorderLevel} | ${AppLocalizations.t('profit')}: ${AppCurrency.peso(product.profit)}',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ],
@@ -465,9 +466,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   }
 
   Future<void> _pickImage() async {
-    final file = await FilePicker.pickFile(
-      type: FileType.image,
-    );
+    final file = await FilePicker.pickFile(type: FileType.image);
 
     if (file?.path != null) {
       setState(() {

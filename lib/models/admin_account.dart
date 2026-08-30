@@ -1,4 +1,4 @@
-    class AdminAccount {
+class AdminAccount {
   final String id;
   final String name;
   final String email;
@@ -58,7 +58,7 @@
     String? profilePictureUrl,
     DateTime? createdAt,
     DateTime? lastModified,
-  }) { 
+  }) {
     return AdminAccount(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -70,4 +70,4 @@
       lastModified: lastModified ?? this.lastModified,
     );
   }
-}  
+}

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../utils/currency_formatter.dart';
 import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -204,8 +205,8 @@ class DamageReturnPdfService {
                 children: [
                   _tableCell(report.productName),
                   _tableCell('${report.quantity}'),
-                  _tableCell('₱${report.unitPrice.toStringAsFixed(2)}'),
-                  _tableCell('₱${report.totalValue.toStringAsFixed(2)}'),
+                  _tableCell(AppCurrency.peso(report.unitPrice)),
+                  _tableCell(AppCurrency.peso(report.totalValue)),
                 ],
               ),
             ],

@@ -30,7 +30,8 @@ class DeveloperAccount {
       authMethod: map['authMethod']?.toString() ?? 'password',
       googleSub: map['googleSub']?.toString(),
       avatarUrl: map['avatarUrl']?.toString(),
-      isActive: map['isActive'] == true ||
+      isActive:
+          map['isActive'] == true ||
           (map['isActive'] is num && (map['isActive'] as num).toInt() == 1),
     );
   }
@@ -152,11 +153,11 @@ class DeveloperService extends ChangeNotifier {
         }
         return true;
       }
-      
+
       // Capture backend error message for better debugging
-      final errorMsg = response is Map<String, dynamic> 
-        ? (response['message'] ?? response['error'] ?? 'Unknown error')
-        : 'Invalid response format';
+      final errorMsg = response is Map<String, dynamic>
+          ? (response['message'] ?? response['error'] ?? 'Unknown error')
+          : 'Invalid response format';
       debugPrint('DeveloperService: google authenticate failed - $errorMsg');
       return false;
     } catch (e) {
@@ -179,7 +180,9 @@ class DeveloperService extends ChangeNotifier {
 
     final body = <String, dynamic>{
       'displayName': username,
-      'email': email ?? (username.contains('@') ? username : 'developer@smartmonitoring.com'),
+      'email':
+          email ??
+          (username.contains('@') ? username : 'developer@smartmonitoring.com'),
       'authMethod': authMethod,
       'avatarUrl': avatarUrl,
     };

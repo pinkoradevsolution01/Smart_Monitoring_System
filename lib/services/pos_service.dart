@@ -9,6 +9,7 @@ import '../models/inventory_movement.dart';
 import '../models/shoe_size.dart';
 import 'database_service.dart';
 import 'customer_service.dart';
+import '../utils/currency_formatter.dart';
 import 'supabase_sync_service.dart';
 
 class POSService extends ChangeNotifier {
@@ -180,7 +181,7 @@ class POSService extends ChangeNotifier {
     if (loyaltyDiscountAmount > 0 &&
         subtotal < CustomerService.minPurchaseAmount) {
       throw Exception(
-        'Loyalty redemption requires a minimum purchase of ₱${CustomerService.minPurchaseAmount.toStringAsFixed(0)}.',
+        'Loyalty redemption requires a minimum purchase of ${AppCurrency.peso(CustomerService.minPurchaseAmount)}.',
       );
     }
 

@@ -126,7 +126,9 @@ class PackageService extends ChangeNotifier {
     final savedPackage = _findPackageByName(savedPackageName);
     if (savedPackage != null) {
       await _persistRecoveredPackage(savedPackage, prefs);
-      debugPrint('✅ PackageService: recovered package from local activation info (${savedPackage.name})');
+      debugPrint(
+        '✅ PackageService: recovered package from local activation info (${savedPackage.name})',
+      );
       return;
     }
 
@@ -153,7 +155,9 @@ class PackageService extends ChangeNotifier {
         final recovered = _findPackageByName(packageName);
         if (recovered != null) {
           await _persistRecoveredPackage(recovered, prefs);
-          debugPrint('✅ PackageService: recovered package from backend (${recovered.name})');
+          debugPrint(
+            '✅ PackageService: recovered package from backend (${recovered.name})',
+          );
           return;
         }
       } catch (e) {
@@ -162,9 +166,12 @@ class PackageService extends ChangeNotifier {
     }
 
     // Final fallback for legacy activated installs where package metadata is missing.
-    final fallback = _findPackageByName('Standard') ?? PricingPackage.packages.first;
+    final fallback =
+        _findPackageByName('Standard') ?? PricingPackage.packages.first;
     await _persistRecoveredPackage(fallback, prefs);
-    debugPrint('⚠️ PackageService: using fallback package recovery (${fallback.name})');
+    debugPrint(
+      '⚠️ PackageService: using fallback package recovery (${fallback.name})',
+    );
   }
 
   Future<void> _persistRecoveredPackage(
@@ -175,7 +182,10 @@ class PackageService extends ChangeNotifier {
     _setupComplete = true;
     await prefs.setBool(_setupCompleteKey, true);
     await prefs.setString(_activatedPackageNameKey, package.name);
-    await prefs.setString(_packageKey, 'type=${package.type}|name=${package.name}');
+    await prefs.setString(
+      _packageKey,
+      'type=${package.type}|name=${package.name}',
+    );
   }
 
   PricingPackage? _findPackageByName(String? packageName) {

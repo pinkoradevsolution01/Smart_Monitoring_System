@@ -40,7 +40,10 @@ class CodeRequestService {
         'requested_at': DateTime.now().toIso8601String(),
       };
 
-      final response = await _api.postJson('license/requests', body: requestData);
+      final response = await _api.postJson(
+        'license/requests',
+        body: requestData,
+      );
       if (response is Map<String, dynamic> && response['success'] == false) {
         throw Exception(response['message']?.toString() ?? 'Request failed');
       }
@@ -158,7 +161,8 @@ class CodeRequestService {
         queryParameters: {'packageName': packageName},
       );
 
-      final codes = response is Map<String, dynamic> && response['codes'] is List
+      final codes =
+          response is Map<String, dynamic> && response['codes'] is List
           ? List<Map<String, dynamic>>.from(response['codes'] as List)
           : const <Map<String, dynamic>>[];
 

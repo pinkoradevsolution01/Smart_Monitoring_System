@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -188,7 +189,7 @@ class _EWalletReceiptPreviewScreenState
                     style: pw.TextStyle(font: font, fontSize: 11),
                   ),
                   pw.Text(
-                    'PHP ${widget.amount.toStringAsFixed(2)}',
+                    AppCurrency.php(widget.amount),
                     style: pw.TextStyle(font: font, fontSize: 11),
                   ),
                 ],
@@ -201,7 +202,7 @@ class _EWalletReceiptPreviewScreenState
                     style: pw.TextStyle(font: font, fontSize: 11),
                   ),
                   pw.Text(
-                    'PHP ${widget.fee.toStringAsFixed(2)}',
+                    AppCurrency.php(widget.fee),
                     style: pw.TextStyle(font: font, fontSize: 11),
                   ),
                 ],
@@ -218,7 +219,7 @@ class _EWalletReceiptPreviewScreenState
                     ),
                   ),
                   pw.Text(
-                    'PHP ${widget.totalWithFee.toStringAsFixed(2)}',
+                    AppCurrency.php(widget.totalWithFee),
                     style: pw.TextStyle(
                       font: fontBold,
                       fontSize: 11,
@@ -236,7 +237,7 @@ class _EWalletReceiptPreviewScreenState
                       style: pw.TextStyle(font: font, fontSize: 11),
                     ),
                     pw.Text(
-                      'PHP ${widget.tendered.toStringAsFixed(2)}',
+                      AppCurrency.php(widget.tendered),
                       style: pw.TextStyle(font: font, fontSize: 11),
                     ),
                   ],

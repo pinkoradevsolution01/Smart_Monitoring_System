@@ -11,6 +11,8 @@ import '../../utils/policy_dialogs.dart';
 import 'package_selection_screen.dart';
 import '../../services/package_service.dart';
 import '../../services/backend_api_service.dart';
+import '../../services/supabase_sync_service.dart';
+import '../owner/owner_dashboard.dart';
 
 class OwnerRegistrationScreen extends StatefulWidget {
   const OwnerRegistrationScreen({super.key});
@@ -71,22 +73,11 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
     setState(() => _isLoading = true);
 
     try {
-      // Check if owner already exists (including inactive accounts)
-      // Prevents multiple owner registrations on the same device
-      final existingOwners = _userService.getUsersByRoleIncludingInactive(user_model.UserRole.owner);
-      if (existingOwners.isNotEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Owner account already exists on this device: ${existingOwners.map((u) => u.email).join(", ")}',
-            ),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        setState(() => _isLoading = false);
-        return;
-      }
+      // Keep the existing owner list so a registered owner can sign in again
+      // from this screen instead of being sent through registration.
+      final existingOwners = _userService.getUsersByRoleIncludingInactive(
+        user_model.UserRole.owner,
+      );
 
       // Sign in with Google
       // Clear any cached Google account so the chooser appears instead of
@@ -133,6 +124,46 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         return;
       }
 
+      final googleEmail = (googleUser['email'] as String).trim().toLowerCase();
+      user_model.User? matchingOwner;
+      for (final owner in existingOwners) {
+        if (owner.email.trim().toLowerCase() == googleEmail) {
+          matchingOwner = owner;
+          break;
+        }
+      }
+
+      if (matchingOwner != null) {
+        if (!matchingOwner.isActive) {
+          await _googleAuth.clearSession();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This owner account is inactive.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
+        await _openRegisteredOwnerDashboard(matchingOwner);
+        return;
+      }
+
+      if (existingOwners.isNotEmpty) {
+        await _googleAuth.clearSession();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'A different owner account is already registered on this device.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
       final api = ApiClient();
 
       // Persist the owner in MySQL first so the backend becomes the source of truth.
@@ -152,9 +183,11 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         throw Exception('Failed to register owner in backend');
       }
 
-      final backendOwner =
-          Map<String, dynamic>.from(ownerResponse['user'] as Map);
+      final backendOwner = Map<String, dynamic>.from(
+        ownerResponse['user'] as Map,
+      );
       final backendOwnerId = backendOwner['id']?.toString() ?? '';
+      final ownerAlreadyRegistered = ownerResponse['created'] == false;
 
       final businessResponse = await api.postJson(
         'business/init',
@@ -175,8 +208,11 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
 
       // Create owner user from Google account
       final owner = user_model.User(
-        id: backendOwnerId.isNotEmpty ? backendOwnerId : googleUser['id'] as String,
-        name: backendOwner['fullName'] as String? ?? googleUser['name'] as String,
+        id: backendOwnerId.isNotEmpty
+            ? backendOwnerId
+            : googleUser['id'] as String,
+        name:
+            backendOwner['fullName'] as String? ?? googleUser['name'] as String,
         email: googleUser['email'] as String,
         password: '', // No password for OAuth users
         pin: null,
@@ -208,7 +244,12 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
           ),
         );
 
-        // Navigate to package selection screen with owner user
+        if (ownerAlreadyRegistered) {
+          await _openRegisteredOwnerDashboard(owner);
+          return;
+        }
+
+        // New owners select a package after their account is created.
         final packageService = GetIt.I<PackageService>();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
@@ -254,6 +295,27 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  Future<void> _openRegisteredOwnerDashboard(user_model.User owner) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (owner.businessId != null && owner.businessId!.isNotEmpty) {
+      await prefs.setString('business_id', owner.businessId!);
+    }
+    await prefs.setBool('is_google_auth', true);
+    await _googleAuth.storeSession();
+
+    await GetIt.I<SupabaseSyncService>().initializeBusiness(
+      businessName: owner.name,
+      ownerEmail: owner.email,
+      existingBusinessId: owner.businessId,
+    );
+
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => OwnerDashboard(user: owner)),
+      (route) => false,
+    );
   }
 
   void _onIconTap() {

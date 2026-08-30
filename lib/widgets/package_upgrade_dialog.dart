@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/pricing_package.dart';
+import '../utils/currency_formatter.dart';
 
 class PackageUpgradeDialog {
   static void show(BuildContext context, String featureName) {
@@ -99,7 +100,7 @@ class PackageUpgradeDialog {
             ),
           ),
           Text(
-            package.price,
+            AppCurrency.pesoFromText(package.price),
             style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,

@@ -65,9 +65,7 @@ class _BusinessRegistrationScreenState
 
   Future<void> _pickLogo() async {
     try {
-      final file = await FilePicker.pickFile(
-        type: FileType.image,
-      );
+      final file = await FilePicker.pickFile(type: FileType.image);
 
       if (file?.path != null) {
         setState(() {

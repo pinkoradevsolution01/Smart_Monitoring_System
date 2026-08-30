@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../utils/currency_formatter.dart';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -79,6 +80,31 @@ class _CartSheetState extends State<CartSheet> {
   void _recomputeCashChange() {
     if (_selectedPaymentMethod == 'cash') {
       _change = _cashTendered - _payableTotal;
+    }
+  }
+
+  void _updateCartItemQuantity({
+    required int index,
+    required String value,
+    required int maxStock,
+  }) {
+    final requestedQuantity = int.tryParse(value);
+    if (requestedQuantity == null || requestedQuantity < 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a quantity of at least 1.')),
+      );
+      return;
+    }
+
+    final quantity = requestedQuantity.clamp(1, maxStock).toInt();
+    widget.pos.updateCartItem(index, quantity);
+    if (requestedQuantity > maxStock) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Only $maxStock item(s) are available in stock.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -441,7 +467,7 @@ class _CartSheetState extends State<CartSheet> {
         }
       },
       child: Container(
-        height: MediaQuery.of(context).size.height * 0.85,
+        height: MediaQuery.of(context).size.height * 0.92,
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: const BorderRadius.only(
@@ -489,7 +515,7 @@ class _CartSheetState extends State<CartSheet> {
             ),
             const Divider(height: 1),
             // Cart Items
-            Expanded(
+            Flexible(
               flex: 3,
               child: cart.isEmpty
                   ? Center(
@@ -522,6 +548,9 @@ class _CartSheetState extends State<CartSheet> {
                           const Divider(height: 1),
                       itemBuilder: (context, idx) {
                         final item = cart[idx];
+                        final maxStock =
+                            item.selectedShoeSize?.quantity ??
+                            item.product.quantity;
                         final itemTotal =
                             item.product.sellingPrice * item.quantity;
                         return Padding(
@@ -606,7 +635,9 @@ class _CartSheetState extends State<CartSheet> {
                                     ],
                                     const SizedBox(height: 4),
                                     Text(
-                                      '₱${item.product.sellingPrice.toStringAsFixed(2)}',
+                                      AppCurrency.peso(
+                                        item.product.sellingPrice,
+                                      ),
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: Colors.grey[600],
@@ -644,28 +675,37 @@ class _CartSheetState extends State<CartSheet> {
                                               ),
                                             ),
                                           ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            child: Text(
-                                              '${item.quantity}',
+                                          SizedBox(
+                                            width: 48,
+                                            child: TextFormField(
+                                              initialValue: '${item.quantity}',
+                                              keyboardType:
+                                                  TextInputType.number,
+                                              textAlign: TextAlign.center,
+                                              textInputAction:
+                                                  TextInputAction.done,
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 15,
                                               ),
+                                              decoration: const InputDecoration(
+                                                isDense: true,
+                                                contentPadding:
+                                                    EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                    ),
+                                                border: InputBorder.none,
+                                              ),
+                                              onFieldSubmitted: (value) =>
+                                                  _updateCartItemQuantity(
+                                                    index: idx,
+                                                    value: value,
+                                                    maxStock: maxStock,
+                                                  ),
                                             ),
                                           ),
                                           InkWell(
                                             onTap: () {
-                                              // Check if increasing would exceed stock
-                                              final maxStock =
-                                                  item.selectedShoeSize != null
-                                                  ? item
-                                                        .selectedShoeSize!
-                                                        .quantity
-                                                  : item.product.quantity;
-
                                               if (item.quantity >= maxStock) {
                                                 ScaffoldMessenger.of(
                                                   context,
@@ -714,7 +754,7 @@ class _CartSheetState extends State<CartSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    '₱${itemTotal.toStringAsFixed(2)}',
+                                    AppCurrency.peso(itemTotal),
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 16,
@@ -748,474 +788,503 @@ class _CartSheetState extends State<CartSheet> {
             // Payment Section
             if (cart.isNotEmpty) ...[
               const Divider(height: 1, thickness: 1),
-              Container(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Payment method selection
-                    Text(
-                      AppLocalizations.t('select_payment'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppLocalizations.t('loyalty_rewards'),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
+              Flexible(
+                flex: 3,
+                child: Container(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  padding: const EdgeInsets.all(20),
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _isResolvingLoyalty
-                                ? null
-                                : _scanLoyaltyBarcode,
-                            icon: const Icon(Icons.qr_code_scanner),
-                            label: Text(
-                              AppLocalizations.t('scan_loyalty_barcode'),
-                              textAlign: TextAlign.center,
-                            ),
+                        // Payment method selection
+                        Text(
+                          AppLocalizations.t('select_payment'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: _isResolvingLoyalty
-                                ? null
-                                : _enterLoyaltyBarcodeManually,
-                            icon: const Icon(Icons.keyboard),
-                            label: Text(
-                              AppLocalizations.t('enter_loyalty_barcode'),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_selectedCustomer != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primaryContainer
-                              .withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    _selectedCustomer!.fullName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _selectedCustomer = null;
-                                      _applyLoyaltyRedemption = false;
-                                      _recomputeCashChange();
-                                    });
-                                  },
-                                  child: Text(AppLocalizations.t('clear')),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              '${AppLocalizations.t('current_points')}: ${_selectedCustomer!.pointsBalance}',
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${AppLocalizations.t('estimated_loyalty_points')}: $_estimatedEarnedPoints',
-                            ),
-                            if (_maxRedeemablePoints > 0) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                '${AppLocalizations.t('redeemable_points')}: $_maxRedeemablePoints (₱${_loyaltyDiscountAmount.toStringAsFixed(2)})',
-                              ),
-                            ] else ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                AppLocalizations.t(
-                                  'redemption_minimum_notice',
-                                ).replaceAll(
-                                  '{n}',
-                                  CustomerService.minRedeemPoints.toString(),
-                                ),
-                                style: TextStyle(color: Colors.grey[700]),
-                              ),
-                            ],
-                            SwitchListTile(
-                              value:
-                                  _applyLoyaltyRedemption &&
-                                  _maxRedeemablePoints > 0,
-                              onChanged: _maxRedeemablePoints > 0
-                                  ? (value) {
-                                      setState(() {
-                                        _applyLoyaltyRedemption = value;
-                                        _recomputeCashChange();
-                                      });
-                                    }
-                                  : null,
-                              contentPadding: EdgeInsets.zero,
-                              dense: true,
-                              title: Text(
-                                AppLocalizations.t('apply_loyalty_redemption'),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: PaymentMethodChip(
-                            label: AppLocalizations.t('cash'),
-                            icon: Icons.payments_outlined,
-                            isSelected: _selectedPaymentMethod == 'cash',
-                            onTap: () {
-                              setState(() {
-                                _selectedPaymentMethod = 'cash';
-                                _cashTendered = 0.0;
-                                _change = 0.0;
-                                _amountController.clear();
-                                _referenceCodeController.clear();
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: PaymentMethodChip(
-                            label: AppLocalizations.t('gcash'),
-                            icon: Icons.phone_android,
-                            isSelected: _selectedPaymentMethod == 'gcash',
-                            onTap: () {
-                              setState(() {
-                                _selectedPaymentMethod = 'gcash';
-                                _referenceCodeController.clear();
-                              });
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: PaymentMethodChip(
-                            label: AppLocalizations.t('online_bank'),
-                            icon: Icons.account_balance,
-                            isSelected: _selectedPaymentMethod == 'online_bank',
-                            onTap: () {
-                              setState(() {
-                                _selectedPaymentMethod = 'online_bank';
-                                _referenceCodeController.clear();
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Cash amount input (only for cash payment)
-                    if (_selectedPaymentMethod == 'cash') ...[
-                      TextField(
-                        controller: _amountController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: AppLocalizations.t('amount_tendered'),
-                          prefixText: '₱ ',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _cashTendered = double.tryParse(value) ?? 0.0;
-                            _change = _cashTendered - widget.pos.cartTotal;
-                          });
-                        },
-                      ),
-                      if (_cashTendered > 0) ...[
                         const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _change >= 0
-                                ? Colors.green.withValues(alpha: 0.1)
-                                : Colors.red.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: _change >= 0 ? Colors.green : Colors.red,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                AppLocalizations.t('change'),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: _change >= 0
-                                      ? Colors.green[700]
-                                      : Colors.red[700],
-                                ),
-                              ),
-                              Text(
-                                '₱${_change.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                  color: _change >= 0
-                                      ? Colors.green[700]
-                                      : Colors.red[700],
-                                ),
-                              ),
-                            ],
+                        Text(
+                          AppLocalizations.t('loyalty_rewards'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-                    // Reference code input (for GCash and Online Bank)
-                    if (_selectedPaymentMethod == 'gcash' ||
-                        _selectedPaymentMethod == 'online_bank') ...[
-                      TextField(
-                        controller: _referenceCodeController,
-                        decoration: InputDecoration(
-                          labelText: 'Reference Code (Optional)',
-                          hintText: 'Enter transaction reference number',
-                          helperText:
-                              'Provide reference code OR capture receipt',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          prefixIcon: Icon(
-                            _selectedPaymentMethod == 'gcash'
-                                ? Icons.phone_android
-                                : Icons.account_balance,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      // Camera capture button
-                      OutlinedButton.icon(
-                        onPressed: _openCamera,
-                        icon: Icon(
-                          _capturedImagePath != null
-                              ? Icons.check_circle
-                              : Icons.camera_alt,
-                          color: _capturedImagePath != null
-                              ? Colors.green
-                              : null,
-                        ),
-                        label: Text(
-                          _capturedImagePath != null
-                              ? 'Receipt Captured ✓'
-                              : 'Capture Receipt (Optional)',
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          side: BorderSide(
-                            color: _capturedImagePath != null
-                                ? Colors.green
-                                : Theme.of(context).colorScheme.outline,
-                          ),
-                        ),
-                      ),
-                      if (_capturedImagePath != null) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
-                              child: Container(
-                                height: 100,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.green),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    File(_capturedImagePath!),
-                                    fit: BoxFit.cover,
-                                  ),
+                              child: OutlinedButton.icon(
+                                onPressed: _isResolvingLoyalty
+                                    ? null
+                                    : _scanLoyaltyBarcode,
+                                icon: const Icon(Icons.qr_code_scanner),
+                                label: Text(
+                                  AppLocalizations.t('scan_loyalty_barcode'),
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.red),
-                              onPressed: () {
-                                setState(() {
-                                  _capturedImagePath = null;
-                                });
-                              },
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isResolvingLoyalty
+                                    ? null
+                                    : _enterLoyaltyBarcodeManually,
+                                icon: const Icon(Icons.keyboard),
+                                label: Text(
+                                  AppLocalizations.t('enter_loyalty_barcode'),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                      ],
-                      const SizedBox(height: 16),
-                    ],
-                    // Summary
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.outline.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                AppLocalizations.t('subtotal'),
-                                style: const TextStyle(fontSize: 14),
+                        if (_selectedCustomer != null) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primaryContainer
+                                  .withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.2),
                               ),
-                              Text(
-                                '₱${widget.pos.cartSubtotal.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (widget.pos.cartDiscount > 0) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  AppLocalizations.t('discount'),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.red,
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _selectedCustomer!.fullName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedCustomer = null;
+                                          _applyLoyaltyRedemption = false;
+                                          _recomputeCashChange();
+                                        });
+                                      },
+                                      child: Text(AppLocalizations.t('clear')),
+                                    ),
+                                  ],
                                 ),
                                 Text(
-                                  '-₱${widget.pos.cartDiscount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.red,
+                                  '${AppLocalizations.t('current_points')}: ${_selectedCustomer!.pointsBalance}',
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${AppLocalizations.t('estimated_loyalty_points')}: $_estimatedEarnedPoints',
+                                ),
+                                if (_maxRedeemablePoints > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${AppLocalizations.t('redeemable_points')}: $_maxRedeemablePoints (${AppCurrency.peso(_loyaltyDiscountAmount)})',
+                                  ),
+                                ] else ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    AppLocalizations.t(
+                                      'redemption_minimum_notice',
+                                    ).replaceAll(
+                                      '{n}',
+                                      CustomerService.minRedeemPoints
+                                          .toString(),
+                                    ),
+                                    style: TextStyle(color: Colors.grey[700]),
+                                  ),
+                                ],
+                                SwitchListTile(
+                                  value:
+                                      _applyLoyaltyRedemption &&
+                                      _maxRedeemablePoints > 0,
+                                  onChanged: _maxRedeemablePoints > 0
+                                      ? (value) {
+                                          setState(() {
+                                            _applyLoyaltyRedemption = value;
+                                            _recomputeCashChange();
+                                          });
+                                        }
+                                      : null,
+                                  contentPadding: EdgeInsets.zero,
+                                  dense: true,
+                                  title: Text(
+                                    AppLocalizations.t(
+                                      'apply_loyalty_redemption',
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          ],
-                          if (_loyaltyDiscountAmount > 0) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  AppLocalizations.t('loyalty_redemption'),
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                                Text(
-                                  '-₱${_loyaltyDiscountAmount.toStringAsFixed(2)}',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.green,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const Divider(height: 24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                AppLocalizations.t('grand_total'),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              Text(
-                                '₱${_payableTotal.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ],
                           ),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Checkout button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton.icon(
-                        onPressed:
-                            (_selectedPaymentMethod == 'cash' && _change < 0)
-                            ? null
-                            : _checkout,
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: PaymentMethodChip(
+                                label: AppLocalizations.t('cash'),
+                                icon: Icons.payments_outlined,
+                                isSelected: _selectedPaymentMethod == 'cash',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPaymentMethod = 'cash';
+                                    _cashTendered = 0.0;
+                                    _change = 0.0;
+                                    _amountController.clear();
+                                    _referenceCodeController.clear();
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: PaymentMethodChip(
+                                label: AppLocalizations.t('gcash'),
+                                icon: Icons.phone_android,
+                                isSelected: _selectedPaymentMethod == 'gcash',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPaymentMethod = 'gcash';
+                                    _referenceCodeController.clear();
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: PaymentMethodChip(
+                                label: AppLocalizations.t('online_bank'),
+                                icon: Icons.account_balance,
+                                isSelected:
+                                    _selectedPaymentMethod == 'online_bank',
+                                onTap: () {
+                                  setState(() {
+                                    _selectedPaymentMethod = 'online_bank';
+                                    _referenceCodeController.clear();
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        // Cash amount input (only for cash payment)
+                        if (_selectedPaymentMethod == 'cash') ...[
+                          TextField(
+                            controller: _amountController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: AppLocalizations.t('amount_tendered'),
+                              prefixText: '₱ ',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _cashTendered = double.tryParse(value) ?? 0.0;
+                                _change = _cashTendered - widget.pos.cartTotal;
+                              });
+                            },
+                          ),
+                          if (_cashTendered > 0) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _change >= 0
+                                    ? Colors.green.withValues(alpha: 0.1)
+                                    : Colors.red.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: _change >= 0
+                                      ? Colors.green
+                                      : Colors.red,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    AppLocalizations.t('change'),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _change >= 0
+                                          ? Colors.green[700]
+                                          : Colors.red[700],
+                                    ),
+                                  ),
+                                  Text(
+                                    AppCurrency.peso(_change),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 18,
+                                      color: _change >= 0
+                                          ? Colors.green[700]
+                                          : Colors.red[700],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                        ],
+                        // Reference code input (for GCash and Online Bank)
+                        if (_selectedPaymentMethod == 'gcash' ||
+                            _selectedPaymentMethod == 'online_bank') ...[
+                          TextField(
+                            controller: _referenceCodeController,
+                            decoration: InputDecoration(
+                              labelText: 'Reference Code (Optional)',
+                              hintText: 'Enter transaction reference number',
+                              helperText:
+                                  'Provide reference code OR capture receipt',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              prefixIcon: Icon(
+                                _selectedPaymentMethod == 'gcash'
+                                    ? Icons.phone_android
+                                    : Icons.account_balance,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // Camera capture button
+                          OutlinedButton.icon(
+                            onPressed: _openCamera,
+                            icon: Icon(
+                              _capturedImagePath != null
+                                  ? Icons.check_circle
+                                  : Icons.camera_alt,
+                              color: _capturedImagePath != null
+                                  ? Colors.green
+                                  : null,
+                            ),
+                            label: Text(
+                              _capturedImagePath != null
+                                  ? 'Receipt Captured ✓'
+                                  : 'Capture Receipt (Optional)',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              side: BorderSide(
+                                color: _capturedImagePath != null
+                                    ? Colors.green
+                                    : Theme.of(context).colorScheme.outline,
+                              ),
+                            ),
+                          ),
+                          if (_capturedImagePath != null) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    height: 100,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.green),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.file(
+                                        File(_capturedImagePath!),
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.red,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _capturedImagePath = null;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                        ],
+                        // Summary
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface,
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.outline.withValues(alpha: 0.2),
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    AppLocalizations.t('subtotal'),
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                  Text(
+                                    AppCurrency.peso(widget.pos.cartSubtotal),
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (widget.pos.cartDiscount > 0) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.t('discount'),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                    Text(
+                                      '-${AppCurrency.peso(widget.pos.cartDiscount)}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.red,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              if (_loyaltyDiscountAmount > 0) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.t('loyalty_redemption'),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                    Text(
+                                      '-${AppCurrency.peso(_loyaltyDiscountAmount)}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                              const Divider(height: 24),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    AppLocalizations.t('grand_total'),
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    AppCurrency.peso(_payableTotal),
+                                    style: TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        icon: const Icon(Icons.check_circle_outline, size: 24),
-                        label: Text(
-                          AppLocalizations.t('confirm_payment'),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                        const SizedBox(height: 16),
+                        // Checkout button
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: ElevatedButton.icon(
+                            onPressed:
+                                (_selectedPaymentMethod == 'cash' &&
+                                    _change < 0)
+                                ? null
+                                : _checkout,
+                            style: ElevatedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.check_circle_outline,
+                              size: 24,
+                            ),
+                            label: Text(
+                              AppLocalizations.t('confirm_payment'),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  ], // end children of inner Column
-                ), // end inner Column
-              ), // end payment Container
+                      ], // end children of inner Column
+                    ), // end inner Column
+                  ), // end payment scroll view
+                ), // end payment Container
+              ), // end payment area
             ], // end spread (if cart.isNotEmpty)
           ], // end children of outer Column
         ), // end outer Column

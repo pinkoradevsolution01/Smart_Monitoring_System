@@ -1079,7 +1079,12 @@ class DatabaseService {
       debugPrint('   ShoeSizes JSON: ${map['shoeSizes']}');
     }
 
-    final rows = await db.update('products', map, where: 'id = ?', whereArgs: [product.id]);
+    final rows = await db.update(
+      'products',
+      map,
+      where: 'id = ?',
+      whereArgs: [product.id],
+    );
     _queueCloudSync();
     return rows;
   }
@@ -1448,7 +1453,11 @@ class DatabaseService {
       }
 
       for (final saleId in duplicateIds) {
-        await txn.delete('sale_items', where: 'saleId = ?', whereArgs: [saleId]);
+        await txn.delete(
+          'sale_items',
+          where: 'saleId = ?',
+          whereArgs: [saleId],
+        );
         await txn.delete('sales', where: 'id = ?', whereArgs: [saleId]);
       }
 
@@ -1483,7 +1492,11 @@ class DatabaseService {
           where: 'id = ?',
           whereArgs: [saleId],
         );
-        await txn.delete('sale_items', where: 'saleId = ?', whereArgs: [saleId]);
+        await txn.delete(
+          'sale_items',
+          where: 'saleId = ?',
+          whereArgs: [saleId],
+        );
         await _insertSaleItems(txn, saleId, sale.items);
         return saleId;
       }
@@ -1834,7 +1847,11 @@ class DatabaseService {
   /// Delete a damage report
   Future<int> deleteDamageReport(int id) async {
     final db = await database;
-    final rows = await db.delete('damage_reports', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete(
+      'damage_reports',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _deleteRemoteRecord('damage-reports', id);
     return rows;
   }
@@ -1924,7 +1941,11 @@ class DatabaseService {
   /// Delete a CCTV timestamp
   Future<int> deleteCCTVTimestamp(int id) async {
     final db = await database;
-    final rows = await db.delete('cctv_timestamps', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete(
+      'cctv_timestamps',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _deleteRemoteRecord('cctv-timestamps', id);
     _queueCloudSync();
     return rows;
@@ -1994,7 +2015,12 @@ class DatabaseService {
   /// Update a camera
   Future<int> updateCamera(int id, Map<String, dynamic> data) async {
     final db = await database;
-    final rows = await db.update('cameras', data, where: 'id = ?', whereArgs: [id]);
+    final rows = await db.update(
+      'cameras',
+      data,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     _queueCloudSync();
     return rows;
   }
@@ -2106,9 +2132,7 @@ class DatabaseService {
     return id;
   }
 
-  Future<void> replaceActivityLogs(
-    List<Map<String, dynamic>> logs,
-  ) async {
+  Future<void> replaceActivityLogs(List<Map<String, dynamic>> logs) async {
     final db = await database;
     await db.delete('activity_logs');
     if (logs.isNotEmpty) {
@@ -2265,7 +2289,8 @@ class DatabaseService {
         await testFile.delete();
       } catch (e) {
         throw Exception(
-            'Permission denied writing to $directoryPath. On Android use app-specific folders or grant storage permission. Original error: $e');
+          'Permission denied writing to $directoryPath. On Android use app-specific folders or grant storage permission. Original error: $e',
+        );
       }
 
       // Generate backup filename with timestamp
@@ -2273,7 +2298,10 @@ class DatabaseService {
           .toIso8601String()
           .replaceAll(':', '-')
           .split('.')[0];
-      final backupPath = join(targetDir.path, 'pos_system_backup_$timestamp.db');
+      final backupPath = join(
+        targetDir.path,
+        'pos_system_backup_$timestamp.db',
+      );
 
       // Copy database file to selected location
       final dbFile = File(dbPath);
@@ -2537,7 +2565,9 @@ class DatabaseService {
         return;
       }
 
-      final destinationUsersFile = File(_usersBackupPath(destinationBackupPath));
+      final destinationUsersFile = File(
+        _usersBackupPath(destinationBackupPath),
+      );
       await sourceUsersFile.copy(destinationUsersFile.path);
       debugPrint('✅ Users backup copied: ${destinationUsersFile.path}');
     } catch (e) {
@@ -2809,7 +2839,11 @@ class DatabaseService {
   /// Delete a restock record
   Future<int> deleteRestockRecord(int id) async {
     final db = await database;
-    final rows = await db.delete('restock_records', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete(
+      'restock_records',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _deleteRemoteRecord('restock-records', id);
     return rows;
   }
@@ -3053,7 +3087,11 @@ class DatabaseService {
   Future<int> deletePurchaseOrder(int id) async {
     final db = await database;
     // Items will be deleted automatically due to ON DELETE CASCADE
-    final rows = await db.delete('purchase_orders', where: 'id = ?', whereArgs: [id]);
+    final rows = await db.delete(
+      'purchase_orders',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _deleteRemoteRecord('purchase-orders', id);
     return rows;
   }

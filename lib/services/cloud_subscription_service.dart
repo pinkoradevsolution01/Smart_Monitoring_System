@@ -39,14 +39,19 @@ class CloudSubscriptionService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      debugPrint('CloudSubscriptionService: Fetching subscriptions from backend...');
+      debugPrint(
+        'CloudSubscriptionService: Fetching subscriptions from backend...',
+      );
 
       final response = await _api.getJson('license/subscriptions');
-      final rows = response is Map<String, dynamic> && response['subscriptions'] is List
+      final rows =
+          response is Map<String, dynamic> && response['subscriptions'] is List
           ? List<Map<String, dynamic>>.from(response['subscriptions'] as List)
           : const <Map<String, dynamic>>[];
 
-      _subscriptions = rows.map((json) => SubscriptionRecord.fromJson(json)).toList();
+      _subscriptions = rows
+          .map((json) => SubscriptionRecord.fromJson(json))
+          .toList();
       _calculateStatistics();
 
       debugPrint(
