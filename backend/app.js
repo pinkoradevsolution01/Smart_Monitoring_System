@@ -3,8 +3,8 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const os = require('os');
-const jwt = require('jsonwebtoken');
 const { initDb, query } = require('./db');
+const { attachOptionalSession } = require('./security/session_tokens');
 const authRouter = require('./routes/auth');
 const developerRouter = require('./routes/developer');
 const businessRouter = require('./routes/business');
@@ -28,22 +28,7 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));
 
-app.use((req, _res, next) => {
-  const authHeader = req.headers.authorization || '';
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    return next();
-  }
-
-  try {
-    const secret = process.env.JWT_SECRET || 'change-this-secret';
-    req.auth = jwt.verify(match[1], secret);
-  } catch (_) {
-    req.auth = null;
-  }
-
-  return next();
-});
+app.use(attachOptionalSession);
 
 app.use('/api/auth', authRouter);
 app.use('/api/developer', developerRouter);

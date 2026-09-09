@@ -1,20 +1,14 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const { query, getConnection } = require('../db');
+const { signSession } = require('../security/session_tokens');
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET;
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
 }
 
 function issueBusinessSession(user) {
-  if (!JWT_SECRET) throw new Error('JWT_SECRET is not configured.');
-  return jwt.sign(
-    { userId: user.id, email: user.email, role: user.role, businessId: user.business_id },
-    JWT_SECRET,
-    { expiresIn: '12h' },
-  );
+  return signSession({ userId: user.id, email: user.email, role: user.role, businessId: user.business_id });
 }
 
 function buildInClause(values) {

@@ -1,6 +1,7 @@
 const express = require('express');
 const { randomUUID } = require('crypto');
 const { query, getConnection } = require('../db');
+const { requireActiveBusiness, requireManagementRole } = require('../security/business_access');
 
 const router = express.Router();
 
@@ -468,16 +469,9 @@ function toMySqlDatetime(value) {
 }
 
 function extractBusinessId(req, payload = {}) {
-  return (
-    payload.business_id ||
-    payload.businessId ||
-    req.query.business_id ||
-    req.query.businessId ||
-    req.headers['x-business-id'] ||
-    req.auth?.businessId ||
-    req.auth?.business_id ||
-    null
-  );
+  // Tenant scope must come from server-verified session membership. Ignore
+  // body, query, and header values so one business cannot select another.
+  return req.businessContext?.businessId || null;
 }
 
 function applyValueTransforms(config, row) {
@@ -825,6 +819,11 @@ function registerCrudRoutes(resourceName, config) {
     }
   });
 }
+
+// The generic resource API manages business-owned operational records. It is
+// intentionally management-only; POS staff use the dedicated workflows/sync
+// routes rather than a broad CRUD surface.
+router.use(requireActiveBusiness, requireManagementRole);
 
 for (const [resourceName, config] of Object.entries(RESOURCE_CONFIG)) {
   registerCrudRoutes(resourceName, config);

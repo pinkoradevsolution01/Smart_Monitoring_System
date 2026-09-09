@@ -1,9 +1,8 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const { query } = require('../db');
+const { tokenFromRequest, verifySession } = require('../security/session_tokens');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const BUSINESS_ROLES = new Set(['owner', 'admin', 'manager']);
 const MAX_RANGE_DAYS = 366;
 const MAX_PAGE_SIZE = 100;
@@ -21,39 +20,42 @@ function dateRange(req, res, next) {
 }
 
 async function requireBusinessAnalytics(req, res, next) {
-  const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = tokenFromRequest(req);
   if (!token) return res.status(401).json({ success: false, message: 'Missing authorization token.' });
   try {
-    const auth = jwt.verify(token, JWT_SECRET);
+    const auth = verifySession(token);
     const businessId = tenantScopeFromToken(auth);
     if (!businessId || !BUSINESS_ROLES.has(String(auth.role || '').toLowerCase())) return res.status(403).json({ success: false, message: 'Analytics access is not permitted.' });
-    const rows = await query(`SELECT u.id, u.is_active AS user_active, b.id, b.name, b.is_active AS business_active
+    const rows = await query(`SELECT u.id, u.role AS user_role, u.is_active AS user_active, b.id, b.name, b.is_active AS business_active
       FROM users u INNER JOIN businesses b ON b.id = u.business_id WHERE u.id = ? AND u.business_id = ? LIMIT 1`, [auth.userId, businessId]);
-    if (!rows.length || (rows[0].user_active ?? 1) !== 1 || (rows[0].business_active ?? 1) !== 1) return res.status(403).json({ success: false, message: 'The account or business is inactive.' });
-    req.analytics = { businessId, businessName: rows[0].name, userId: auth.userId, role: auth.role };
+    const user = rows[0];
+    const databaseRole = String(user?.user_role || '').toLowerCase();
+    if (!user || (user.user_active ?? 1) !== 1 || (user.business_active ?? 1) !== 1) return res.status(403).json({ success: false, message: 'The account or business is inactive.' });
+    if (!BUSINESS_ROLES.has(databaseRole) || databaseRole !== String(auth.role || '').toLowerCase()) return res.status(403).json({ success: false, message: 'Analytics access is not permitted.' });
+    req.analytics = { businessId, businessName: user.name, userId: auth.userId, role: databaseRole };
     next();
   } catch (_) { return res.status(401).json({ success: false, message: 'Invalid or expired token.' }); }
 }
 
 function meta(req) { return { businessId: req.analytics.businessId, from: req.analyticsRange.from, to: req.analyticsRange.to, timezone: 'Asia/Manila', generatedAt: new Date().toISOString() }; }
 function page(req) { const value = Math.max(1, Number.parseInt(req.query.page, 10) || 1); const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25)); return { value, pageSize, offset: (value - 1) * pageSize }; }
-function sendCsv(res, filename, headers, rows) { const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`; res.setHeader('Content-Type', 'text/csv; charset=utf-8'); res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`); res.send([headers, ...rows.map((row) => row.map(escape).join(','))].join('\n')); }
+function sendCsv(res, filename, headers, rows) {
+  // Excel and similar spreadsheet programs evaluate cells beginning with one
+  // of these characters as formulas. Prefix them to keep exports as data.
+  const escape = (value) => {
+    const text = String(value ?? '');
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replace(/"/g, '""')}"`;
+  };
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+  res.send([headers, ...rows.map((row) => row.map(escape).join(','))].join('\n'));
+}
 
 router.get('/developer/subscriptions', dateRange, async (req, res) => {
-  const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = tokenFromRequest(req);
   try {
-    const auth = token && jwt.verify(token, JWT_SECRET);
-    if (!auth || String(auth.role).toLowerCase() !== 'developer') return res.status(403).json({ success: false, message: 'Developer access is required.' });
-    const subscriptions = await query(`SELECT package_name, status, COUNT(*) count FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY package_name, status ORDER BY package_name, status`, [req.analyticsRange.from, req.analyticsRange.toExclusive]);
-    const upcomingExpirations = await query(`SELECT package_name, device_name, expires_at, status FROM subscriptions WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at >= NOW() AND expires_at < DATE_ADD(NOW(), INTERVAL 30 DAY) ORDER BY expires_at ASC LIMIT 100`);
-    return res.json({ success: true, data: { subscriptions, upcomingExpirations }, meta: { from: req.analyticsRange.from, to: req.analyticsRange.to, timezone: 'Asia/Manila', generatedAt: new Date().toISOString() } });
-  } catch (_) { return res.status(401).json({ success: false, message: 'Invalid or expired token.' }); }
-});
-
-router.get('/developer/subscriptions', dateRange, async (req, res) => {
-  const token = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1];
-  try {
-    const auth = token && jwt.verify(token, JWT_SECRET);
+    const auth = token && verifySession(token);
     if (!auth || String(auth.role).toLowerCase() !== 'developer') return res.status(403).json({ success: false, message: 'Developer access is required.' });
     const subscriptions = await query(`SELECT package_name, status, COUNT(*) count FROM subscriptions WHERE activated_at >= ? AND activated_at < ? GROUP BY package_name, status ORDER BY package_name, status`, [req.analyticsRange.from, req.analyticsRange.toExclusive]);
     const upcomingExpirations = await query(`SELECT package_name, device_name, expires_at, status FROM subscriptions WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at >= NOW() AND expires_at < DATE_ADD(NOW(), INTERVAL 30 DAY) ORDER BY expires_at ASC LIMIT 100`);
@@ -104,7 +106,89 @@ router.get('/operations', async (req, res) => {
 
 router.get('/cctv-events', async (req, res) => { const { businessId } = req.analytics; const { from, toExclusive } = req.analyticsRange; const { value, pageSize, offset } = page(req); try { const [total] = await query(`SELECT COUNT(*) total FROM cctv_timestamps WHERE business_id = ? AND \`timestamp\` >= ? AND \`timestamp\` < ?`, [businessId, from, toExclusive]); const rows = await query(`SELECT t.id, t.camera_id, c.name AS camera_name, c.location AS camera_location, t.label, t.description, t.\`timestamp\`, t.created_by FROM cctv_timestamps t INNER JOIN cameras c ON c.id = t.camera_id AND c.business_id = t.business_id WHERE t.business_id = ? AND t.\`timestamp\` >= ? AND t.\`timestamp\` < ? ORDER BY t.\`timestamp\` DESC LIMIT ${pageSize} OFFSET ${offset}`, [businessId, from, toExclusive]); res.json({ success: true, data: rows, pagination: { page: value, pageSize, total: total.total }, meta: meta(req) }); } catch (error) { console.error('Analytics CCTV error:', error); res.status(500).json({ success: false, message: 'Failed to load CCTV events.' }); } });
 
-router.get('/export', async (req, res) => { const report = String(req.query.report || ''); if (!['sales', 'inventory', 'customers', 'operations'].includes(report)) return res.status(400).json({ success: false, message: 'Invalid export report.' }); const { businessId } = req.analytics; const { from, toExclusive } = req.analyticsRange; try { if (report === 'sales') { const rows = await query(`SELECT id, datetime, cashier_name, payment_method, status, subtotal, discount, total_amount FROM sales WHERE business_id = ? AND datetime >= ? AND datetime < ? ORDER BY datetime DESC`, [businessId, from, toExclusive]); return sendCsv(res, `sales-${from}-to-${req.analyticsRange.to}`, ['ID','Datetime','Cashier','Payment','Status','Subtotal','Discount','Total'], rows.map(Object.values)); } if (report === 'inventory') { const rows = await query(`SELECT name, category, quantity, low_stock_threshold, buying_price, selling_price FROM products WHERE business_id = ? ORDER BY name`, [businessId]); return sendCsv(res, `inventory-${from}-to-${req.analyticsRange.to}`, ['Product','Category','Quantity','Threshold','Cost','Retail'], rows.map(Object.values)); } const rows = await query(`SELECT customer_code, points_balance, lifetime_points, created_at, is_active FROM customers WHERE business_id = ? ORDER BY created_at DESC`, [businessId]); return sendCsv(res, `customers-${from}-to-${req.analyticsRange.to}`, ['Customer','Points balance','Lifetime points','Created at','Active'], rows.map(Object.values)); } catch (error) { console.error('Analytics export error:', error); res.status(500).json({ success: false, message: 'Failed to export analytics report.' }); } });
+router.get('/export', async (req, res) => {
+  const report = String(req.query.report || 'overview');
+  const supportedReports = new Set(['overview', 'sales', 'inventory', 'customers', 'operations', 'cctv-events']);
+  if (!supportedReports.has(report)) {
+    return res.status(400).json({ success: false, message: 'Invalid export report.' });
+  }
+
+  const { businessId } = req.analytics;
+  const { from, to, toExclusive } = req.analyticsRange;
+  try {
+    if (report === 'overview') {
+      const [summary] = await query(
+        `SELECT COALESCE(SUM(total_amount), 0) net_sales, COUNT(*) completed_transactions,
+          COALESCE(SUM(item_count), 0) items_sold
+         FROM sales
+         WHERE business_id = ? AND status = 'completed' AND datetime >= ? AND datetime < ?`,
+        [businessId, from, toExclusive],
+      );
+      return sendCsv(res, `overview-${from}-to-${to}`,
+        ['Business', 'From', 'To', 'Net sales', 'Completed transactions', 'Items sold'],
+        [[req.analytics.businessName, from, to, summary.net_sales, summary.completed_transactions, summary.items_sold]]);
+    }
+
+    if (report === 'sales') {
+      const rows = await query(
+        `SELECT id, datetime, cashier_name, payment_method, status, subtotal, discount, total_amount
+         FROM sales WHERE business_id = ? AND datetime >= ? AND datetime < ? ORDER BY datetime DESC`,
+        [businessId, from, toExclusive],
+      );
+      return sendCsv(res, `sales-${from}-to-${to}`,
+        ['ID', 'Datetime', 'Cashier', 'Payment', 'Status', 'Subtotal', 'Discount', 'Total'], rows.map(Object.values));
+    }
+
+    if (report === 'inventory') {
+      const rows = await query(
+        `SELECT name, category, quantity, low_stock_threshold, buying_price, selling_price
+         FROM products WHERE business_id = ? ORDER BY name`,
+        [businessId],
+      );
+      return sendCsv(res, `inventory-${from}-to-${to}`,
+        ['Product', 'Category', 'Quantity', 'Threshold', 'Cost', 'Retail'], rows.map(Object.values));
+    }
+
+    if (report === 'customers') {
+      const rows = await query(
+        `SELECT customer_code, points_balance, lifetime_points, created_at, is_active
+         FROM customers WHERE business_id = ? ORDER BY created_at DESC`,
+        [businessId],
+      );
+      return sendCsv(res, `customers-${from}-to-${to}`,
+        ['Customer', 'Points balance', 'Lifetime points', 'Created at', 'Active'], rows.map(Object.values));
+    }
+
+    if (report === 'cctv-events') {
+      const rows = await query(
+        `SELECT c.name, c.location, t.label, t.description, t.\`timestamp\`, t.created_by
+         FROM cctv_timestamps t INNER JOIN cameras c ON c.id = t.camera_id AND c.business_id = t.business_id
+         WHERE t.business_id = ? AND t.\`timestamp\` >= ? AND t.\`timestamp\` < ? ORDER BY t.\`timestamp\` DESC`,
+        [businessId, from, toExclusive],
+      );
+      return sendCsv(res, `cctv-events-${from}-to-${to}`,
+        ['Camera', 'Location', 'Event', 'Description', 'Timestamp', 'Created by'], rows.map(Object.values));
+    }
+
+    const rows = await query(
+      `SELECT 'Attendance' AS record_type, user_id AS reference, time AS occurred_at, type AS details, '' AS status
+       FROM attendance_entries WHERE business_id = ? AND time >= ? AND time < ?
+       UNION ALL
+       SELECT 'Purchase order', order_number, order_date, COALESCE(notes, ''), status
+       FROM purchase_orders WHERE business_id = ? AND order_date >= ? AND order_date < ?
+       UNION ALL
+       SELECT 'Damage report', product_name, reported_at, COALESCE(description, ''), status
+       FROM damage_reports WHERE business_id = ? AND reported_at >= ? AND reported_at < ?
+       ORDER BY occurred_at DESC`,
+      [businessId, from, toExclusive, businessId, from, toExclusive, businessId, from, toExclusive],
+    );
+    return sendCsv(res, `operations-${from}-to-${to}`,
+      ['Type', 'Reference', 'Occurred at', 'Details', 'Status'], rows.map(Object.values));
+  } catch (error) {
+    console.error('Analytics export error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to export analytics report.' });
+  }
+});
 
 module.exports = router;
 module.exports.__test = { tenantScopeFromToken, BUSINESS_ROLES };

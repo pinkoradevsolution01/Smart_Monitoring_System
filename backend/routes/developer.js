@@ -1,10 +1,9 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const express = require('express');
 const { query } = require('../db');
+const { signSession } = require('../security/session_tokens');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
@@ -152,7 +151,7 @@ router.post('/login', async (req, res) => {
       [account.id],
     );
 
-    const token = jwt.sign({ userId: account.id, role: 'developer' }, JWT_SECRET, { expiresIn: '12h' });
+    const token = signSession({ userId: account.id, role: 'developer' });
     return res.json({
       success: true,
       token,

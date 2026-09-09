@@ -1,6 +1,5 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const {
   randomUUID,
   randomBytes,
@@ -8,9 +7,9 @@ const {
 } = require('crypto');
 const { query, execute } = require('../db');
 const { escapeHtml, sendEmail } = require('../services/resend_email');
+const { signSession, tokenFromRequest, verifySession } = require('../security/session_tokens');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || '';
@@ -74,9 +73,7 @@ async function fetchUserById(id, businessId = null) {
       'SELECT id, business_id, email, password_hash, role, full_name, contact_number, auth_method, is_active, created_at, updated_at, last_login_at FROM users WHERE id = ? AND business_id = ? LIMIT 1',
       [id, businessId],
     );
-    if (scopedRows.length) {
-      return scopedRows[0];
-    }
+    return scopedRows[0] || null;
   }
 
   const rows = await query(
@@ -100,6 +97,14 @@ async function verifyGoogleIdToken(idToken) {
 
   if (profile.email_verified !== 'true' && profile.email_verified !== true) {
     throw new Error('Google email is not verified');
+  }
+
+  if (GOOGLE_CLIENT_ID && profile.aud !== GOOGLE_CLIENT_ID && profile.azp !== GOOGLE_CLIENT_ID) {
+    throw new Error('Google ID token was issued for a different client');
+  }
+
+  if (profile.iss && profile.iss !== 'https://accounts.google.com' && profile.iss !== 'accounts.google.com') {
+    throw new Error('Google ID token has an invalid issuer');
   }
 
   return profile;
@@ -231,11 +236,7 @@ async function findAnalyticsUserById(userId, businessId) {
 }
 
 function issueAnalyticsSession(user) {
-  const token = jwt.sign(
-    { userId: user.id, email: user.email, role: user.role, businessId: user.business_id },
-    JWT_SECRET,
-    { expiresIn: '12h' },
-  );
+  const token = signSession({ userId: user.id, email: user.email, role: user.role, businessId: user.business_id });
 
   return {
     success: true,
@@ -252,11 +253,7 @@ function issueAnalyticsSession(user) {
 }
 
 function issueAppSession(profile) {
-  const token = jwt.sign(
-    { userId: profile.sub, email: profile.email, role: 'google_user', name: profile.name || profile.email.split('@')[0] },
-    JWT_SECRET,
-    { expiresIn: '12h' },
-  );
+  const token = signSession({ userId: profile.sub, email: profile.email, role: 'google_user', name: profile.name || profile.email.split('@')[0] });
   return { success: true, token, user: { id: profile.sub, email: profile.email, role: 'google_user', fullName: profile.name || profile.email.split('@')[0], avatarUrl: profile.picture || null } };
 }
 
@@ -270,7 +267,9 @@ function pruneOauthStateStore() {
   }
 }
 
-setInterval(pruneOauthStateStore, OAUTH_STATE_CLEANUP_INTERVAL_MS);
+// Do not keep the backend test process alive solely for housekeeping.
+const oauthCleanupTimer = setInterval(pruneOauthStateStore, OAUTH_STATE_CLEANUP_INTERVAL_MS);
+oauthCleanupTimer.unref?.();
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
@@ -316,11 +315,7 @@ router.post('/login', async (req, res) => {
       [user.id],
     );
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, businessId: user.business_id || null },
-      JWT_SECRET,
-      { expiresIn: '12h' },
-    );
+    const token = signSession({ userId: user.id, email: user.email, role: user.role, businessId: user.business_id || null });
 
     return res.json({
       success: true,
@@ -521,13 +516,20 @@ router.post('/owner-pin/verify', async (req, res) => {
   }
 });
 
-router.post('/google/register-owner', async (req, res) => {
+router.post('/google/register-owner', verifyToken, async (req, res) => {
   const { id, email, fullName, avatarUrl, contactNumber } = req.body || {};
-  const businessId = resolveBusinessId(req, req.body || {});
+  // This registration starts with a Google-authenticated identity. Never use
+  // a browser-supplied user or business ID as authority.
+  const businessId = req.user?.businessId || null;
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
 
   if (!normalizedEmail) {
     return res.status(400).json({ success: false, message: 'Email is required.' });
+  }
+  if (String(req.user?.role || '').toLowerCase() !== 'google_user' ||
+      normalizedEmail.toLowerCase() !== String(req.user?.email || '').toLowerCase() ||
+      (id && String(id) !== String(req.user?.userId))) {
+    return res.status(403).json({ success: false, message: 'The Google identity does not match this owner registration.' });
   }
 
   try {
@@ -577,7 +579,7 @@ router.post('/google/register-owner', async (req, res) => {
       );
     } else {
       const placeholderHash = await bcrypt.hash(randomUUID(), 10);
-      const userId = id || randomUUID();
+      const userId = req.user.userId;
       await query(
         'INSERT INTO users (id, business_id, email, password_hash, role, full_name, contact_number, auth_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [
@@ -621,10 +623,10 @@ router.post('/google/register-owner', async (req, res) => {
   }
 });
 
-router.patch('/users/:id', async (req, res) => {
+router.patch('/users/:id', verifyToken, requireBusinessManager, async (req, res) => {
   const { id } = req.params;
   const { fullName, email, contactNumber, role, isActive } = req.body || {};
-  const businessId = resolveBusinessId(req, req.body || {});
+  const businessId = req.businessContext.businessId;
   const normalizedEmail = typeof email === 'string' ? email.trim() : '';
 
   try {
@@ -652,7 +654,7 @@ router.patch('/users/:id', async (req, res) => {
     await query(
       `UPDATE users
        SET full_name = ?, email = ?, contact_number = ?, role = ?, is_active = COALESCE(?, is_active)
-       WHERE id = ?`,
+       WHERE id = ? AND business_id = ?`,
       [
         fullName || existing.full_name || existing.email.split('@')[0],
         normalizedEmail || existing.email,
@@ -660,6 +662,7 @@ router.patch('/users/:id', async (req, res) => {
         role || existing.role,
         typeof isActive === 'boolean' ? (isActive ? 1 : 0) : null,
         id,
+        businessId,
       ],
     );
 
@@ -683,10 +686,10 @@ router.patch('/users/:id', async (req, res) => {
   }
 });
 
-router.patch('/users/:id/password', async (req, res) => {
+router.patch('/users/:id/password', verifyToken, requireBusinessManager, async (req, res) => {
   const { id } = req.params;
   const { currentPassword, newPassword } = req.body || {};
-  const businessId = resolveBusinessId(req, req.body || {});
+  const businessId = req.businessContext.businessId;
 
   if (!newPassword || newPassword.length < 6) {
     return res.status(400).json({ success: false, message: 'New password must be at least 6 characters.' });
@@ -714,8 +717,8 @@ router.patch('/users/:id/password', async (req, res) => {
 
     const newHash = await bcrypt.hash(newPassword, 10);
     await query(
-      'UPDATE users SET password_hash = ?, auth_method = ? WHERE id = ?',
-      [newHash, 'password', id],
+      'UPDATE users SET password_hash = ?, auth_method = ? WHERE id = ? AND business_id = ?',
+      [newHash, 'password', id, businessId],
     );
 
     return res.json({
@@ -732,9 +735,9 @@ router.patch('/users/:id/password', async (req, res) => {
   }
 });
 
-router.delete('/users/:id', async (req, res) => {
+router.delete('/users/:id', verifyToken, requireBusinessManager, async (req, res) => {
   const { id } = req.params;
-  const businessId = resolveBusinessId(req, req.body || {});
+  const businessId = req.businessContext.businessId;
 
   try {
     const existing = await fetchUserById(id, businessId);
@@ -882,18 +885,45 @@ router.post('/logout', async (_req, res) => {
 });
 
 function verifyToken(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const token = tokenFromRequest(req);
   if (!token) {
     return res.status(401).json({ success: false, message: 'Missing authorization token.' });
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = verifySession(token);
     req.user = payload;
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token.' });
+  }
+}
+
+async function requireBusinessManager(req, res, next) {
+  const auth = req.user;
+  if (!auth?.userId || !auth?.businessId) {
+    return res.status(401).json({ success: false, message: 'A valid business session is required.' });
+  }
+  try {
+    const rows = await query(
+      `SELECT u.id, u.business_id, u.role, u.is_active AS user_active, b.is_active AS business_active
+       FROM users u INNER JOIN businesses b ON b.id = u.business_id
+       WHERE u.id = ? AND u.business_id = ? LIMIT 1`,
+      [auth.userId, auth.businessId],
+    );
+    const user = rows[0];
+    const databaseRole = String(user?.role || '').toLowerCase();
+    if (!user || (user.user_active ?? 1) !== 1 || (user.business_active ?? 1) !== 1) {
+      return res.status(403).json({ success: false, message: 'The account or business is inactive.' });
+    }
+    if (!['owner', 'admin', 'manager'].includes(databaseRole) || databaseRole !== String(auth.role || '').toLowerCase()) {
+      return res.status(403).json({ success: false, message: 'Management access is required.' });
+    }
+    req.businessContext = { businessId: user.business_id, role: databaseRole, userId: user.id };
+    return next();
+  } catch (error) {
+    console.error('Auth business manager verification error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to verify management access.' });
   }
 }
 
