@@ -36,8 +36,10 @@ app.use('/api/business', businessRouter);
 app.use('/api/license', licenseRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/analytics', analyticsRouter);
-app.use('/api', crudRouter);
 
+// Keep liveness endpoints ahead of the generic /api router.  The generic
+// router is intentionally authenticated and must not turn health probes into
+// protected resource requests.
 app.get('/api/health', (req, res) => {
   return res.json({
     status: 'ok',
@@ -64,6 +66,8 @@ app.get('/api/health/db', async (req, res) => {
     });
   }
 });
+
+app.use('/api', crudRouter);
 
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
