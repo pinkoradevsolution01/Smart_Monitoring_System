@@ -20,6 +20,7 @@ class PackageService extends ChangeNotifier {
   PricingPackage? get selectedPackage => _selectedPackage;
   bool get setupComplete => _setupComplete;
   bool get hasPackage => _selectedPackage != null;
+  bool get isDemoPackageActive => _demoPackageActive;
 
   /// Temporarily expose a package for demonstrations without changing local
   /// preferences or syncing the package to the backend.

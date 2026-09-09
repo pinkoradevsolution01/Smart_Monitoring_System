@@ -12,6 +12,7 @@ import '../../services/google_auth_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
+import '../../services/package_service.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import '../owner/owner_dashboard.dart';
@@ -499,6 +500,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
+    final packageService = GetIt.I<PackageService>();
     final inputStyle = const TextStyle(fontSize: 16, color: Colors.black87);
     final fieldDecoration = InputDecoration(
       filled: true,
@@ -518,6 +520,18 @@ class _LoginScreenState extends State<LoginScreen> {
               Text(AppLocalizations.t('welcome')),
         ),
         actions: [
+          if (packageService.isDemoPackageActive)
+            IconButton(
+              tooltip: 'Exit Demo',
+              icon: const Icon(Icons.exit_to_app),
+              onPressed: () {
+                packageService.exitDemoPackage();
+                Navigator.of(context).pushNamedAndRemoveUntil(
+                  '/developer-dashboard',
+                  (route) => false,
+                );
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.help_outline),
             onPressed: () => showAIHelpDialog(context),

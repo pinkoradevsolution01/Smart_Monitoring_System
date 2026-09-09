@@ -284,7 +284,6 @@ class _CashierPOSState extends State<CashierPOS> {
     }
 
     var quantity = 1;
-    final quantityController = TextEditingController(text: '$quantity');
     final selectedQuantity = await showDialog<int>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -293,10 +292,6 @@ class _CashierPOSState extends State<CashierPOS> {
             final safeValue = value.clamp(1, maxToAdd).toInt();
             setDialogState(() {
               quantity = safeValue;
-              quantityController.value = TextEditingValue(
-                text: '$safeValue',
-                selection: TextSelection.collapsed(offset: '$safeValue'.length),
-              );
             });
           }
 
@@ -325,8 +320,9 @@ class _CashierPOSState extends State<CashierPOS> {
                     const SizedBox(width: 12),
                     SizedBox(
                       width: 76,
-                      child: TextField(
-                        controller: quantityController,
+                      child: TextFormField(
+                        key: ValueKey(quantity),
+                        initialValue: '$quantity',
                         autofocus: true,
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
@@ -369,7 +365,6 @@ class _CashierPOSState extends State<CashierPOS> {
         },
       ),
     );
-    quantityController.dispose();
 
     if (selectedQuantity == null || !mounted) return;
     pos.addToCart(
@@ -602,39 +597,16 @@ class _CashierPOSState extends State<CashierPOS> {
                     final s = sales[idx];
                     final isCancelled = s.status == SaleStatus.cancelled;
                     return ExpansionTile(
-                      title: Row(
-                        children: [
-                          Text(
-                            isCancelled
-                                ? 'Sale ${s.saleNumber} - Cancelled'
-                                : 'Sale ${s.saleNumber}',
-                            style: TextStyle(
-                              color: isCancelled ? Colors.red : null,
-                              fontWeight: isCancelled ? FontWeight.bold : null,
-                            ),
-                          ),
-                          if (isCancelled) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                AppLocalizations.t('cancelled'),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
+                      title: Text(
+                        isCancelled
+                            ? 'Sale ${s.saleNumber}\n${AppLocalizations.t('cancelled')}'
+                            : 'Sale ${s.saleNumber}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: isCancelled ? Colors.red : null,
+                          fontWeight: isCancelled ? FontWeight.bold : null,
+                        ),
                       ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

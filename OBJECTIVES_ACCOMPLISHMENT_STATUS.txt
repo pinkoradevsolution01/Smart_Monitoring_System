@@ -1,0 +1,163 @@
+SMART MONITORING SYSTEM
+OBJECTIVES: ACCOMPLISHMENT AND REMAINING WORK
+Last updated: August 30, 2026
+
+Purpose
+-------
+This document records the current implementation status against the study's
+specific objectives. "Accomplished" means the feature is present in the
+current project source. "Remaining" identifies work that is incomplete,
+requires formal testing, or needs policy/compliance validation before it can
+be claimed as complete in the study.
+
+Overall status
+--------------
+The system has working foundations for authentication, role-based dashboards,
+inventory, POS, customer loyalty, sales reporting, cloud/backend integration,
+and user-interface improvements. The project is not yet ready to claim full
+completion of every research objective because automatic re-ordering,
+concurrent-transaction validation, web analytics completion, scale testing,
+and BIR compliance validation remain outstanding.
+
+OBJECTIVE 1
+-----------
+To implement a secure authentication and access control mechanism that will
+ensure only the store owner can manage critical submodules such as inventory,
+sales, reporting, customer records, and web dashboard.
+
+Accomplished
+* Role-based application structure is implemented for Owner, Admin/Developer,
+  Manager, and Cashier users, with separate dashboards and available modules.
+* Owner Google sign-in is implemented.
+* A registered active owner who signs in through the Create Owner Account
+  screen is now redirected to the Owner Dashboard instead of Pricing Packages.
+* Google owner registration is connected to the backend and business context.
+* Backend business initialization and stored business IDs support tenant-aware
+  synchronization between application data and the backend.
+* Access checks exist for owner-only flows, including owner authentication for
+  protected actions and inactive-account handling.
+* Owner account information is protected from ordinary editing in the owner
+  management interface.
+
+Remaining / needs validation
+* Perform a complete role-permission audit for every critical screen and API
+  endpoint. Client-side navigation restrictions alone are not sufficient.
+* Confirm that the backend enforces JWT authentication, user role, and
+  business/tenant ID for every inventory, sales, customer, report, and
+  analytics request.
+* Complete and test the Web Analytics application/API integration, including
+  tenant-scoped analytics endpoints, CSV export, and end-to-end Google login.
+* Add automated authorization tests for Owner, Manager, Cashier, Admin, an
+  inactive account, a cancelled subscriber, and a user from another business.
+* Conduct security testing for session expiration, token storage, invalid
+  tokens, password/PIN reset, and unauthorized API access.
+
+OBJECTIVE 2
+-----------
+To design and develop an inventory management feature that will allow bulk
+product addition, accurate stock updates, automated low-stock alerts, and
+automatic re-ordering, ensuring real-time monitoring of thousands of retail
+items.
+
+Accomplished
+* Product/inventory management supports product details, barcode, category,
+  prices, stock quantity, images, and per-product reorder level.
+* Stock changes are applied during POS checkout and inventory-related flows.
+* Shoe-size variants are supported, with size-specific stock limits in POS.
+* Low-stock status, low-stock filters, low-stock badges, and low-stock report
+  sections are implemented.
+* Inventory, sales, and cloud/backend synchronization services are present to
+  support current data across application sessions/devices.
+* Damage reporting and restock-related inventory workflows are available.
+
+Remaining / needs validation
+* Verify and document a true bulk product import/addition workflow (for
+  example CSV/XLSX upload with validation and error reporting). It should not
+  be claimed as complete unless it is tested end-to-end.
+* Automatic re-ordering is not confirmed as implemented. Current functionality
+  provides reorder levels and alerts; it still needs supplier order creation,
+  approval, delivery tracking, and notification logic if automatic ordering is
+  required by the study.
+* Test inventory accuracy for returns, cancellations, refunds, damaged stock,
+  simultaneous edits, offline sync, and failed sync recovery.
+* Perform load and performance tests using thousands of products, searches,
+  filters, reports, and concurrent devices before claiming real-time support
+  at that scale.
+
+OBJECTIVE 3
+-----------
+To build a Point-of-Sale system integrated with customer management, capable
+of recording multiple transactions simultaneously, applying discounts
+correctly, redeeming rewards and adding points to loyalty, and maintaining
+customer profiles with purchase histories.
+
+Accomplished
+* POS supports product search, selection, cart management, stock-aware
+  quantity selection, item removal, typed quantity input, and + / - controls.
+* Selected Order item amounts and cart subtotal use the cart service total and
+  are updated when a valid quantity is applied.
+* POS checkout supports payment methods and receipt/sales-record workflows.
+* Discounts and loyalty redemption are calculated in the cart/checkout flow.
+* Loyalty customer lookup, point earning, redemption eligibility, and loyalty
+  discount display are implemented.
+* Customer management and customer/loyalty features are present, including
+  customer records and purchase-related data flows.
+
+Remaining / needs validation
+* Test every discount rule: item/cart discount, loyalty redemption, rounding,
+  refund/cancellation reversal, and combinations of discounts.
+* Verify that points are added exactly once after a successful completed sale,
+  and reversed correctly for cancelled/refunded sales.
+* Verify customer purchase-history accuracy after sync, restore, and repeated
+  transactions.
+* Multiple simultaneous transactions are not yet formally proven. Add and test
+  transaction isolation, stock conflict prevention, unique sale numbers, and
+  recovery from duplicate/retried checkout requests across multiple terminals.
+* Test all payment methods on target devices, especially keyboard/mobile
+  layouts and payment confirmation/retry behavior.
+
+OBJECTIVE 4
+-----------
+To integrate loyalty rewards and reporting functions that automate customer
+engagement through point accumulation and redemption, while generating
+accurate daily, weekly, and monthly reports aligned with BIR standards for
+managerial decision making.
+
+Accomplished
+* Loyalty point accumulation and redemption controls are integrated into POS.
+* Sales, inventory, and damage-report screens are available with date-range
+  reporting and management summaries.
+* Reports include sales totals, transaction information, stock/low-stock
+  information, and damage information.
+* CSV/PDF export functions are available in reporting areas.
+* Sales report layout was improved so the transaction list can display more
+  sales and remain scrollable.
+
+Remaining / needs validation
+* Confirm that report filters and summary calculations produce correct daily,
+  weekly, monthly, custom-range, and timezone-aware results.
+* Reconcile report totals with saved sales, discounts, loyalty deductions,
+  returns, cancelled sales, and inventory movements using test datasets.
+* BIR alignment is NOT yet certified or validated. Consult the applicable BIR
+  rules and an accounting/tax professional for required receipts, invoice
+  fields, serial numbers, audit logs, VAT treatment, retention, and report
+  formats.
+* Add formal report test cases and sign-off evidence for managerial reports.
+* Complete the Web Analytics dashboard and validate that its metrics match the
+  Smart Monitoring backend/database reports for the same business tenant.
+
+Recommended next milestones
+---------------------------
+1. Run functional and role-based acceptance tests using the daily checklist.
+2. Add automated backend authorization and POS calculation tests.
+3. Implement or formally scope bulk import and automatic supplier re-ordering.
+4. Complete the Web Analytics API/dashboard tenant enforcement and testing.
+5. Run multi-device and high-volume performance tests.
+6. Obtain BIR/accounting review before stating that reports are BIR-compliant.
+
+Study wording recommendation
+----------------------------
+Use "implemented" for source features that are already demonstrated. Use
+"under validation" for security, performance, concurrent processing, and BIR
+compliance claims until documented test results and external compliance review
+are available.

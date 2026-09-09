@@ -24,6 +24,11 @@ class DemoAccessScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Exit Demo to Developer Dashboard',
+          icon: const Icon(Icons.exit_to_app),
+          onPressed: () => _exitDemo(context),
+        ),
         title: const Text(
           'Demo Access Portal',
           style: TextStyle(fontWeight: FontWeight.w700),
@@ -100,6 +105,14 @@ class DemoAccessScreen extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+
+  void _exitDemo(BuildContext context) {
+    GetIt.I<PackageService>().exitDemoPackage();
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/developer-dashboard',
+      (route) => false,
     );
   }
 
@@ -465,7 +478,7 @@ class _DemoSessionFrame extends StatelessWidget {
         children: [
           child,
           Positioned(
-            right: 16,
+            left: 16,
             bottom: 16,
             child: SafeArea(
               child: FloatingActionButton.extended(
