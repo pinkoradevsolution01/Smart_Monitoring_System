@@ -533,9 +533,12 @@ class _CashierPOSState extends State<CashierPOS> {
                   ),
                   const SizedBox(height: 2),
                   AppStatusBadge(
-                    label: p.hasShoeVariants
-                        ? 'Stock: ${p.totalQuantity}'
-                        : 'Stock: ${p.quantity}',
+                    label: isOutOfStock
+                        ? 'Out of stock'
+                        : ((p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
+                                p.reorderLevel
+                            ? 'Low stock'
+                            : 'In stock'),
                     status: isOutOfStock
                         ? AppStatus.danger
                         : (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
@@ -956,13 +959,17 @@ class _CashierPOSState extends State<CashierPOS> {
               width: double.infinity,
               child: Column(
                 children: [
-                  // Search Bar
+                  // Persistent search and barcode entry. Hardware barcode
+                  // scanners normally submit Enter after the code.
                   Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: TextField(
                       controller: _searchController,
+                      autofocus: true,
+                      textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
-                        hintText: AppLocalizations.t('search_products'),
+                        labelText: 'Product search / barcode',
+                        hintText: 'Search products or scan a barcode',
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
@@ -988,6 +995,7 @@ class _CashierPOSState extends State<CashierPOS> {
                           _searchQuery = value;
                         });
                       },
+                      onSubmitted: _handleProductSearchSubmit,
                     ),
                   ),
                   // Category Filter Tabs
@@ -1348,6 +1356,39 @@ class _CashierPOSState extends State<CashierPOS> {
       key,
       () => TextEditingController(text: '${item.quantity}'),
     );
+  }
+
+  void _handleProductSearchSubmit(String rawValue) {
+    final barcode = rawValue.trim().toLowerCase();
+    if (barcode.isEmpty) return;
+    final matches = pos.products
+        .where((product) => product.barcode.trim().toLowerCase() == barcode)
+        .toList();
+    if (matches.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No product matches that barcode.')),
+      );
+      return;
+    }
+
+    final product = matches.first;
+    final availableStock = product.hasShoeVariants
+        ? product.totalQuantity
+        : product.quantity;
+    if (availableStock <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} is out of stock.')),
+      );
+      return;
+    }
+
+    _searchController.clear();
+    setState(() => _searchQuery = '');
+    if (product.hasShoeVariants) {
+      _showShoeSizeSelectionDialog(product);
+    } else {
+      _showAddToCartQuantityDialog(product, availableStock: availableStock);
+    }
   }
 
   String _cartItemKey(CartItem item) {

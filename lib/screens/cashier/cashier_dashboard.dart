@@ -15,6 +15,7 @@ import '../../services/pos_service.dart';
 import '../../theme.dart';
 import '../../utils/interaction_feedback.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
+import '../shared/settings_screen.dart';
 
 class CashierDashboard extends StatelessWidget {
   final User user;
@@ -100,6 +101,11 @@ class CashierDashboard extends StatelessWidget {
                           ),
                         ),
                       );
+                    case 4:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
                   }
                 },
                 destinations: const [
@@ -122,6 +128,11 @@ class CashierDashboard extends StatelessWidget {
                     icon: Icon(Icons.access_time_outlined),
                     selectedIcon: Icon(Icons.access_time),
                     label: 'Attendance',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: 'Settings',
                   ),
                 ],
               )

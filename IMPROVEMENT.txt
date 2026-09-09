@@ -1,0 +1,36 @@
+The biggest improvement would be making the system feel like one focused product instead of many separate screens.
+1. Create one consistent design system - Complete
+   - Use Inter across every screen.
+   - Keep the gray/indigo/mocha presets, but use calm neutral backgrounds and high-contrast text.
+   - Standardize card radius, spacing, buttons, inputs, status badges, dialogs, and empty states.
+   - Use one currency format everywhere: ₱ 1,000.00.
+2. Make each role dashboard action-first - Complete
+   - Owner: sales today, profit, low stock, pending orders, quick actions.
+   - Cashier: large “New Sale”, product search, open cart, recent transactions.
+   - Admin: inventory alerts, staff activity, approvals, supplier actions.
+   - Developer: subscribers, activation-code status, email-delivery status, failed requests, system health.
+   - Analytics: KPI cards, date filters, drill-down reports, CSV export, clear tenant/business name.
+3. Improve POS speed and clarity - Complete
+   - Persistent large product search/barcode input.
+   - Bigger product cards and quantity controls.
+   - A clearer selected-order panel with remove, quantity, subtotal, discount, payment, and confirmation steps.
+   - Sticky checkout button that never hides behind the keyboard.
+   - Stock badges: In stock, Low stock, Out of stock.
+4. Improve navigation - Complete
+   - Group menu items by Dashboard, Operations, Management, Reports, and Settings.
+   - Use visible active states and breadcrumbs on Windows/web.
+   - Use simple bottom navigation on phones.
+   - Keep the Developer portal visually separate from normal business modules.
+5. Improve feedback and safety
+   - Loading skeletons instead of blank screens.
+   - Helpful empty states with a direct action button.
+   - Success/error snackbars with Retry.
+   - Confirmation dialogs for delete, reset, revoke code, and logout.
+   - Keep motion and sound optional, subtle, and accessible.
+6. Improve tables and reports
+   - Sticky table headers, search, filters, date range, sort, pagination, and CSV export.
+   - Use readable text on white cards—dark headings, muted secondary text.
+   - Make report charts clickable to open the underlying sales/products/customers.
+7. Improve first-time setup
+   - A guided setup flow: Owner account → business → subscription → products → cashier → first sale.
+   - Show completion progress so a new client knows what remains.

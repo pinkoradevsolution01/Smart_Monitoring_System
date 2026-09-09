@@ -21,6 +21,8 @@ import 'developer_account_screen.dart';
 import 'demo_access_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import '../../theme.dart';
+import '../../widgets/app_design_system.dart';
 
 class DeveloperDashboard extends StatefulWidget {
   const DeveloperDashboard({super.key});
@@ -42,7 +44,9 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Theme(
+      data: DeveloperTheme.dark(context),
+      child: Scaffold(
       appBar: AppBar(
         title: const Row(
           children: [
@@ -87,7 +91,7 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.grey[900]!, Colors.grey[800]!],
+            colors: [DeveloperTheme.background, DeveloperTheme.surface],
           ),
         ),
         child: Center(
@@ -96,6 +100,18 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
+                AppPageHeader(
+                  title: 'Developer dashboard',
+                  subtitle: 'Monitor subscribers, activation delivery, and platform health.',
+                  breadcrumbs: const ['Developer', 'Overview'],
+                  action: FilledButton.icon(
+                    onPressed: () => cloudSubscriptionService.refresh(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh status'),
+                  ),
+                ),
+                _buildOperationalSummary(),
+                const SizedBox(height: 20),
                 // Welcome
                 _buildWelcomeCard(),
                 const SizedBox(height: 24),
@@ -292,6 +308,7 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -306,6 +323,67 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
           color: Colors.white70,
         ),
       ),
+    );
+  }
+
+  Widget _buildOperationalSummary() {
+    return ListenableBuilder(
+      listenable: cloudSubscriptionService,
+      builder: (context, _) {
+        if (cloudSubscriptionService.isLoading) {
+          return const AppLoadingSkeleton(lines: 2);
+        }
+        final hasError = cloudSubscriptionService.error != null;
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 760 ? 4 : 2;
+            return GridView.count(
+              crossAxisCount: columns,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: columns == 2 ? 1.35 : 1.55,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                AppMetricCard(
+                  label: 'Subscribers',
+                  value: '${cloudSubscriptionService.totalSubscriptions}',
+                  icon: Icons.groups_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                  detail: 'Registered cloud subscriptions',
+                ),
+                AppMetricCard(
+                  label: 'Activation status',
+                  value: '${cloudSubscriptionService.activeSubscriptions}',
+                  icon: Icons.verified_outlined,
+                  color: AppColors.successGreen,
+                  detail: 'Active subscription records',
+                ),
+                AppMetricCard(
+                  label: 'Delivery follow-up',
+                  value: hasError ? 'Review' : 'Clear',
+                  icon: Icons.mark_email_read_outlined,
+                  color: hasError ? AppColors.warningOrange : AppColors.accentTeal,
+                  detail: hasError
+                      ? 'Refresh or inspect the delivery service'
+                      : 'No current subscription fetch failure',
+                ),
+                AppMetricCard(
+                  label: 'System health',
+                  value: hasError ? 'Check' : 'Online',
+                  icon: hasError
+                      ? Icons.error_outline
+                      : Icons.health_and_safety_outlined,
+                  color: hasError ? AppColors.errorRed : AppColors.successGreen,
+                  detail: hasError
+                      ? 'Backend status needs attention'
+                      : 'Latest cloud request completed',
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

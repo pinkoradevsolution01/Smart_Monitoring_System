@@ -15,6 +15,7 @@ import 'package:smart_monitoring_system/screens/cashier/cashier_pos.dart';
 import 'package:smart_monitoring_system/screens/cashier/price_checker_screen.dart';
 import 'package:smart_monitoring_system/screens/cashier/ewallet_transfer_screen.dart';
 import '../../models/user.dart';
+import '../../models/sale.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
@@ -24,6 +25,7 @@ import '../../services/google_auth_service.dart';
 import '../../services/pos_service.dart';
 import '../../theme.dart';
 import '../../utils/interaction_feedback.dart';
+import '../../utils/currency_formatter.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
@@ -70,6 +72,30 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     final pos = GetIt.I<POSService>();
     final lowStockCount = pos.products
         .where((product) => product.lowStock || product.quantity == 0)
+        .length;
+    final now = DateTime.now();
+    final todaySales = pos.recentSales.where(
+      (sale) =>
+          sale.status == SaleStatus.completed &&
+          sale.saleDate.year == now.year &&
+          sale.saleDate.month == now.month &&
+          sale.saleDate.day == now.day,
+    );
+    final todayRevenue = todaySales.fold<double>(
+      0,
+      (sum, sale) => sum + sale.totalAmount,
+    );
+    final productsById = {for (final product in pos.products) product.id: product};
+    final estimatedProfit = todaySales.fold<double>(0, (sum, sale) {
+      final saleProfit = sale.items.fold<double>(0, (itemSum, item) {
+        final buyingPrice =
+            productsById[item.productId]?.buyingPrice ?? item.unitPrice;
+        return itemSum + (item.total - (buyingPrice * item.quantity));
+      });
+      return sum + saleProfit;
+    });
+    final pendingOrders = pos.recentSales
+        .where((sale) => sale.status == SaleStatus.pending)
         .length;
 
     return AnimatedBuilder(
@@ -136,6 +162,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                         context,
                         MaterialPageRoute(builder: (_) => SalesReportScreen()),
                       );
+                    case 4:
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      );
                   }
                 },
                 destinations: const [
@@ -158,6 +189,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     icon: Icon(Icons.bar_chart_outlined),
                     selectedIcon: Icon(Icons.bar_chart),
                     label: 'Reports',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.settings_outlined),
+                    selectedIcon: Icon(Icons.settings),
+                    label: 'Settings',
                   ),
                 ],
               )
@@ -207,11 +243,18 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                         physics: const NeverScrollableScrollPhysics(),
                         children: [
                           AppMetricCard(
-                            label: 'Products',
-                            value: '${pos.products.length}',
-                            icon: Icons.inventory_2_outlined,
+                            label: 'Sales today',
+                            value: AppCurrency.peso(todayRevenue),
+                            icon: Icons.payments_outlined,
                             color: Theme.of(context).colorScheme.primary,
-                            detail: 'Available in inventory',
+                            detail: '${todaySales.length} completed transactions',
+                          ),
+                          AppMetricCard(
+                            label: 'Estimated profit',
+                            value: AppCurrency.peso(estimatedProfit),
+                            icon: Icons.trending_up_outlined,
+                            color: AppColors.successGreen,
+                            detail: 'Based on current product cost',
                           ),
                           AppMetricCard(
                             label: 'Low-stock alerts',
@@ -225,20 +268,13 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                                 : 'Review items that need restocking',
                           ),
                           AppMetricCard(
-                            label: 'Current package',
-                            value:
-                                packageService.selectedPackage?.name ??
-                                'Starter',
-                            icon: Icons.workspace_premium_outlined,
-                            color: Colors.deepPurple,
-                            detail: 'Features available to this business',
-                          ),
-                          const AppMetricCard(
-                            label: 'Quick action',
-                            value: 'POS',
-                            icon: Icons.bolt_outlined,
+                            label: 'Pending orders',
+                            value: '$pendingOrders',
+                            icon: Icons.pending_actions_outlined,
                             color: AppColors.accentTeal,
-                            detail: 'Start a customer checkout',
+                            detail: pendingOrders == 0
+                                ? 'No pending orders'
+                                : 'Orders awaiting completion',
                           ),
                         ],
                       );

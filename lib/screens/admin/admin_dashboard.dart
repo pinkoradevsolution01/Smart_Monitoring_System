@@ -4,6 +4,8 @@ import 'package:get_it/get_it.dart';
 import '../../services/package_service.dart';
 import '../../services/database_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/pos_service.dart';
+import '../../services/user_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
@@ -15,6 +17,9 @@ import 'reports_screen.dart';
 import 'business_registration_screen.dart';
 import 'manage_attendance_screen.dart';
 import 'payroll_screen.dart';
+import '../shared/settings_screen.dart';
+import '../../theme.dart';
+import '../../widgets/app_design_system.dart';
 // Removed owner dashboard quick link; imports not needed
 
 class AdminDashboard extends StatelessWidget {
@@ -23,8 +28,12 @@ class AdminDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final packageService = GetIt.I<PackageService>();
+    final pos = GetIt.I<POSService>();
+    final users = GetIt.I<UserService>();
+    final lowStockCount = pos.products
+        .where((product) => product.lowStock || product.quantity <= 0)
+        .length;
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
         title: Text(AppLocalizations.t('admin_dashboard')),
         actions: [
@@ -50,6 +59,68 @@ class AdminDashboard extends StatelessWidget {
         ],
       ),
       floatingActionButton: const AIHelpButton(),
+      bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
+          ? NavigationBar(
+              selectedIndex: 0,
+              onDestinationSelected: (index) {
+                switch (index) {
+                  case 1:
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ManageUsers()),
+                    );
+                    break;
+                  case 2:
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ManageProductsScreen(),
+                      ),
+                    );
+                    break;
+                  case 3:
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ReportsScreen()),
+                    );
+                    break;
+                  case 4:
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                    break;
+                }
+              },
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: 'Dashboard',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.groups_outlined),
+                  selectedIcon: Icon(Icons.groups),
+                  label: 'Operations',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.inventory_2_outlined),
+                  selectedIcon: Icon(Icons.inventory_2),
+                  label: 'Management',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.bar_chart_outlined),
+                  selectedIcon: Icon(Icons.bar_chart),
+                  label: 'Reports',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
+              ],
+            )
+          : null,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -59,27 +130,71 @@ class AdminDashboard extends StatelessWidget {
             ),
             child: ListView(
               children: [
-                // Dashboard welcome section
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Dashboard',
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                AppPageHeader(
+                  title: 'Admin dashboard',
+                  subtitle: 'Monitor inventory, staff activity, and approvals from one workspace.',
+                  breadcrumbs: const ['Home', 'Administration'],
+                  action: FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const BusinessRegistrationScreen(),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Welcome, Admin',
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
+                    ),
+                    icon: const Icon(Icons.add_business_outlined),
+                    label: const Text('Add business'),
                   ),
                 ),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth >= 720 ? 3 : 1;
+                    return GridView.count(
+                      crossAxisCount: columns,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: columns == 1 ? 3 : 1.7,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: [
+                        AppMetricCard(
+                          label: 'Inventory alerts',
+                          value: '$lowStockCount',
+                          icon: Icons.warning_amber_rounded,
+                          color: lowStockCount == 0
+                              ? AppColors.successGreen
+                              : AppColors.warningOrange,
+                          detail: lowStockCount == 0
+                              ? 'No low-stock products'
+                              : 'Items need restocking',
+                        ),
+                        AppMetricCard(
+                          label: 'Active staff',
+                          value: '${users.activeUsers.length}',
+                          icon: Icons.groups_outlined,
+                          color: Theme.of(context).colorScheme.primary,
+                          detail: 'Users available for operations',
+                        ),
+                        AppMetricCard(
+                          label: 'Approvals',
+                          value: packageService.hasAttendanceAccess
+                              ? 'Ready'
+                              : 'Review',
+                          icon: Icons.verified_user_outlined,
+                          color: AppColors.accentTeal,
+                          detail: 'Attendance and package controls',
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  'Quick actions',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 14),
                 LayoutBuilder(
                   builder: (context, constraints) {
                     final cols = ResponsiveUtils.columnsForWidth(
@@ -342,35 +457,11 @@ class _DashboardSquareTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 3,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: color,
-                child: Icon(icon, color: Colors.white, size: 28),
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return AppActionTile(
+      icon: icon,
+      color: color,
+      title: title,
+      onTap: onTap,
     );
   }
 }
