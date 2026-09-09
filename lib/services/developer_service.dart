@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend_api_service.dart';
 import 'backend_config.dart';
@@ -40,6 +41,7 @@ class DeveloperAccount {
 /// Backend-backed service for the developer account.
 /// The account data now lives in MySQL so multiple devices share one identity.
 class DeveloperService extends ChangeNotifier {
+  static const String _sessionTokenKey = 'backend_access_token';
   static final DeveloperService _instance = DeveloperService._internal();
   factory DeveloperService() => _instance;
   DeveloperService._internal() {
@@ -101,6 +103,11 @@ class DeveloperService extends ChangeNotifier {
       );
 
       if (response is Map<String, dynamic> && response['success'] == true) {
+        final token = response['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_sessionTokenKey, token);
+        }
         if (response['account'] is Map) {
           _account = DeveloperAccount.fromMap(
             Map<String, dynamic>.from(response['account'] as Map),
@@ -145,6 +152,11 @@ class DeveloperService extends ChangeNotifier {
       );
 
       if (response is Map<String, dynamic> && response['success'] == true) {
+        final token = response['token']?.toString();
+        if (token != null && token.isNotEmpty) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_sessionTokenKey, token);
+        }
         if (response['account'] is Map) {
           _account = DeveloperAccount.fromMap(
             Map<String, dynamic>.from(response['account'] as Map),

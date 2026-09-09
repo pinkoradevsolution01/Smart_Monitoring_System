@@ -1,7 +1,8 @@
 const bcrypt = require('bcryptjs');
 const express = require('express');
 const { query } = require('../db');
-const { signSession } = require('../security/session_tokens');
+const { signSession, tokenFromRequest, verifySession } = require('../security/session_tokens');
+const { requireDeveloperSession } = require('../security/developer_access');
 
 const router = express.Router();
 
@@ -32,7 +33,28 @@ async function getDeveloperAccount() {
   return rows[0] || null;
 }
 
-router.get('/account', async (_req, res) => {
+// Google profile fields sent by a client are display data, not proof of
+// identity.  Require a valid Smart Monitoring session and bind the requested
+// email to its signed claim before allowing the Google developer flow.
+function requireVerifiedIdentity(req, res, next) {
+  const token = tokenFromRequest(req);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Sign in with Smart Monitoring first.' });
+  }
+  try {
+    const auth = verifySession(token);
+    const requestedEmail = normalizeEmail(req.body?.email);
+    if (!auth?.userId || !auth?.email || !requestedEmail || normalizeEmail(auth.email) !== requestedEmail) {
+      return res.status(403).json({ success: false, message: 'The developer Google identity does not match the signed-in user.' });
+    }
+    req.verifiedIdentity = auth;
+    return next();
+  } catch (_) {
+    return res.status(401).json({ success: false, message: 'Invalid or expired Smart Monitoring session.' });
+  }
+}
+
+router.get('/account', requireDeveloperSession, async (_req, res) => {
   try {
     const account = await getDeveloperAccount();
     return res.json({ success: true, account: sanitizeAccount(account) });
@@ -42,7 +64,7 @@ router.get('/account', async (_req, res) => {
   }
 });
 
-router.put('/account', async (req, res) => {
+router.put('/account', requireDeveloperSession, async (req, res) => {
   const {
     displayName,
     email,
@@ -151,7 +173,7 @@ router.post('/login', async (req, res) => {
       [account.id],
     );
 
-    const token = signSession({ userId: account.id, role: 'developer' });
+    const token = signSession({ userId: account.id, email: account.email, role: 'developer' });
     return res.json({
       success: true,
       token,
@@ -163,7 +185,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.post('/google/login', async (req, res) => {
+router.post('/google/login', requireVerifiedIdentity, async (req, res) => {
   const {
     email,
     name,
@@ -207,14 +229,18 @@ router.post('/google/login', async (req, res) => {
     );
 
     const updated = await getDeveloperAccount();
-    return res.json({ success: true, account: sanitizeAccount(updated) });
+    return res.json({
+      success: true,
+      token: signSession({ userId: updated.id, email: updated.email, role: 'developer' }),
+      account: sanitizeAccount(updated),
+    });
   } catch (error) {
     console.error('Developer /google/login error:', error);
     return res.status(500).json({ success: false, message: 'Google developer sign-in failed.' });
   }
 });
 
-router.post('/google/register', async (req, res) => {
+router.post('/google/register', requireVerifiedIdentity, async (req, res) => {
   const {
     email,
     name,
@@ -259,6 +285,13 @@ router.post('/google/register', async (req, res) => {
         ],
       );
     } else {
+      const bootstrapEmail = normalizeEmail(process.env.DEVELOPER_BOOTSTRAP_EMAIL);
+      if (!bootstrapEmail || bootstrapEmail !== normalizedEmail) {
+        return res.status(403).json({
+          success: false,
+          message: 'Developer setup is restricted. Configure DEVELOPER_BOOTSTRAP_EMAIL on the server to provision the first developer account.',
+        });
+      }
       // No account exists - create one with Google credentials
       await query(
         `INSERT INTO developer_accounts
@@ -276,7 +309,11 @@ router.post('/google/register', async (req, res) => {
     }
 
     const updated = await getDeveloperAccount();
-    return res.json({ success: true, account: sanitizeAccount(updated) });
+    return res.json({
+      success: true,
+      token: signSession({ userId: updated.id, email: updated.email, role: 'developer' }),
+      account: sanitizeAccount(updated),
+    });
   } catch (error) {
     console.error('Developer /google/register error:', error);
     return res.status(500).json({ success: false, message: 'Google developer registration failed.' });

@@ -1,6 +1,7 @@
 const express = require('express');
 const { query, getConnection } = require('../db');
 const { signSession } = require('../security/session_tokens');
+const { requireDeveloperSession } = require('../security/developer_access');
 const router = express.Router();
 
 function normalizeEmail(value) {
@@ -99,7 +100,9 @@ router.post('/init', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to initialize business.' });
   }
 });
-router.delete('/purge', async (req, res) => {
+// Purging a subscriber can remove a whole tenant and its subscription data.
+// It is a global developer operation, never a client-selected tenant action.
+router.delete('/purge', requireDeveloperSession, async (req, res) => {
   const ownerEmail = String(req.query.ownerEmail || req.body?.ownerEmail || '').trim();
   const ownerId = String(req.query.ownerId || req.body?.ownerId || '').trim();
   const businessId = String(req.query.businessId || req.body?.businessId || '').trim();
