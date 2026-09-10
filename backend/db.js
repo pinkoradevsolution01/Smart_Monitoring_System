@@ -335,7 +335,9 @@ async function ensureOwnerPinResetTokensTable() {
 
 async function foreignKeyColumnDefinition(tableName, columnName) {
   const [rows] = await pool.execute(
-    `SELECT column_type, character_set_name, collation_name
+    `SELECT column_type AS column_type,
+            character_set_name AS character_set_name,
+            collation_name AS collation_name
        FROM information_schema.columns
       WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
       LIMIT 1`,
