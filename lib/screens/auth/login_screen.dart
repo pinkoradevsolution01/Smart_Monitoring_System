@@ -135,6 +135,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogleAsOwner() async {
+    final packageService = GetIt.I<PackageService>();
+    if (packageService.isDemoPackageActive ||
+        DemoSessionService.instance.isActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google sign-in is unavailable during Client Demonstration Mode.'),
+        ),
+      );
+      return;
+    }
     if (_isGoogleOwnerSigningIn) return;
     setState(() => _isGoogleOwnerSigningIn = true);
 
@@ -502,6 +512,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final packageService = GetIt.I<PackageService>();
+    final isClientDemoMode =
+        packageService.isDemoPackageActive || DemoSessionService.instance.isActive;
     final inputStyle = const TextStyle(fontSize: 16, color: Colors.black87);
     final fieldDecoration = InputDecoration(
       filled: true,
@@ -617,24 +629,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: _login,
                       child: Text(AppLocalizations.t('login')),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _isGoogleOwnerSigningIn
-                          ? null
-                          : _signInWithGoogleAsOwner,
-                      icon: _isGoogleOwnerSigningIn
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.account_circle_outlined),
-                      label: Text(
-                        _isGoogleOwnerSigningIn
-                            ? 'Signing in with Google...'
-                            : 'Continue with Google (Owner)',
+                    if (!isClientDemoMode) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton.icon(
+                        onPressed: _isGoogleOwnerSigningIn
+                            ? null
+                            : _signInWithGoogleAsOwner,
+                        icon: _isGoogleOwnerSigningIn
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.account_circle_outlined),
+                        label: Text(
+                          _isGoogleOwnerSigningIn
+                              ? 'Signing in with Google...'
+                              : 'Continue with Google (Owner)',
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(height: 8),
                     // Owner PIN helpers
                     Center(

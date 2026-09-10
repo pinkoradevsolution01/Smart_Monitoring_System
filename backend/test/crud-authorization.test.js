@@ -87,3 +87,38 @@ test('generic business CRUD requires a management session and ignores a supplied
     loaded.restore();
   }
 });
+
+test('expense records are package-gated, tenant-scoped, and date-filtered on the server', async () => {
+  const calls = [];
+  const db = {
+    async query(sql, params = []) {
+      calls.push({ sql, params });
+      if (sql.includes('FROM users u INNER JOIN businesses b')) {
+        return [{
+          id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1,
+          business_active: 1, subscription_package: 'Standard', subscription_expires_at: null,
+        }];
+      }
+      if (sql.includes('SELECT * FROM expenses')) return [];
+      throw new Error(`Unexpected SQL: ${sql}`);
+    },
+    getConnection: async () => { throw new Error('not expected for GET'); },
+  };
+  const loaded = loadCrudRouter(db);
+  const ownerToken = token({ userId: 'owner-a', role: 'owner', businessId: 'business-a' });
+
+  try {
+    await withServer(loaded.router, async (base) => {
+      const response = await fetch(`${base}/api/expenses?from=2026-09-01&to=2026-09-30&businessId=business-b`, {
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual((await response.json()).data, []);
+    });
+    const expenseQuery = calls.find((call) => call.sql.includes('SELECT * FROM expenses'));
+    assert.deepEqual(expenseQuery.params, ['business-a', '2026-09-01', '2026-09-30']);
+    for (const call of calls) assert.equal(call.params.includes('business-b'), false);
+  } finally {
+    loaded.restore();
+  }
+});

@@ -48,31 +48,7 @@ class DemoAccessScreen extends StatelessWidget {
                   children: [
                     _HeroPanel(),
                     const SizedBox(height: 28),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Choose a role to explore',
-                              style: TextStyle(
-                                color: Color(0xFF17213D),
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Each preview opens with Premium features enabled.',
-                              style: TextStyle(color: Color(0xFF667085)),
-                            ),
-                          ],
-                        ),
-                        _RoleCount(count: roles.length),
-                      ],
-                    ),
+                    _RoleSectionHeader(roleCount: roles.length),
                     const SizedBox(height: 16),
                     GridView.builder(
                       shrinkWrap: true,
@@ -152,40 +128,42 @@ class _HeroPanel extends StatelessWidget {
           ),
         ],
       ),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        runSpacing: 24,
-        children: const [
-          SizedBox(
-            width: 590,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.auto_awesome, color: Color(0xFF67E8F9), size: 34),
-                SizedBox(height: 16),
-                Text(
-                  'Client Demonstration Mode',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          runSpacing: 24,
+          children: [
+            SizedBox(
+              width: constraints.maxWidth.clamp(0.0, 590.0),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.auto_awesome, color: Color(0xFF67E8F9), size: 34),
+                  SizedBox(height: 16),
+                  Text(
+                    'Client Demonstration Mode',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      height: 1.1,
+                    ),
                   ),
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'Preview the complete Smart Monitoring System with Premium features. Choose a role below to experience the system from that user perspective.',
-                  style: TextStyle(
-                    color: Color(0xFFDDE7FF),
-                    fontSize: 15,
-                    height: 1.5,
+                  SizedBox(height: 12),
+                  Text(
+                    'Preview the complete Smart Monitoring System with Premium features. Choose a role below to experience the system from that user perspective.',
+                    style: TextStyle(
+                      color: Color(0xFFDDE7FF),
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          _SessionDetails(),
-        ],
+            const _SessionDetails(),
+          ],
+        ),
       ),
     );
   }
@@ -240,8 +218,69 @@ class _HeroDetail extends StatelessWidget {
       children: [
         Icon(icon, color: const Color(0xFFBAE6FD), size: 17),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(color: Colors.white, fontSize: 12)),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+class _RoleSectionHeader extends StatelessWidget {
+  final int roleCount;
+
+  const _RoleSectionHeader({required this.roleCount});
+
+  @override
+  Widget build(BuildContext context) {
+    const title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Choose a role to explore',
+          style: TextStyle(
+            color: Color(0xFF17213D),
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        SizedBox(height: 4),
+        Text(
+          'Each preview opens with Premium features enabled.',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Color(0xFF667085)),
+        ),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title,
+              const SizedBox(height: 12),
+              _RoleCount(count: roleCount),
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            const Expanded(child: title),
+            const SizedBox(width: 12),
+            _RoleCount(count: roleCount),
+          ],
+        );
+      },
     );
   }
 }

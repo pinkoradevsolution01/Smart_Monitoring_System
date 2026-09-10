@@ -334,16 +334,19 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isCompact = MediaQuery.sizeOf(context).width < 480;
     return Scaffold(
+      backgroundColor: scheme.surface,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Colors.blue.shade50,
-              Colors.purple.shade50,
-              Colors.pink.shade50,
+              scheme.surface,
+              scheme.primaryContainer.withValues(alpha: .32),
+              const Color(0xFFF5F6FA),
             ],
           ),
         ),
@@ -352,26 +355,26 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
             opacity: _fadeAnimation,
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.all(isCompact ? 12 : 24),
                 child: ScaleTransition(
                   scale: _scaleAnimation,
                   child: Card(
-                    elevation: 12,
-                    shadowColor: Colors.purple.withValues(alpha: 0.3),
+                    elevation: 5,
+                    shadowColor: scheme.primary.withValues(alpha: .16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
+                      borderRadius: BorderRadius.circular(28),
                     ),
                     child: Container(
-                      constraints: const BoxConstraints(maxWidth: 550),
-                      padding: const EdgeInsets.all(40.0),
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      padding: EdgeInsets.all(isCompact ? 20 : 36),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(28),
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                           colors: [
                             Colors.white,
-                            Colors.blue.shade50.withValues(alpha: 0.3),
+                            scheme.primaryContainer.withValues(alpha: .18),
                           ],
                         ),
                       ),
@@ -380,57 +383,81 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           // Header
-                          GestureDetector(
-                            onTap: _onIconTap,
-                            child: Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Theme.of(context).colorScheme.primary,
-                                    Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.7),
+                          Center(
+                            child: GestureDetector(
+                              onTap: _onIconTap,
+                              child: Container(
+                                width: isCompact ? 88 : 104,
+                                height: isCompact ? 88 : 104,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      scheme.primary,
+                                      scheme.secondary,
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: scheme.primary.withValues(alpha: .25),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, 10),
+                                    ),
                                   ],
                                 ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.3),
-                                    blurRadius: 20,
-                                    spreadRadius: 5,
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.admin_panel_settings,
-                                size: 64,
-                                color: Colors.white,
+                                child: Icon(
+                                  Icons.storefront_outlined,
+                                  size: isCompact ? 42 : 50,
+                                  color: scheme.onPrimary,
+                                ),
                               ),
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 20),
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: scheme.primary.withValues(alpha: .10),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                'OWNER SETUP  •  STEP 1 OF 4',
+                                style: TextStyle(
+                                  color: scheme.primary,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: .7,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
                           Text(
                             'Create Owner Account',
                             style: Theme.of(context).textTheme.headlineMedium
                                 ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 32,
-                                  letterSpacing: -0.5,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: isCompact ? 27 : 32,
+                                  letterSpacing: -.7,
                                 ),
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Sign in with Google to create your owner account',
+                            'Use the Google account that will securely manage this business.',
                             style: Theme.of(context).textTheme.bodyLarge
                                 ?.copyWith(
-                                  color: Colors.grey[600],
-                                  fontSize: 16,
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: isCompact ? 14 : 16,
+                                  height: 1.45,
                                 ),
                             textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: 24),
 
                           // Setup Check Button
                           OutlinedButton.icon(
@@ -438,7 +465,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                 OAuthChecker.showSetupDialog(context),
                             icon: const Icon(Icons.info_outline, size: 20),
                             label: const Text(
-                              'Check OAuth Setup Status',
+                              'Check Google connection',
                               style: TextStyle(fontSize: 13),
                             ),
                             style: OutlinedButton.styleFrom(
@@ -446,12 +473,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                 horizontal: 16,
                                 vertical: 12,
                               ),
-                              side: BorderSide(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.5),
-                                width: 1.5,
-                              ),
+                              side: BorderSide(color: scheme.outlineVariant),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -460,35 +482,35 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                           const SizedBox(height: 28),
 
                           // User Agreement Checkbox
-                          Container(
-                            padding: const EdgeInsets.all(16),
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOutCubic,
+                            padding: EdgeInsets.all(isCompact ? 12 : 16),
                             decoration: BoxDecoration(
-                              color: _agreedToTerms
-                                  ? Colors.green.shade50
-                                  : Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: _agreedToTerms
-                                    ? Colors.green.shade400
-                                    : Colors.orange.shade400,
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color:
-                                      (_agreedToTerms
-                                              ? Colors.green
-                                              : Colors.orange)
-                                          .withValues(alpha: 0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Transform.scale(
-                                  scale: 1.2,
+                            color: _agreedToTerms
+                                   ? const Color(0xFFEAF7EF)
+                                   : const Color(0xFFFFF7E8),
+                               borderRadius: BorderRadius.circular(16),
+                               border: Border.all(
+                                 color: _agreedToTerms
+                                     ? const Color(0xFF57A773)
+                                     : const Color(0xFFE3A03C),
+                                 width: 1.25,
+                               ),
+                               boxShadow: _agreedToTerms
+                                   ? [
+                                       const BoxShadow(
+                                         color: Color(0x1557A773),
+                                         blurRadius: 12,
+                                         offset: Offset(0, 4),
+                                       ),
+                                     ]
+                                   : const [],
+                             ),
+                             child: Row(
+                               children: [
+                                 Transform.scale(
+                                   scale: 1.05,
                                   child: Checkbox(
                                     value: _agreedToTerms,
                                     onChanged: (value) {
@@ -496,9 +518,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                         () => _agreedToTerms = value ?? false,
                                       );
                                     },
-                                    activeColor: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
+                                      activeColor: scheme.primary,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(4),
                                     ),
@@ -508,8 +528,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                   child: RichText(
                                     text: TextSpan(
                                       style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey.shade800,
+                                        fontSize: isCompact ? 12 : 13,
+                                        color: scheme.onSurface,
                                         height: 1.4,
                                       ),
                                       children: [
@@ -517,9 +537,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                         TextSpan(
                                           text: 'User Agreement',
                                           style: TextStyle(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
+                                              color: scheme.primary,
                                             fontWeight: FontWeight.bold,
                                             decoration:
                                                 TextDecoration.underline,
@@ -536,9 +554,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                         TextSpan(
                                           text: 'Privacy Policy',
                                           style: TextStyle(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
+                                              color: scheme.primary,
                                             fontWeight: FontWeight.bold,
                                             decoration:
                                                 TextDecoration.underline,
@@ -559,21 +575,19 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                             ),
                           ),
 
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 20),
 
                           // Google Sign In Button
                           Container(
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(20),
                               boxShadow: (_isLoading || !_agreedToTerms)
                                   ? []
                                   : [
                                       BoxShadow(
-                                        color: Colors.blue.withValues(
-                                          alpha: 0.3,
-                                        ),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 8),
+                                        color: scheme.primary.withValues(alpha: .22),
+                                        blurRadius: 16,
+                                        offset: const Offset(0, 6),
                                       ),
                                     ],
                             ),
@@ -630,32 +644,31 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                       ),
                                     ),
                               style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 20,
-                                ),
+                                minimumSize: const Size.fromHeight(58),
+                                padding: const EdgeInsets.symmetric(vertical: 16),
                                 backgroundColor: Colors.white,
-                                foregroundColor: Colors.black87,
-                                disabledBackgroundColor: Colors.grey.shade200,
-                                disabledForegroundColor: Colors.grey.shade400,
+                                foregroundColor: scheme.onSurface,
+                                disabledBackgroundColor: scheme.surfaceContainerHighest,
+                                disabledForegroundColor: scheme.onSurfaceVariant,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                   side: BorderSide(
                                     color: (_isLoading || !_agreedToTerms)
-                                        ? Colors.grey.shade300
-                                        : Colors.blue.shade200,
-                                    width: 2,
+                                        ? scheme.outlineVariant
+                                        : scheme.primary.withValues(alpha: .45),
+                                    width: 1.5,
                                   ),
                                 ),
                               ),
                             ),
                           ),
 
-                          const SizedBox(height: 36),
+                          const SizedBox(height: 28),
 
                           // Info Boxes
                           Container(
-                            padding: const EdgeInsets.all(20),
+                            padding: EdgeInsets.all(isCompact ? 16 : 20),
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
@@ -694,12 +707,16 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                       ),
                                     ),
                                     const SizedBox(width: 12),
-                                    Text(
-                                      'Why Google Sign In?',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.blue.shade900,
+                                    Expanded(
+                                      child: Text(
+                                        'Why Google Sign In?',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade900,
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -708,8 +725,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                 Text(
                                   '✓ Secure authentication via Google\n'
                                   '✓ No need to remember passwords\n'
-                                  '✓ Multi-device sync automatically enabled\n'
-                                  '✓ Access your system from any device',
+                                  '✓ Cloud sync available with eligible packages\n'
+                                  '✓ Continue with guided business setup',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.blue.shade900,
@@ -762,7 +779,7 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'Your data will be securely synced across all your devices',
+                                    'Complete your business and package setup next. Cloud sync is available with eligible packages.',
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: Colors.green.shade900,

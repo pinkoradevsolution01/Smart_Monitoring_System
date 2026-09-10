@@ -54,6 +54,9 @@ class PackageService extends ChangeNotifier {
       _selectedPackage?.hasPrioritySupport ?? false;
 
   bool get hasAIHelpAccess => _selectedPackage?.hasAIHelp ?? false;
+  bool get hasExpenseTrackingAccess =>
+      _selectedPackage?.hasExpenseTracking ?? false;
+  bool get hasBirReportsAccess => _selectedPackage?.hasBirReports ?? false;
 
   // Attendance feature: available for Standard and above
   bool get hasAttendanceAccess {
@@ -255,6 +258,10 @@ class PackageService extends ChangeNotifier {
         return _selectedPackage!.hasAIHelp;
       case 'advanced_analytics':
         return _selectedPackage!.hasAdvancedAnalytics;
+      case 'expense_tracking':
+        return _selectedPackage!.hasExpenseTracking;
+      case 'bir_reports':
+        return _selectedPackage!.hasBirReports;
       case 'multi_device':
         return _selectedPackage!.hasMultiDevice;
       default:

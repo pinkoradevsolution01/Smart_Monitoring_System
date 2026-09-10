@@ -58,6 +58,9 @@ class BusinessInfoService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('business_store_name', info.storeName);
+      // Keep the owner-setup key aligned for flows created before the guided
+      // business registration screen, including activation-code requests.
+      await prefs.setString('business_name', info.storeName);
       await prefs.setString('business_business_type', info.businessType);
       await prefs.setBool(_businessConfiguredKey, true);
       if (info.storeAddress != null) {

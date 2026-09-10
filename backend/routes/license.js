@@ -130,7 +130,7 @@ async function fulfillActivationRequest({ requestId, activationCode }) {
 }
 
 router.post('/activate', async (req, res) => {
-  const { code, deviceId, deviceName, packageName } = req.body;
+  const { code, deviceId, deviceName } = req.body;
   if (!code || !deviceId || !deviceName) {
     return res.status(400).json({
       success: false,
@@ -169,7 +169,7 @@ router.post('/activate', async (req, res) => {
     // The request type determines the entitlement duration. One-time licenses
     // are perpetual; SaaS subscriptions remain active for 30 days.
     const requestRows = await query(
-      `SELECT request_type
+      `SELECT request_type, contact_email, package_name
        FROM activation_code_requests
        WHERE activation_code = ?
        ORDER BY fulfilled_at DESC, requested_at DESC
@@ -184,6 +184,10 @@ router.post('/activate', async (req, res) => {
           .slice(0, 19)
           .replace('T', ' ');
 
+    // Entitlements are assigned by the developer-issued activation code.
+    // Deliberately ignore any package name supplied by a device.
+    const activatedPackage = codeRow.package_name || requestRows[0]?.package_name || 'Standard';
+
     await query(
       `INSERT INTO subscriptions
         (device_id, activation_code, package_name, device_name, activated_at, expires_at, status, created_at)
@@ -193,7 +197,7 @@ router.post('/activate', async (req, res) => {
           device_name = VALUES(device_name),
           expires_at = VALUES(expires_at),
           status = VALUES(status)`,
-      [deviceId, code, packageName || codeRow.package_name || 'Standard', deviceName, expiresAt, 'active'],
+      [deviceId, code, activatedPackage, deviceName, expiresAt, 'active'],
     );
 
     await query(
@@ -205,13 +209,25 @@ router.post('/activate', async (req, res) => {
           device_name = VALUES(device_name),
           expires_at = VALUES(expires_at),
           status = VALUES(status)`,
-      [deviceId, code, packageName || codeRow.package_name || 'Standard', deviceName, expiresAt, 'active'],
+      [deviceId, code, activatedPackage, deviceName, expiresAt, 'active'],
     );
+
+    // Bind the activated package to the matching owner tenant when it already
+    // exists. If setup has not created the business yet, /api/business/init
+    // performs the same safe email-bound reconciliation later.
+    if (requestRows[0]?.contact_email) {
+      await query(
+        `UPDATE businesses
+            SET subscription_package = ?, subscription_expires_at = ?
+          WHERE LOWER(owner_email) = LOWER(?)`,
+        [activatedPackage, expiresAt, requestRows[0].contact_email],
+      );
+    }
 
     return res.json({
       success: true,
       message: 'Activation successful.',
-      packageName: packageName ?? codeRow.package_name,
+      packageName: activatedPackage,
       expiresAt,
       licenseType: isOneTimeLicense ? 'one_time_license' : 'monthly',
     });

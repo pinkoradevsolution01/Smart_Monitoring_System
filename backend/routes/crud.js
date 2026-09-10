@@ -1,7 +1,11 @@
 const express = require('express');
 const { randomUUID } = require('crypto');
 const { query, getConnection } = require('../db');
-const { requireActiveBusiness, requireManagementRole } = require('../security/business_access');
+const {
+  requireActiveBusiness,
+  requireManagementRole,
+  requireFinancialReporting,
+} = require('../security/business_access');
 
 const router = express.Router();
 
@@ -15,6 +19,8 @@ const RESERVED_QUERY_KEYS = new Set([
   'orderDirection',
   'order_direction',
   'search',
+  'from',
+  'to',
 ]);
 
 const RESOURCE_CONFIG = {
@@ -431,6 +437,49 @@ const RESOURCE_CONFIG = {
       resolution_notes: '',
     },
   },
+  expenses: {
+    table: 'expenses',
+    pk: 'id',
+    businessScoped: true,
+    dateRangeColumn: 'expense_date',
+    defaultOrder: 'expense_date DESC, created_at DESC',
+    columns: [
+      'id',
+      'business_id',
+      'category',
+      'description',
+      'amount',
+      'tax_amount',
+      'expense_date',
+      'vendor',
+      'reference_no',
+      'created_by',
+      'created_at',
+      'updated_at',
+    ],
+    requiredOnCreate: ['category', 'description', 'amount', 'expense_date'],
+    datetimeColumns: ['created_at', 'updated_at'],
+    defaults: {
+      tax_amount: 0,
+      vendor: null,
+      reference_no: null,
+    },
+    generated(row, _payload, req) {
+      if (!row.id) row.id = randomUUID();
+      if (!row.created_by) row.created_by = req.businessContext?.userId || null;
+    },
+    validate(row) {
+      if (row.amount !== undefined && (!Number.isFinite(Number(row.amount)) || Number(row.amount) <= 0)) {
+        throw Object.assign(new Error('amount must be greater than zero.'), { statusCode: 400 });
+      }
+      if (row.tax_amount !== undefined && (!Number.isFinite(Number(row.tax_amount)) || Number(row.tax_amount) < 0)) {
+        throw Object.assign(new Error('tax_amount must be zero or greater.'), { statusCode: 400 });
+      }
+      if (row.expense_date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(row.expense_date))) {
+        throw Object.assign(new Error('expense_date must be an ISO date (YYYY-MM-DD).'), { statusCode: 400 });
+      }
+    },
+  },
 };
 
 function toSnakeCase(value) {
@@ -554,6 +603,8 @@ function buildInsertRow(config, req, payload) {
     }
   }
 
+  if (config.validate) config.validate(row);
+
   applyValueTransforms(config, row);
   return row;
 }
@@ -574,6 +625,8 @@ function buildUpdateRow(config, payload) {
   if (config.datetimeColumns?.includes('updated_at') && row.updated_at === undefined) {
     row.updated_at = toMySqlDatetime(new Date());
   }
+
+  if (config.validate) config.validate(row);
 
   applyValueTransforms(config, row);
   return row;
@@ -600,6 +653,25 @@ function buildWhereClause(config, req, payload = {}, { includePrimaryKey = false
   if (includePrimaryKey && config.pk && normalized[config.pk] !== undefined) {
     clauses.push(`${primaryKeyColumn} = ?`);
     params.push(normalized[config.pk]);
+  }
+
+  if (config.dateRangeColumn) {
+    const from = normalized.from;
+    const to = normalized.to;
+    if (from && !/^\d{4}-\d{2}-\d{2}$/.test(String(from))) {
+      throw Object.assign(new Error('from must be an ISO date (YYYY-MM-DD).'), { statusCode: 400 });
+    }
+    if (to && !/^\d{4}-\d{2}-\d{2}$/.test(String(to))) {
+      throw Object.assign(new Error('to must be an ISO date (YYYY-MM-DD).'), { statusCode: 400 });
+    }
+    if (from) {
+      clauses.push(`${config.dateRangeColumn} >= ?`);
+      params.push(from);
+    }
+    if (to) {
+      clauses.push(`${config.dateRangeColumn} <= ?`);
+      params.push(to);
+    }
   }
 
   for (const [key, value] of Object.entries(normalized)) {
@@ -824,6 +896,10 @@ function registerCrudRoutes(resourceName, config) {
 // intentionally management-only; POS staff use the dedicated workflows/sync
 // routes rather than a broad CRUD surface.
 router.use(requireActiveBusiness, requireManagementRole);
+
+// The generic CRUD surface is management-only. Financial records have the
+// additional server-side package entitlement check before any SQL is run.
+router.use('/expenses', requireFinancialReporting);
 
 for (const [resourceName, config] of Object.entries(RESOURCE_CONFIG)) {
   registerCrudRoutes(resourceName, config);

@@ -27,6 +27,25 @@ function buildInClause(values) {
   };
 }
 
+// Subscription records are device-oriented, while all protected business
+// routes are tenant-oriented. This lookup safely binds an activated code to
+// the authenticated owner's business through the request email only.
+async function activeEntitlementForEmail(email) {
+  const rows = await query(
+    `SELECT r.package_name, s.expires_at
+       FROM activation_code_requests r
+       INNER JOIN subscriptions s ON s.activation_code = r.activation_code
+      WHERE LOWER(r.contact_email) = ?
+        AND r.status = 'fulfilled'
+        AND s.status = 'active'
+        AND (s.expires_at IS NULL OR s.expires_at >= NOW())
+      ORDER BY s.activated_at DESC
+      LIMIT 1`,
+    [email],
+  );
+  return rows[0] || null;
+}
+
 router.post('/init', async (req, res) => {
   const { businessName, ownerEmail, ownerId, existingBusinessId } = req.body;
   if (!businessName || !ownerEmail) {
@@ -52,6 +71,7 @@ router.post('/init', async (req, res) => {
         message: 'This subscriber account has been cancelled and cannot be reactivated.',
       });
     }
+    const entitlement = await activeEntitlementForEmail(normalizedEmail);
 
     // A device can retain a business ID from a previous owner. The authenticated
     // owner email is canonical and always wins over cached client state.
@@ -76,10 +96,23 @@ router.post('/init', async (req, res) => {
       businessId = existingBusinessId || `b-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       if (!existingBusinessId) {
         await query(
-          'INSERT INTO businesses (id, name, owner_email, owner_id, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-          [businessId, businessName, normalizedEmail, req.auth.userId, 1],
+          `INSERT INTO businesses
+            (id, name, owner_email, owner_id, is_active, subscription_package, subscription_expires_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [businessId, businessName, normalizedEmail, req.auth.userId, 1, entitlement?.package_name || null, entitlement?.expires_at || null],
         );
       }
+    }
+
+    // Refresh the server-side entitlement whenever a signed-in owner starts
+    // business sync. Local package selections never authorize paid features.
+    if (entitlement) {
+      await query(
+        `UPDATE businesses
+            SET subscription_package = ?, subscription_expires_at = ?
+          WHERE id = ? AND LOWER(owner_email) = ?`,
+        [entitlement.package_name, entitlement.expires_at, businessId, normalizedEmail],
+      );
     }
 
     await query(

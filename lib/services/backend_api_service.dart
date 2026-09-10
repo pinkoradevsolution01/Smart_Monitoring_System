@@ -60,6 +60,24 @@ class ApiClient {
     return _processResponse(response);
   }
 
+  /// Fetches a text export while preserving the same authenticated request
+  /// path used by JSON API calls.  The session token never appears in a URL.
+  Future<String> getText(
+    String path, {
+    Map<String, String>? queryParameters,
+  }) async {
+    final uri = _buildUri(path, queryParameters);
+    final response = await _client.get(
+      uri,
+      headers: await _authorizedHeaders(),
+    );
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.body;
+    }
+    _processResponse(response);
+    throw StateError('Unreachable response handler.');
+  }
+
   Future<dynamic> postJson(String path, {Map<String, dynamic>? body}) async {
     final uri = _buildUri(path);
     final response = await _client.post(

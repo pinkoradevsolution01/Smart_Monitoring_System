@@ -24,6 +24,11 @@ class UserService extends ChangeNotifier {
 
   final Map<String, User> _users = {};
   static const String _usersKey = 'users_data';
+  // One-time migration for an owner record that existed only in old device
+  // storage and was confirmed absent from the authoritative backend.
+  static const String _legacyOwnerCleanupKey =
+      'legacy_owner_cache_cleanup_20260910';
+  static const String _legacyOwnerEmail = 'jbgubot26@gmail.com';
   bool _isInitialized = false;
 
   List<User> get users => _users.values.toList();
@@ -62,6 +67,7 @@ class UserService extends ChangeNotifier {
             '  ✓ Loaded user: ${user.email} (${user.role}) - Active: ${user.isActive}',
           );
         }
+        await _removeConfirmedStaleOwnerCache(prefs);
         debugPrint('UserService: Total users loaded: ${_users.length}');
         notifyListeners();
         return;
@@ -103,6 +109,32 @@ class UserService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error saving users: $e');
     }
+  }
+
+  /// Removes one confirmed stale, local-only owner record without touching
+  /// backend data or any other locally stored business data.
+  Future<void> _removeConfirmedStaleOwnerCache(
+    SharedPreferences prefs,
+  ) async {
+    if (prefs.getBool(_legacyOwnerCleanupKey) == true) return;
+
+    final staleUserIds = _users.entries
+        .where(
+          (entry) =>
+              entry.value.role == UserRole.owner &&
+              entry.value.email.trim().toLowerCase() == _legacyOwnerEmail,
+        )
+        .map((entry) => entry.key)
+        .toList();
+
+    for (final userId in staleUserIds) {
+      _users.remove(userId);
+    }
+    if (staleUserIds.isNotEmpty) {
+      await _saveToPreferences();
+      debugPrint('UserService: Removed confirmed stale local owner cache.');
+    }
+    await prefs.setBool(_legacyOwnerCleanupKey, true);
   }
 
   SupabaseSyncService? _maybeSyncService() {

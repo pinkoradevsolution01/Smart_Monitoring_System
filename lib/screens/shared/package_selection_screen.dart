@@ -111,6 +111,8 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
       hasAdvancedAnalytics: pkg.hasAdvancedAnalytics,
       hasPrioritySupport: pkg.hasPrioritySupport,
       hasAIHelp: pkg.hasAIHelp,
+      hasExpenseTracking: pkg.hasExpenseTracking,
+      hasBirReports: pkg.hasBirReports,
     );
   }
 
@@ -777,7 +779,13 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
               children: [
                 Icon(Icons.check_circle, color: Colors.green.shade700),
                 const SizedBox(width: 12),
-                const Text('Activation Successful!'),
+                const Expanded(
+                  child: Text(
+                    'Activation Successful!',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
             content: Column(

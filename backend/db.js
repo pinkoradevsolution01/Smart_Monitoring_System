@@ -144,6 +144,8 @@ async function ensureTenantScopedProductIdentity() {
   await ensureTenantProductForeignKey('purchase_order_items', 'fk_purchase_order_items_product');
 }
 async function ensureUsersTableColumns() {
+  await ensureColumn('businesses', 'subscription_package', 'VARCHAR(64) NULL');
+  await ensureColumn('businesses', 'subscription_expires_at', 'DATETIME NULL');
   await ensureColumn('users', 'pin_hash', 'VARCHAR(255) NULL');
   await ensureColumn('users', 'business_id', 'VARCHAR(64) NULL');
   await ensureColumn('users', 'contact_number', 'VARCHAR(64) NULL');
@@ -331,6 +333,33 @@ async function ensureOwnerPinResetTokensTable() {
   `);
 }
 
+async function ensureExpensesTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS expenses (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      business_id VARCHAR(64) NOT NULL,
+      category VARCHAR(64) NOT NULL,
+      description VARCHAR(255) NOT NULL,
+      amount DECIMAL(12, 2) NOT NULL,
+      tax_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+      expense_date DATE NOT NULL,
+      vendor VARCHAR(255) NULL,
+      reference_no VARCHAR(255) NULL,
+      created_by VARCHAR(64) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY idx_expenses_business_date (business_id, expense_date),
+      KEY idx_expenses_business_category (business_id, category),
+      CONSTRAINT fk_expenses_business
+        FOREIGN KEY (business_id) REFERENCES businesses(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_expenses_creator
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -351,6 +380,7 @@ async function initDb() {
   await ensureActivationCodeColumns();
   await ensureDeveloperAccountsTable();
   await ensureOwnerPinResetTokensTable();
+  await ensureExpensesTable();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);

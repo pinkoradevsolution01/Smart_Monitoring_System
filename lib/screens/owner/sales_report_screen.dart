@@ -2383,6 +2383,8 @@ class _FinancialReportsTab extends StatelessWidget {
           hasAdvancedAnalytics: false,
           hasPrioritySupport: false,
           hasAIHelp: false,
+          hasExpenseTracking: false,
+          hasBirReports: false,
         );
     final hasAccess = currentPackage.name != 'Basic';
 

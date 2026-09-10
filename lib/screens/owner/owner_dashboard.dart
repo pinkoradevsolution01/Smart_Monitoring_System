@@ -4,6 +4,7 @@ import 'package:smart_monitoring_system/screens/auth/login_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/cctv_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/manage_owner_account_screen.dart';
 import 'package:smart_monitoring_system/screens/admin/admin_dashboard.dart';
+import 'package:smart_monitoring_system/screens/admin/financial_compliance_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/sales_report_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/backup_restore_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/supplier_management_screen.dart';
@@ -30,6 +31,7 @@ import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 import 'package:smart_monitoring_system/widgets/first_time_setup_card.dart';
+import 'package:smart_monitoring_system/widgets/package_upgrade_dialog.dart';
 
 class OwnerDashboard extends StatefulWidget {
   final User user;
@@ -403,6 +405,31 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                           },
                         ),
                       ];
+
+                      // E-Wallet tile (always visible; locked if no access)
+                      items.add(
+                        packageService.hasExpenseTrackingAccess
+                            ? _DashboardSquareTile(
+                                icon: Icons.receipt_long_outlined,
+                                color: Colors.deepPurple,
+                                title: 'Expenses & BIR reports',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const FinancialComplianceScreen(),
+                                  ),
+                                ),
+                              )
+                            : _DashboardSquareTile(
+                                icon: Icons.lock_outline,
+                                color: Colors.grey,
+                                title: 'Expenses & BIR reports',
+                                onTap: () => PackageUpgradeDialog.show(
+                                  context,
+                                  'Expense tracking and BIR-ready reports',
+                                ),
+                              ),
+                      );
 
                       // E-Wallet tile (always visible; locked if no access)
                       items.add(

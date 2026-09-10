@@ -14,12 +14,14 @@ import 'manage_users_screen.dart';
 // Removed Manage Admin Account from Admin Dashboard
 import 'manage_products.dart';
 import 'reports_screen.dart';
+import 'financial_compliance_screen.dart';
 import 'business_registration_screen.dart';
 import 'manage_attendance_screen.dart';
 import 'payroll_screen.dart';
 import '../shared/settings_screen.dart';
 import '../../theme.dart';
 import '../../widgets/app_design_system.dart';
+import '../../widgets/package_upgrade_dialog.dart';
 // Removed owner dashboard quick link; imports not needed
 
 class AdminDashboard extends StatelessWidget {
@@ -339,6 +341,27 @@ class AdminDashboard extends StatelessWidget {
                             ),
                           ),
                         ),
+                        packageService.hasExpenseTrackingAccess
+                            ? _DashboardSquareTile(
+                                icon: Icons.receipt_long_outlined,
+                                color: Colors.deepPurple,
+                                title: 'Expenses & BIR reports',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const FinancialComplianceScreen(),
+                                  ),
+                                ),
+                              )
+                            : _DashboardSquareTile(
+                                icon: Icons.lock_outline,
+                                color: Colors.grey,
+                                title: 'Expenses & BIR reports',
+                                onTap: () => PackageUpgradeDialog.show(
+                                  context,
+                                  'Expense tracking and BIR-ready reports',
+                                ),
+                              ),
                       ],
                     );
                   },

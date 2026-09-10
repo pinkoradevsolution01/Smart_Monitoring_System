@@ -1,6 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get_it/get_it.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../models/user.dart' as user_model;
 import '../../services/code_request_service.dart';
+import '../../services/user_service.dart';
 
 /// Shows the same activation-code request form used during package setup.
 /// Returns true when the request was submitted successfully.
@@ -118,6 +124,72 @@ class _ActivationRequestDialogState extends State<_ActivationRequestDialog> {
   final _contactEmail = TextEditingController();
   final _contactPhone = TextEditingController();
   final _notes = TextEditingController();
+  bool _hasPrefilledBusinessName = false;
+  bool _hasPrefilledOwnerEmail = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefillRegisteredDetails();
+  }
+
+  /// Prefills the request with identity information already supplied during
+  /// owner Google sign-in and Step 2 business registration. The fields remain
+  /// editable so a customer can use a different billing contact if needed.
+  Future<void> _prefillRegisteredDetails() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Step 2 is the authoritative local business profile. The legacy key is
+    // a fallback for owners registered before the guided setup was added.
+    final savedBusinessName =
+        prefs.getString('business_store_name')?.trim().isNotEmpty == true
+        ? prefs.getString('business_store_name')!.trim()
+        : prefs.getString('business_name')?.trim();
+
+    user_model.User? activeOwner;
+    try {
+      final owners = GetIt.I<UserService>()
+          .getUsersByRoleIncludingInactive(user_model.UserRole.owner)
+          .where((user) => user.isActive && user.email.trim().isNotEmpty);
+      if (owners.isNotEmpty) {
+        activeOwner = owners.first;
+      }
+    } catch (_) {
+      // The request form remains usable if local owner data is unavailable.
+    }
+
+    // A valid Google session is the fallback for an existing owner whose local
+    // user cache is not present yet (for example, after reinstalling the app).
+    final sessionEmail = _emailFromSavedGoogleSession(prefs);
+    final ownerEmail = activeOwner?.email.trim().toLowerCase() ?? sessionEmail;
+
+    if (!mounted) return;
+    setState(() {
+      if (savedBusinessName != null &&
+          savedBusinessName.isNotEmpty &&
+          _businessName.text.trim().isEmpty) {
+        _businessName.text = savedBusinessName;
+        _hasPrefilledBusinessName = true;
+      }
+      if (ownerEmail != null &&
+          ownerEmail.isNotEmpty &&
+          _contactEmail.text.trim().isEmpty) {
+        _contactEmail.text = ownerEmail;
+        _hasPrefilledOwnerEmail = true;
+      }
+    });
+  }
+
+  String? _emailFromSavedGoogleSession(SharedPreferences prefs) {
+    try {
+      final rawUser = prefs.getString('backend_user');
+      if (rawUser == null || rawUser.isEmpty) return null;
+      final user = jsonDecode(rawUser);
+      final email = user is Map ? user['email']?.toString().trim() : null;
+      return email == null || email.isEmpty ? null : email.toLowerCase();
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void dispose() {
@@ -174,20 +246,32 @@ class _ActivationRequestDialogState extends State<_ActivationRequestDialog> {
             const SizedBox(height: 16),
             TextField(
               controller: _businessName,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Business Name *',
-                prefixIcon: Icon(Icons.store),
-                border: OutlineInputBorder(),
+                helperText: _hasPrefilledBusinessName
+                    ? 'Filled from Business Setup'
+                    : null,
+                prefixIcon: const Icon(Icons.store),
+                suffixIcon: _hasPrefilledBusinessName
+                    ? const Icon(Icons.verified_outlined, color: Colors.green)
+                    : null,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _contactEmail,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Contact Email *',
-                prefixIcon: Icon(Icons.email),
-                border: OutlineInputBorder(),
+                helperText: _hasPrefilledOwnerEmail
+                    ? 'Filled from the registered Owner Google account'
+                    : null,
+                prefixIcon: const Icon(Icons.email),
+                suffixIcon: _hasPrefilledOwnerEmail
+                    ? const Icon(Icons.verified_outlined, color: Colors.green)
+                    : null,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),

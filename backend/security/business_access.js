@@ -15,7 +15,8 @@ async function requireActiveBusiness(req, res, next) {
   try {
     const rows = await query(
       `SELECT u.id, u.business_id, u.role, u.is_active AS user_active,
-              b.is_active AS business_active
+              b.is_active AS business_active, b.subscription_package,
+              b.subscription_expires_at
        FROM users u INNER JOIN businesses b ON b.id = u.business_id
        WHERE u.id = ? AND u.business_id = ? LIMIT 1`,
       [auth.userId, auth.businessId],
@@ -30,7 +31,13 @@ async function requireActiveBusiness(req, res, next) {
       return res.status(403).json({ success: false, message: 'The signed-in role is no longer authorized.' });
     }
 
-    req.businessContext = { businessId: user.business_id, role: databaseRole, userId: user.id };
+    req.businessContext = {
+      businessId: user.business_id,
+      role: databaseRole,
+      userId: user.id,
+      subscriptionPackage: user.subscription_package,
+      subscriptionExpiresAt: user.subscription_expires_at,
+    };
     return next();
   } catch (error) {
     console.error('Business access verification error:', error);
@@ -45,4 +52,28 @@ function requireManagementRole(req, res, next) {
   return next();
 }
 
-module.exports = { MANAGEMENT_ROLES, requireActiveBusiness, requireManagementRole };
+/**
+ * Financial controls are a paid Standard-or-higher capability.  This is a
+ * server-side entitlement check: a client cannot unlock it by changing local
+ * package preferences or by supplying a package name in a request.
+ */
+function requireFinancialReporting(req, res, next) {
+  const packageName = String(req.businessContext?.subscriptionPackage || '').trim().toLowerCase();
+  const validPackages = new Set(['standard', 'premium', 'enterprise']);
+  const expiry = req.businessContext?.subscriptionExpiresAt;
+  const expired = expiry && new Date(expiry).getTime() < Date.now();
+  if (!validPackages.has(packageName) || expired) {
+    return res.status(403).json({
+      success: false,
+      message: 'Expense tracking and BIR-ready reports require an active Standard, Premium, or Enterprise subscription.',
+    });
+  }
+  return next();
+}
+
+module.exports = {
+  MANAGEMENT_ROLES,
+  requireActiveBusiness,
+  requireManagementRole,
+  requireFinancialReporting,
+};

@@ -22,6 +22,8 @@ class PricingPackage {
   final bool hasAdvancedAnalytics;
   final bool hasPrioritySupport;
   final bool hasAIHelp;
+  final bool hasExpenseTracking;
+  final bool hasBirReports;
   final String? oldPrice;
 
   const PricingPackage({
@@ -46,6 +48,8 @@ class PricingPackage {
     required this.hasAdvancedAnalytics,
     required this.hasPrioritySupport,
     required this.hasAIHelp,
+    required this.hasExpenseTracking,
+    required this.hasBirReports,
     this.oldPrice,
   });
 
@@ -53,9 +57,9 @@ class PricingPackage {
     PricingPackage(
       type: PackageType.basic,
       name: 'Basic',
-      price: '₱1,999',
+      price: '₱299',
       oneTimePrice: '₱19,999',
-      saasPrice: '₱1,999',
+      saasPrice: '₱299',
       oldPrice: '₱2,999',
       period: '/month',
       description:
@@ -86,13 +90,15 @@ class PricingPackage {
       hasAdvancedAnalytics: false,
       hasPrioritySupport: false,
       hasAIHelp: true,
+      hasExpenseTracking: false,
+      hasBirReports: false,
     ),
     PricingPackage(
       type: PackageType.standard,
       name: 'Standard',
-      price: '₱3,999',
+      price: '₱499',
       oneTimePrice: '₱34,999',
-      saasPrice: '₱3,999',
+      saasPrice: '₱499',
       oldPrice: '₱5,999',
       period: '/month',
       features: [
@@ -101,6 +107,8 @@ class PricingPackage {
         'Up to 500 Products',
         'Advanced Inventory',
         'Sales & Financial Reports',
+        'Expense Tracking & Profit Analysis',
+        'BIR-ready Z-Reading, eSales & VAT Summaries',
         'Attendance Management',
         'Cloud Sync',
         'Supplier Management',
@@ -123,13 +131,15 @@ class PricingPackage {
       hasAdvancedAnalytics: false,
       hasPrioritySupport: false,
       hasAIHelp: true,
+      hasExpenseTracking: true,
+      hasBirReports: true,
     ),
     PricingPackage(
       type: PackageType.premium,
       name: 'Premium',
-      price: '₱6,999',
+      price: '₱899',
       oneTimePrice: '₱59,999',
-      saasPrice: '₱6,999',
+      saasPrice: '₱899',
       oldPrice: '₱9,999',
       period: '/month',
       features: [
@@ -139,6 +149,8 @@ class PricingPackage {
         'Full Inventory Suite',
         'CCTV Integration (4 cameras)',
         'Advanced Analytics',
+        'Expense Tracking & Profit Analysis',
+        'BIR-ready Z-Reading, eSales & VAT Summaries',
         'Attendance Management',
         'Multi-Device Sync',
         'All Integrations',
@@ -160,6 +172,8 @@ class PricingPackage {
       hasAdvancedAnalytics: true,
       hasPrioritySupport: true,
       hasAIHelp: true,
+      hasExpenseTracking: true,
+      hasBirReports: true,
     ),
     PricingPackage(
       type: PackageType.enterprise,
@@ -174,6 +188,8 @@ class PricingPackage {
         'Enterprise Inventory',
         'CCTV Integration (Unlimited)',
         'Custom Analytics Dashboard',
+        'Expense Tracking & Profit Analysis',
+        'BIR-ready Z-Reading, eSales & VAT Summaries',
         'Multi-Branch Support',
         'API Access',
         'Dedicated Account Manager',
@@ -192,6 +208,8 @@ class PricingPackage {
       hasAdvancedAnalytics: true,
       hasPrioritySupport: true,
       hasAIHelp: true,
+      hasExpenseTracking: true,
+      hasBirReports: true,
     ),
   ];
 
@@ -214,6 +232,8 @@ class PricingPackage {
       'hasAdvancedAnalytics': hasAdvancedAnalytics,
       'hasPrioritySupport': hasPrioritySupport,
       'hasAIHelp': hasAIHelp,
+      'hasExpenseTracking': hasExpenseTracking,
+      'hasBirReports': hasBirReports,
     };
   }
 
