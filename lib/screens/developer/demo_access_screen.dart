@@ -1,16 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import '../../models/pricing_package.dart';
-import '../../models/user.dart' as user_model;
 import '../../services/demo_access_service.dart';
+import '../../services/demo_session_service.dart';
 import '../../services/package_service.dart';
-import '../cashier/cashier_dashboard.dart';
-import '../delivery_receiver/delivery_receiver_dashboard.dart';
-import '../inventory_clerk/inventory_clerk_dashboard.dart';
-import '../manager/manager_dashboard.dart';
-import '../owner/owner_dashboard.dart';
-import '../sales_promoter/sales_promoter_dashboard.dart';
-import '../shared/loading_screen.dart';
+import '../../services/supabase_sync_service.dart';
+import 'demo_workspace_screen.dart';
 
 /// Client-facing demonstration access. Demo users and package overrides are
 /// created in memory only and are never persisted or synchronized.
@@ -94,7 +89,7 @@ class DemoAccessScreen extends StatelessWidget {
                         return _DemoRoleCard(
                           role: role,
                           account: service.getDemoAccountByRole(role)!,
-                          onLogin: () => _startDemo(context, service, role),
+                          onLogin: () => _startDemo(context, role),
                         );
                       },
                     ),
@@ -109,22 +104,20 @@ class DemoAccessScreen extends StatelessWidget {
   }
 
   void _exitDemo(BuildContext context) {
+    DemoSessionService.instance.end();
     GetIt.I<PackageService>().exitDemoPackage();
+    final sync = GetIt.I<SupabaseSyncService>();
+    if (sync.isConfigured) sync.startAutoSync();
     Navigator.of(context).pushNamedAndRemoveUntil(
       '/developer-dashboard',
       (route) => false,
     );
   }
 
-  void _startDemo(
-    BuildContext context,
-    DemoAccessService service,
-    String role,
-  ) {
-    final user = service.createDemoUser(role);
-    if (user == null) return;
-
+  void _startDemo(BuildContext context, String role) {
     final packageService = GetIt.I<PackageService>();
+    GetIt.I<SupabaseSyncService>().stopAutoSync();
+    DemoSessionService.instance.start(role);
     final premium = PricingPackage.packages.firstWhere(
       (package) => package.type == PackageType.premium,
     );
@@ -133,30 +126,9 @@ class DemoAccessScreen extends StatelessWidget {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => LoadingScreen(
-          destination: _DemoSessionFrame(child: _dashboardFor(user)),
-        ),
+        builder: (_) => DemoWorkspaceScreen(role: role),
       ),
     );
-  }
-
-  Widget _dashboardFor(user_model.User user) {
-    switch (user.role) {
-      case user_model.UserRole.owner:
-        return OwnerDashboard(user: user);
-      case user_model.UserRole.cashier:
-        return CashierDashboard(user: user);
-      case user_model.UserRole.manager:
-        return ManagerDashboard(user: user);
-      case user_model.UserRole.inventoryClerk:
-        return InventoryClerkDashboard(user: user);
-      case user_model.UserRole.deliveryReceiver:
-        return DeliveryReceiverDashboard(user: user);
-      case user_model.UserRole.salesPromoter:
-        return SalesPromoterDashboard(user: user);
-      default:
-        return OwnerDashboard(user: user);
-    }
   }
 }
 
@@ -458,44 +430,5 @@ class _DemoRoleCardState extends State<_DemoRoleCard> {
       default:
         return 'Explore the system experience';
     }
-  }
-}
-
-class _DemoSessionFrame extends StatelessWidget {
-  final Widget child;
-
-  const _DemoSessionFrame({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope<void>(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) GetIt.I<PackageService>().exitDemoPackage();
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          child,
-          Positioned(
-            left: 16,
-            bottom: 16,
-            child: SafeArea(
-              child: FloatingActionButton.extended(
-                heroTag: 'exit-demo-session',
-                backgroundColor: const Color(0xFFB42318),
-                foregroundColor: Colors.white,
-                onPressed: () {
-                  GetIt.I<PackageService>().exitDemoPackage();
-                  Navigator.of(context).pop();
-                },
-                icon: const Icon(Icons.exit_to_app),
-                label: const Text('Exit Demo'),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

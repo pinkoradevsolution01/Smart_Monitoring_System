@@ -231,6 +231,23 @@ class UserService extends ChangeNotifier {
     return true;
   }
 
+  /// Removes an account from this device only.
+  ///
+  /// This is intentionally separate from [deleteUserPermanently]. It is used
+  /// when a legacy account remains in SharedPreferences but no longer exists
+  /// in the authoritative backend. It never sends a delete request or queues
+  /// a cloud sync, so it cannot delete an unrelated server account.
+  Future<bool> deleteLocalCachedUser(String userId) async {
+    if (!_users.containsKey(userId)) {
+      return false;
+    }
+
+    _users.remove(userId);
+    await _saveToPreferences();
+    notifyListeners();
+    return true;
+  }
+
   /// Get user by email
   User? getUserByEmail(String email) {
     final normalizedEmail = email.trim().toLowerCase();

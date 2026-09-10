@@ -291,6 +291,24 @@ class _ManageOwnerAccountScreenState extends State<ManageOwnerAccountScreen> {
           throw Exception('Failed to delete owner in backend');
         }
       } catch (e) {
+        final error = e.toString().toLowerCase();
+        // The backend is authoritative. A local owner record that the backend
+        // explicitly cannot find is stale device cache, so remove only that
+        // cached record. Do not do this for connectivity or authorization
+        // errors; those must still protect the server account.
+        if (error.contains('not found')) {
+          final removed = await _userService.deleteLocalCachedUser(_owner!.id);
+          if (!mounted) return;
+          if (removed) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Stale local owner account removed from this device.'),
+              ),
+            );
+            Navigator.of(context).pop();
+            return;
+          }
+        }
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

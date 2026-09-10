@@ -241,7 +241,10 @@ class AppMetricCard extends StatelessWidget {
     final theme = Theme.of(context);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        // Metric grids may be intentionally compact on phones. Keep the
+        // content within a short card rather than allowing a fractional
+        // RenderFlex overflow on devices with different text metrics.
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -250,6 +253,8 @@ class AppMetricCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -258,17 +263,21 @@ class AppMetricCard extends StatelessWidget {
                 Icon(icon, color: color),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
             Text(
               value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
               ),
             ),
             if (detail != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 detail!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -325,6 +334,9 @@ class AppEmptyState extends StatelessWidget {
   final String title;
   final String message;
   final VoidCallback? onRetry;
+  final VoidCallback? onAction;
+  final String actionLabel;
+  final IconData actionIcon;
 
   const AppEmptyState({
     super.key,
@@ -332,6 +344,9 @@ class AppEmptyState extends StatelessWidget {
     required this.title,
     required this.message,
     this.onRetry,
+    this.onAction,
+    this.actionLabel = 'Try again',
+    this.actionIcon = Icons.refresh,
   });
 
   @override
@@ -359,12 +374,12 @@ class AppEmptyState extends StatelessWidget {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
-            if (onRetry != null) ...[
+            if (onAction != null || onRetry != null) ...[
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Try again'),
+                onPressed: onAction ?? onRetry,
+                icon: Icon(actionIcon),
+                label: Text(actionLabel),
               ),
             ],
           ],

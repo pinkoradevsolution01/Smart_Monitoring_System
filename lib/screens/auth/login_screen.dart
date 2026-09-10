@@ -13,6 +13,7 @@ import '../../services/supabase_sync_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../services/package_service.dart';
+import '../../services/demo_session_service.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import '../owner/owner_dashboard.dart';
@@ -525,7 +526,10 @@ class _LoginScreenState extends State<LoginScreen> {
               tooltip: 'Exit Demo',
               icon: const Icon(Icons.exit_to_app),
               onPressed: () {
+                DemoSessionService.instance.end();
                 packageService.exitDemoPackage();
+                final sync = GetIt.I<SupabaseSyncService>();
+                if (sync.isConfigured) sync.startAutoSync();
                 Navigator.of(context).pushNamedAndRemoveUntil(
                   '/developer-dashboard',
                   (route) => false,

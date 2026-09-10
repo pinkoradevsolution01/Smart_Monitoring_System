@@ -15,6 +15,7 @@ import '../models/loyalty_ledger_entry.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'supabase_sync_service.dart';
+import 'demo_session_service.dart';
 
 /// A lightweight web-backed DatabaseService that persists to window.localStorage.
 /// This provides a compatible API for web builds when sqflite is not available.
@@ -113,6 +114,11 @@ class DatabaseService {
   }
 
   Future<void> _load() async {
+    if (DemoSessionService.instance.isActive) {
+      throw StateError(
+        'Production browser storage is disabled during Client Demonstration Mode.',
+      );
+    }
     final raw = window.localStorage[_storageKey];
     if (raw == null) return;
     try {

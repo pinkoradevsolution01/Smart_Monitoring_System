@@ -13,6 +13,7 @@ import '../../services/package_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../owner/owner_dashboard.dart';
+import '../admin/business_registration_screen.dart';
 
 class OwnerRegistrationScreen extends StatefulWidget {
   const OwnerRegistrationScreen({super.key});
@@ -249,13 +250,16 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
           return;
         }
 
-        // New owners select a package after their account is created.
+        // First-time setup follows a clear business flow: account, business,
+        // then subscription. Existing owners keep their normal sign-in path.
         final packageService = GetIt.I<PackageService>();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => PackageSelectionScreen(
-              packageService: packageService,
-              currentUser: owner, // Pass the owner user
+            builder: (_) => BusinessRegistrationScreen(
+              nextPageBuilder: (_) => PackageSelectionScreen(
+                packageService: packageService,
+                currentUser: owner,
+              ),
             ),
           ),
         );

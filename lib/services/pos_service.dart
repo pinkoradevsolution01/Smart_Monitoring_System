@@ -11,6 +11,7 @@ import 'database_service.dart';
 import 'customer_service.dart';
 import '../utils/currency_formatter.dart';
 import 'supabase_sync_service.dart';
+import 'demo_session_service.dart';
 
 class POSService extends ChangeNotifier {
   final DatabaseService _databaseService = DatabaseService();
@@ -20,15 +21,26 @@ class POSService extends ChangeNotifier {
   List<Product> _products = [];
   List<Sale> _recentSales = [];
 
-  List<CartItem> get cart => _cart;
-  List<Product> get products => _products;
-  List<Sale> get recentSales => _recentSales;
+  bool get _isDemoSession => DemoSessionService.instance.isActive;
+
+  // Never expose cached live records if a demo route is reached accidentally.
+  List<CartItem> get cart => _isDemoSession ? const <CartItem>[] : _cart;
+  List<Product> get products => _isDemoSession ? const <Product>[] : _products;
+  List<Sale> get recentSales => _isDemoSession ? const <Sale>[] : _recentSales;
   DatabaseService get databaseService => _databaseService;
 
-  double get cartSubtotal => _cart.fold(0, (sum, item) => sum + item.subtotal);
+  double get cartSubtotal => cart.fold(0, (sum, item) => sum + item.subtotal);
   double get cartDiscount =>
-      _cart.fold(0, (sum, item) => sum + item.discountAmount);
-  double get cartTotal => _cart.fold(0, (sum, item) => sum + item.total);
+      cart.fold(0, (sum, item) => sum + item.discountAmount);
+  double get cartTotal => cart.fold(0, (sum, item) => sum + item.total);
+
+  void _requireLiveDataAccess() {
+    if (_isDemoSession) {
+      throw StateError(
+        'Production POS operations are disabled during Client Demonstration Mode.',
+      );
+    }
+  }
 
   // Initialize the POS service
   Future<void> initialize() async {
@@ -58,33 +70,42 @@ class POSService extends ChangeNotifier {
 
   // Product operations
   Future<void> loadProducts() async {
+    if (_isDemoSession) {
+      notifyListeners();
+      return;
+    }
     _products = await _databaseService.getAllProducts();
     notifyListeners();
   }
 
   Future<void> addProduct(Product product) async {
+    _requireLiveDataAccess();
     await _databaseService.insertProduct(product);
     await loadProducts();
     _queueCloudSync();
   }
 
   Future<void> updateProduct(Product product) async {
+    _requireLiveDataAccess();
     await _databaseService.updateProduct(product);
     await loadProducts();
     _queueCloudSync();
   }
 
   Future<void> deleteProduct(int id) async {
+    _requireLiveDataAccess();
     await _databaseService.deleteProduct(id);
     await loadProducts();
     _queueCloudSync();
   }
 
   Future<Product?> getProductByBarcode(String barcode) async {
+    if (_isDemoSession) return null;
     return _databaseService.getProductByBarcode(barcode);
   }
 
   Future<List<Product>> getLowStockProducts() async {
+    if (_isDemoSession) return const <Product>[];
     return _databaseService.getLowStockProducts();
   }
 
@@ -94,6 +115,7 @@ class POSService extends ChangeNotifier {
     int quantity = 1,
     ShoeSize? selectedShoeSize,
   }) {
+    if (_isDemoSession) return;
     // For shoe products, check if same size already in cart
     final existingIndex = _cart.indexWhere(
       (item) =>
@@ -123,6 +145,7 @@ class POSService extends ChangeNotifier {
   }
 
   void removeFromCart(int index) {
+    if (_isDemoSession) return;
     if (index >= 0 && index < _cart.length) {
       _cart.removeAt(index);
       notifyListeners();
@@ -130,6 +153,7 @@ class POSService extends ChangeNotifier {
   }
 
   void updateCartItem(int index, int quantity) {
+    if (_isDemoSession) return;
     if (index >= 0 && index < _cart.length && quantity > 0) {
       final item = _cart[index];
       _cart[index] = item.copyWith(quantity: quantity);
@@ -138,6 +162,7 @@ class POSService extends ChangeNotifier {
   }
 
   void updateCartItemDiscount(int index, double discount) {
+    if (_isDemoSession) return;
     if (index >= 0 &&
         index < _cart.length &&
         discount >= 0 &&
@@ -149,6 +174,7 @@ class POSService extends ChangeNotifier {
   }
 
   void clearCart() {
+    if (_isDemoSession) return;
     _cart.clear();
     notifyListeners();
   }
@@ -170,6 +196,7 @@ class POSService extends ChangeNotifier {
     int loyaltyPointsRedeemed = 0,
     double loyaltyDiscountAmount = 0.0,
   }) async {
+    _requireLiveDataAccess();
     if (_cart.isEmpty) return false;
 
     // Calculate totals
@@ -398,6 +425,10 @@ class POSService extends ChangeNotifier {
 
   // Reporting operations
   Future<void> loadRecentSales({int days = 7}) async {
+    if (_isDemoSession) {
+      notifyListeners();
+      return;
+    }
     final startDate = DateTime.now().subtract(Duration(days: days));
     final endDate = DateTime.now();
     final recent = await _databaseService.getAllSales(
@@ -414,6 +445,7 @@ class POSService extends ChangeNotifier {
     required String reason,
     required String cancelledBy,
   }) async {
+    _requireLiveDataAccess();
     try {
       // Get the sale to cancel
       final sales = await _databaseService.getAllSales();

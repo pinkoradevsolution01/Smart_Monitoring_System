@@ -19,6 +19,7 @@ import '../models/loyalty_ledger_entry.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'supabase_sync_service.dart';
+import 'demo_session_service.dart';
 
 /// DatabaseService provides a singleton pattern for database operations.
 /// Handles all CRUD operations for products, sales, inventory movements,
@@ -111,6 +112,11 @@ class DatabaseService {
 
   /// Lazy initialization of database connection
   Future<Database> get database async {
+    if (DemoSessionService.instance.isActive) {
+      throw StateError(
+        'Production database access is disabled during Client Demonstration Mode.',
+      );
+    }
     _database ??= await _initDatabase();
     return _database!;
   }

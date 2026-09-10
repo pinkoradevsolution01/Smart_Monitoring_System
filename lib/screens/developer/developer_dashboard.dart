@@ -74,9 +74,18 @@ class _DeveloperDashboardState extends State<DeveloperDashboard> {
             color: Colors.white,
             icon: const Icon(Icons.logout_rounded),
             onPressed: () async {
+              final confirmed = await showAppDestructiveConfirmation(
+                context,
+                title: 'Sign out of Developer Portal?',
+                message:
+                    'You will need to authenticate again before managing platform tools.',
+                confirmLabel: 'Sign out',
+              );
+              if (!confirmed || !context.mounted) return;
               GetIt.I<SupabaseSyncService>().clearBusinessContext();
               await DeveloperAuthScreen.clearAuthentication();
               await GoogleAuthService().clearSession();
+              if (!context.mounted) return;
               Navigator.pushAndRemoveUntil(
                 context,
                 MaterialPageRoute(builder: (_) => const LoginScreen()),

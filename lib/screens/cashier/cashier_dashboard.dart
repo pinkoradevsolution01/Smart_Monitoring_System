@@ -42,7 +42,15 @@ class CashierDashboard extends StatelessWidget {
             IconButton(
               tooltip: AppLocalizations.t('sign_out'),
               icon: const Icon(Icons.logout),
-              onPressed: () {
+              onPressed: () async {
+                final confirmed = await showAppDestructiveConfirmation(
+                  context,
+                  title: 'Sign out?',
+                  message:
+                      'You will need to sign in again to access this business.',
+                  confirmLabel: 'Sign out',
+                );
+                if (!confirmed || !context.mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (_) => LoginScreen()),

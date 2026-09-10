@@ -47,7 +47,14 @@ class AdminDashboard extends StatelessWidget {
           IconButton(
             tooltip: AppLocalizations.t('sign_out'),
             icon: const Icon(Icons.logout),
-            onPressed: () {
+            onPressed: () async {
+              final confirmed = await showAppDestructiveConfirmation(
+                context,
+                title: 'Sign out?',
+                message: 'You will need to sign in again to access this business.',
+                confirmLabel: 'Sign out',
+              );
+              if (!confirmed || !context.mounted) return;
               GetIt.I<SupabaseSyncService>().clearBusinessContext();
               Navigator.pushAndRemoveUntil(
                 context,
@@ -62,6 +69,10 @@ class AdminDashboard extends StatelessWidget {
       bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
           ? NavigationBar(
               selectedIndex: 0,
+              // Five operational destinations are useful on phones, but five
+              // persistent labels are too wide on narrow Android screens.
+              // Icons stay visible and the active destination keeps its label.
+              labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
               onDestinationSelected: (index) {
                 switch (index) {
                   case 1:

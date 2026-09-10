@@ -12,6 +12,7 @@ import '../models/damage_report.dart';
 import '../models/customer.dart';
 import '../models/user.dart';
 import 'database_service.dart';
+import 'demo_session_service.dart';
 import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'attendance_service.dart';
@@ -43,7 +44,11 @@ class SupabaseSyncService extends ChangeNotifier {
   DateTime? get lastSyncTime => _lastSyncTime;
   Map<String, int> get syncStats => _syncStats;
   String? get businessId => _businessId;
-  bool get isConfigured => BackendConfig.useRestBackend && _businessId != null;
+  /// Demonstration sessions must never pull production records or push data.
+  bool get isConfigured =>
+      !DemoSessionService.instance.isActive &&
+      BackendConfig.useRestBackend &&
+      _businessId != null;
   bool get isAutoSyncEnabled => _autoSyncEnabled;
   Duration get autoSyncInterval => _autoSyncInterval;
   Duration get queuedPushDelay => _queuedPushDelay;
@@ -54,6 +59,9 @@ class SupabaseSyncService extends ChangeNotifier {
     required String ownerEmail,
     String? existingBusinessId,
   }) async {
+    if (DemoSessionService.instance.isActive) {
+      throw StateError('Cloud synchronization is disabled during demo mode.');
+    }
     if (!BackendConfig.useRestBackend) {
       throw Exception('Backend not configured');
     }

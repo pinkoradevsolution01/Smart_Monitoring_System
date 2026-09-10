@@ -29,6 +29,7 @@ import '../../utils/currency_formatter.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
+import 'package:smart_monitoring_system/widgets/first_time_setup_card.dart';
 
 class OwnerDashboard extends StatefulWidget {
   final User user;
@@ -123,6 +124,14 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               tooltip: AppLocalizations.t('sign_out'),
               icon: const Icon(Icons.logout),
               onPressed: () async {
+                final confirmed = await showAppDestructiveConfirmation(
+                  context,
+                  title: 'Sign out?',
+                  message:
+                      'You will need to sign in again to access this business.',
+                  confirmLabel: 'Sign out',
+                );
+                if (!confirmed || !context.mounted) return;
                 GetIt.I<SupabaseSyncService>().clearBusinessContext();
                 await GoogleAuthService().clearSession();
                 if (!mounted) return;
@@ -227,6 +236,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                       label: const Text('Open POS'),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  FirstTimeSetupCard(owner: widget.user),
+                  const SizedBox(height: 20),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final columns = constraints.maxWidth >= 900

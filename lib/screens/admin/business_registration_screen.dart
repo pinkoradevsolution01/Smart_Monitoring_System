@@ -6,7 +6,11 @@ import '../../models/business_info.dart';
 import '../../utils/app_localizations.dart';
 
 class BusinessRegistrationScreen extends StatefulWidget {
-  const BusinessRegistrationScreen({super.key});
+  /// When used during first-time onboarding, continue directly to the next
+  /// required setup step instead of returning to a dashboard.
+  final WidgetBuilder? nextPageBuilder;
+
+  const BusinessRegistrationScreen({super.key, this.nextPageBuilder});
 
   @override
   State<BusinessRegistrationScreen> createState() =>
@@ -118,7 +122,15 @@ class _BusinessRegistrationScreenState
       );
 
       if (success) {
-        Navigator.pop(context);
+        final nextPageBuilder = widget.nextPageBuilder;
+        if (nextPageBuilder != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: nextPageBuilder),
+          );
+        } else {
+          Navigator.pop(context);
+        }
       }
     }
   }

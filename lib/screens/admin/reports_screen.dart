@@ -12,6 +12,7 @@ import '../../utils/currency_formatter.dart';
 import '../../models/sale.dart';
 import '../../models/product.dart';
 import '../../models/damage_report.dart';
+import '../../widgets/app_design_system.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -32,6 +33,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   List<Product> _products = [];
   List<DamageReport> _damageReports = [];
   bool _isLoading = false;
+  String? _loadError;
 
   @override
   void initState() {
@@ -47,7 +49,10 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       debugPrint(
         '📊 Loading admin reports: ${_startDate.toIso8601String()} to ${_endDate.toIso8601String()}',
@@ -71,13 +76,16 @@ class _ReportsScreenState extends State<ReportsScreen>
       });
     } catch (e) {
       debugPrint('❌ Error loading admin reports: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
-      }
+      if (!mounted) return;
+      setState(() => _loadError = 'We could not load the report data.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not load report data.'),
+          action: SnackBarAction(label: 'Retry', onPressed: _loadData),
+        ),
+      );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -98,28 +106,12 @@ class _ReportsScreenState extends State<ReportsScreen>
   }
 
   Future<void> _resetSalesData() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reset Sales Data'),
-        content: const Text(
-          'This will delete ALL sales records permanently. This action cannot be undone.\n\nProducts and inventory will not be affected.\n\nAre you sure?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Reset Sales'),
-          ),
-        ],
-      ),
+    final confirm = await showAppDestructiveConfirmation(
+      context,
+      title: 'Reset sales data?',
+      message:
+          'This permanently deletes all sales records. Products and inventory are not changed.',
+      confirmLabel: 'Reset sales',
     );
 
     if (confirm == true) {
@@ -141,6 +133,11 @@ class _ReportsScreenState extends State<ReportsScreen>
             SnackBar(
               content: Text('Error resetting sales: $e'),
               backgroundColor: Colors.red,
+              action: SnackBarAction(
+                label: 'Retry',
+                textColor: Colors.white,
+                onPressed: _resetSalesData,
+              ),
             ),
           );
         }
@@ -208,7 +205,17 @@ class _ReportsScreenState extends State<ReportsScreen>
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Padding(
+              padding: EdgeInsets.all(16),
+              child: AppLoadingSkeleton(lines: 5),
+            )
+          : _loadError != null
+          ? AppEmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Reports are unavailable',
+              message: _loadError!,
+              onRetry: _loadData,
+            )
           : Column(
               children: [
                 _buildDateRangeHeader(),
@@ -583,11 +590,9 @@ class _ReportsScreenState extends State<ReportsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    AppLocalizations.t('sales_trend'),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
+                    '${AppLocalizations.t('sales_trend')}: tap a point for records',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -617,14 +622,14 @@ class _ReportsScreenState extends State<ReportsScreen>
                 ),
                 const Divider(height: 24),
                 if (topProducts.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        AppLocalizations.t('no_sales_data'),
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
+                  AppEmptyState(
+                    icon: Icons.inventory_2_outlined,
+                    title: 'No product sales in this period',
+                    message:
+                        'Choose a different date range or refresh after a sale is completed.',
+                    onAction: _selectDateRange,
+                    actionLabel: 'Change date range',
+                    actionIcon: Icons.date_range_outlined,
                   )
                 else
                   ...topProducts.take(10).map((entry) {
@@ -633,6 +638,18 @@ class _ReportsScreenState extends State<ReportsScreen>
                     final revenue = entry.value['revenue'] as double;
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
+                      onTap: () => _showSalesDrillDown(
+                        title: 'Sales for $name',
+                        sales: _sales
+                            .where(
+                              (sale) =>
+                                  sale.status != SaleStatus.cancelled &&
+                                  sale.items.any(
+                                    (item) => item.productName == name,
+                                  ),
+                            )
+                            .toList(),
+                      ),
                       leading: CircleAvatar(
                         backgroundColor: Theme.of(context).colorScheme.primary,
                         child: Text(
@@ -645,9 +662,8 @@ class _ReportsScreenState extends State<ReportsScreen>
                       ),
                       title: Text(
                         name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       subtitle: Text(
@@ -687,14 +703,14 @@ class _ReportsScreenState extends State<ReportsScreen>
                 ),
                 const Divider(height: 24),
                 if (_sales.isEmpty)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        AppLocalizations.t('no_transactions'),
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                    ),
+                  AppEmptyState(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'No transactions in this period',
+                    message:
+                        'Choose a different date range or refresh after a sale is completed.',
+                    onAction: _selectDateRange,
+                    actionLabel: 'Change date range',
+                    actionIcon: Icons.date_range_outlined,
                   )
                 else
                   ..._sales.take(10).map((sale) {
@@ -1286,6 +1302,29 @@ class _ReportsScreenState extends State<ReportsScreen>
 
     return LineChart(
       LineChartData(
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: true,
+          touchCallback: (event, response) {
+            if (event is! FlTapUpEvent ||
+                response?.lineBarSpots == null ||
+                response!.lineBarSpots!.isEmpty) {
+              return;
+            }
+            final index = response.lineBarSpots!.first.x.toInt();
+            if (index < 0 || index >= entries.length) return;
+            final day = entries[index].key;
+            _showSalesDrillDown(
+              title: 'Sales on $day',
+              sales: _sales
+                  .where(
+                    (sale) =>
+                        sale.status != SaleStatus.cancelled &&
+                        DateFormat('MMM dd').format(sale.saleDate) == day,
+                  )
+                  .toList(),
+            );
+          },
+        ),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
@@ -1351,6 +1390,70 @@ class _ReportsScreenState extends State<ReportsScreen>
         ],
         minY: 0,
         maxY: maxY * 1.2,
+      ),
+    );
+  }
+
+  void _showSalesDrillDown({
+    required String title,
+    required List<Sale> sales,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * .72,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(sheetContext).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${sales.length} transaction${sales.length == 1 ? '' : 's'}',
+                  style: Theme.of(sheetContext).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: sales.isEmpty
+                      ? const AppEmptyState(
+                          icon: Icons.receipt_long_outlined,
+                          title: 'No matching transactions',
+                          message: 'There are no completed sales for this selection.',
+                        )
+                      : ListView.separated(
+                          itemCount: sales.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final sale = sales[index];
+                            return ListTile(
+                              leading: const Icon(Icons.receipt_long_outlined),
+                              title: Text(sale.saleNumber),
+                              subtitle: Text(
+                                '${DateFormat('MMM dd, yyyy · h:mm a').format(sale.saleDate)} · ${sale.customerName ?? sale.cashierName}',
+                              ),
+                              trailing: Text(
+                                AppCurrency.peso(sale.totalAmount),
+                                style: const TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
