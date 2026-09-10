@@ -250,41 +250,18 @@ class AdminDashboard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        packageService.hasAttendanceAccess
-                            ? _DashboardSquareTile(
-                                icon: Icons.access_time,
-                                color: Colors.indigo,
-                                title: AppLocalizations.t('manage_attendance'),
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const ManageAttendanceScreen(),
-                                  ),
-                                ),
-                              )
-                            : _DashboardSquareTile(
-                                icon: Icons.lock_outline,
-                                color: Colors.grey,
-                                title: AppLocalizations.t('manage_attendance'),
-                                onTap: () => showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Feature Locked'),
-                                    content: const Text(
-                                      'This feature is only available in the Standard package and above.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: Text(
-                                          AppLocalizations.t('close'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                        if (packageService.hasAttendanceAccess)
+                          _DashboardSquareTile(
+                            icon: Icons.access_time,
+                            color: Colors.indigo,
+                            title: AppLocalizations.t('manage_attendance'),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ManageAttendanceScreen(),
                               ),
+                            ),
+                          ),
                         _DashboardSquareTile(
                           icon: Icons.inventory,
                           color: Colors.orange,
@@ -296,40 +273,18 @@ class AdminDashboard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        packageService.hasPayrollAccess
-                            ? _DashboardSquareTile(
-                                icon: Icons.attach_money,
-                                color: Colors.tealAccent.shade700,
-                                title: AppLocalizations.t('manage_payroll'),
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const AdminPayrollScreen(),
-                                  ),
-                                ),
-                              )
-                            : _DashboardSquareTile(
-                                icon: Icons.lock_outline,
-                                color: Colors.grey,
-                                title: AppLocalizations.t('manage_payroll'),
-                                onTap: () => showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Feature Locked'),
-                                    content: const Text(
-                                      'This feature is only available in the Standard package and above.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: Text(
-                                          AppLocalizations.t('close'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                        if (packageService.hasPayrollAccess)
+                          _DashboardSquareTile(
+                            icon: Icons.attach_money,
+                            color: Colors.tealAccent.shade700,
+                            title: AppLocalizations.t('manage_payroll'),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AdminPayrollScreen(),
                               ),
+                            ),
+                          ),
                         _DashboardSquareTile(
                           icon: Icons.bar_chart,
                           color: Colors.purple,

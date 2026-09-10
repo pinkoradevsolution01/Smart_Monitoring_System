@@ -28,6 +28,7 @@ import 'services/user_service.dart';
 import 'services/admin_service.dart';
 import 'services/developer_service.dart';
 import 'services/ai_help_service.dart';
+import 'services/smart_plus_notification_service.dart';
 import 'services/business_info_service.dart';
 import 'services/package_service.dart';
 import 'services/subscriber_service.dart';
@@ -102,6 +103,13 @@ Future<void> main() async {
   // Initialize AI Help Service
   final aiHelpService = AIHelpService();
   GetIt.I.registerSingleton<AIHelpService>(aiHelpService);
+
+  // SmartPlus watches local POS changes and produces owner-only, in-app
+  // suggestions. It does not send notifications outside the application.
+  final smartPlusNotificationService = SmartPlusNotificationService(posService);
+  GetIt.I.registerSingleton<SmartPlusNotificationService>(
+    smartPlusNotificationService,
+  );
 
   // Initialize License Service (must be before PackageService)
   final licenseService = LicenseService();

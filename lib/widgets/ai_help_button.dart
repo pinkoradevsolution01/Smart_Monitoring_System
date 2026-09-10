@@ -7,7 +7,20 @@ import '../utils/locale_controller.dart';
 
 /// Opens the AI Help chat dialog
 void showAIHelpDialog(BuildContext context) {
+  final assistant = GetIt.I<AIHelpService>();
+  if (assistant.isSmartPlusMode) assistant.startHelp();
   showDialog(context: context, builder: (context) => const _AIHelpDialog());
+}
+
+/// Opens the data-backed SmartPlus mode of the existing assistant.
+/// SmartPlus is rule based and keeps data on the device; it is not a remote AI
+/// integration and cannot execute sales, orders, or other business changes.
+void showSmartPlusDialog(BuildContext context) {
+  GetIt.I<AIHelpService>().startSmartPlus();
+  showDialog(
+    context: context,
+    builder: (context) => const _AIHelpDialog(smartPlus: true),
+  );
 }
 
 /// Floating AI Help Button that opens chat interface
@@ -31,7 +44,9 @@ class AIHelpButton extends StatelessWidget {
 
 /// AI Help Chat Dialog
 class _AIHelpDialog extends StatefulWidget {
-  const _AIHelpDialog();
+  final bool smartPlus;
+
+  const _AIHelpDialog({this.smartPlus = false});
 
   @override
   State<_AIHelpDialog> createState() => _AIHelpDialogState();
@@ -46,18 +61,23 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
   void initState() {
     super.initState();
     _aiService = GetIt.I<AIHelpService>();
+    _aiService.addListener(_onAssistantChanged);
   }
 
   @override
   void dispose() {
+    _aiService.removeListener(_onAssistantChanged);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  void _onAssistantChanged() => _scrollToBottom();
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       Future.delayed(const Duration(milliseconds: 100), () {
+        if (!mounted || !_scrollController.hasClients) return;
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
@@ -69,7 +89,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
 
   void _sendMessage() {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _aiService.isThinking) return;
 
     _aiService.sendMessage(text);
     _messageController.clear();
@@ -77,6 +97,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
   }
 
   void _sendSuggestedQuestion(String question) {
+    if (_aiService.isThinking) return;
     _aiService.sendMessage(question);
     _scrollToBottom();
   }
@@ -84,13 +105,20 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
+    final primaryColor = widget.smartPlus
+        ? theme.colorScheme.tertiary
+        : theme.colorScheme.primary;
+    final media = MediaQuery.sizeOf(context);
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
+    final availableHeight = media.height - keyboardHeight - 48;
+    final dialogHeight = availableHeight > 700 ? 700.0 : availableHeight;
 
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
-        width: 600,
-        height: 700,
+        width: media.width > 632 ? 600 : media.width - 32,
+        height: dialogHeight,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
@@ -118,8 +146,10 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                       color: Colors.white.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.support_agent,
+                    child: Icon(
+                      widget.smartPlus
+                          ? Icons.auto_awesome_rounded
+                          : Icons.support_agent,
                       color: Colors.white,
                       size: 24,
                     ),
@@ -134,9 +164,11 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isFilipino
-                                  ? 'AI Tulong Assistant'
-                                  : 'AI Help Assistant',
+                              widget.smartPlus
+                                  ? 'SmartPlus'
+                                  : (isFilipino
+                                        ? 'AI Tulong Assistant'
+                                        : 'AI Help Assistant'),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -144,9 +176,13 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                               ),
                             ),
                             Text(
-                              isFilipino
-                                  ? 'Magtanong tungkol sa sistema'
-                                  : 'Ask me anything about the system',
+                              widget.smartPlus
+                                  ? (isFilipino
+                                        ? 'Rule-based na sales at inventory insights'
+                                        : 'Rule-based sales and inventory insights')
+                                  : (isFilipino
+                                        ? 'Magtanong tungkol sa sistema'
+                                        : 'Ask me anything about the system'),
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
@@ -183,8 +219,12 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: messages.length,
+                    itemCount: messages.length +
+                        (widget.smartPlus && _aiService.isThinking ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index == messages.length) {
+                        return const _SmartPlusThinkingBubble();
+                      }
                       final message = messages[index];
                       return _MessageBubble(message: message);
                     },
@@ -325,6 +365,104 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Animated typing state displayed only while SmartPlus is evaluating a rule.
+class _SmartPlusThinkingBubble extends StatefulWidget {
+  const _SmartPlusThinkingBubble();
+
+  @override
+  State<_SmartPlusThinkingBubble> createState() =>
+      _SmartPlusThinkingBubbleState();
+}
+
+class _SmartPlusThinkingBubbleState extends State<_SmartPlusThinkingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _dot(int index, Color color) {
+    final begin = index * 0.18;
+    final end = (begin + 0.5).clamp(0.0, 1.0).toDouble();
+    final animation = Tween<double>(begin: 0, end: -5).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(begin, end, curve: Curves.easeInOut),
+      ),
+    );
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, animation.value),
+        child: child,
+      ),
+      child: Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.tertiary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.auto_awesome_rounded, size: 20, color: color),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'SmartPlus is thinking',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(width: 9),
+                _dot(0, color),
+                const SizedBox(width: 4),
+                _dot(1, color),
+                const SizedBox(width: 4),
+                _dot(2, color),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

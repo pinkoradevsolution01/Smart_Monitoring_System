@@ -664,34 +664,12 @@ class _CashierPOSState extends State<CashierPOS> {
                               icon: const Icon(Icons.cancel, color: Colors.red),
                               onPressed: () => _showCancelSaleDialog(s),
                             ),
-                          IconButton(
-                            tooltip: AppLocalizations.t('monitor_cctv'),
-                            icon: const Icon(Icons.videocam),
-                            onPressed: () {
-                              final pkg = GetIt.I<PackageService>();
-                              if (!pkg.hasCCTVAccess) {
-                                showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Feature Locked'),
-                                    content: const Text(
-                                      'This feature is only available in the Premium package and above.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: Text(
-                                          AppLocalizations.t('close'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                return;
-                              }
-                              _verifyOwnerPassword(s.saleDate);
-                            },
-                          ),
+                          if (GetIt.I<PackageService>().hasCCTVAccess)
+                            IconButton(
+                              tooltip: AppLocalizations.t('monitor_cctv'),
+                              icon: const Icon(Icons.videocam),
+                              onPressed: () => _verifyOwnerPassword(s.saleDate),
+                            ),
                         ],
                       ),
                       children: s.items.isEmpty

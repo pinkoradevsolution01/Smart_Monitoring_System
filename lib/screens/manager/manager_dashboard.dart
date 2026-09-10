@@ -90,36 +90,13 @@ class ManagerDashboard extends StatelessWidget {
                             icon: Icons.access_time,
                             color: Colors.indigo,
                             title: AppLocalizations.t('attendance'),
-                            onTap: () {
-                              showDialog(
-                                context: context,
-                                builder: (_) => Dialog(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: _AttendanceCard(user: user),
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        else
-                          _DashboardSquareTile(
-                            icon: Icons.lock_outline,
-                            color: Colors.grey,
-                            title: AppLocalizations.t('attendance'),
                             onTap: () => showDialog(
                               context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: const Text('Feature Locked'),
-                                content: const Text(
-                                  'This feature is only available in the Standard package and above.',
+                              builder: (_) => Dialog(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12.0),
+                                  child: _AttendanceCard(user: user),
                                 ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: Text(AppLocalizations.t('close')),
-                                  ),
-                                ],
                               ),
                             ),
                           ),
@@ -207,45 +184,19 @@ class ManagerDashboard extends StatelessWidget {
                               ),
                       );
 
-                      // CCTV tile
-                      items.add(
-                        packageService.hasCCTVAccess
-                            ? _DashboardSquareTile(
-                                icon: Icons.camera_alt,
-                                color: Colors.blue,
-                                title: AppLocalizations.t('monitor_cctv'),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => CCTVScreen(),
-                                    ),
-                                  );
-                                },
-                              )
-                            : _DashboardSquareTile(
-                                icon: Icons.lock_outline,
-                                color: Colors.grey,
-                                title: AppLocalizations.t('monitor_cctv'),
-                                onTap: () => showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Feature Locked'),
-                                    content: const Text(
-                                      'This feature is only available in the Premium package and above.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: Text(
-                                          AppLocalizations.t('close'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                      );
+                      if (packageService.hasCCTVAccess) {
+                        items.add(
+                          _DashboardSquareTile(
+                            icon: Icons.camera_alt,
+                            color: Colors.blue,
+                            title: AppLocalizations.t('monitor_cctv'),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => CCTVScreen()),
+                            ),
+                          ),
+                        );
+                      }
 
                       items.add(
                         _DashboardSquareTile(
@@ -308,21 +259,21 @@ class ManagerDashboard extends StatelessWidget {
                               ),
                       );
 
-                      items.add(
-                        _DashboardSquareTile(
-                          icon: Icons.local_shipping,
-                          color: Colors.cyan,
-                          title: AppLocalizations.t('for_delivery'),
-                          onTap: () {
-                            Navigator.push(
+                      if (packageService.hasDeliveryManagementAccess) {
+                        items.add(
+                          _DashboardSquareTile(
+                            icon: Icons.local_shipping,
+                            color: Colors.cyan,
+                            title: AppLocalizations.t('for_delivery'),
+                            onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => ForDeliveryScreen(user: user),
                               ),
-                            );
-                          },
-                        ),
-                      );
+                            ),
+                          ),
+                        );
+                      }
 
                       // Backup & Restore
                       items.add(

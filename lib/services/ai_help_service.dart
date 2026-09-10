@@ -1,12 +1,20 @@
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import '../models/chat_message.dart';
+import '../models/sale.dart';
+import '../services/pos_service.dart';
+import '../utils/currency_formatter.dart';
 import '../utils/locale_controller.dart';
 
 /// Service to handle AI help assistant interactions
 class AIHelpService extends ChangeNotifier {
   final List<ChatMessage> _messages = [];
+  bool _smartPlusMode = false;
+  bool _isThinking = false;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
+  bool get isSmartPlusMode => _smartPlusMode;
+  bool get isThinking => _isThinking;
 
   // Bilingual knowledge base - English
   final Map<String, String> _knowledgeBaseEn = {
@@ -551,6 +559,17 @@ On the login screen:
 
   void _addWelcomeMessage() {
     final isFilipino = LocaleController.locale.value.languageCode == 'fil';
+    if (_smartPlusMode) {
+      _messages.add(
+        ChatMessage(
+          text: isFilipino
+              ? 'Ako ang SmartPlus — ang rule-based business assistant mo. Gumagamit ako ng available na sales at inventory records para magbigay ng malinaw na suggestions.\n\nMaaari mong itanong:\n• Top 5 products noong nakaraang buwan\n• Low-stock at reorder suggestions\n• Sales performance nitong linggo\n• Product pairs para sa upsell\n• Unusual discounts na kailangang i-review\n\nHindi ako gumagawa ng supplier orders, checkout, o voice commands nang walang hiwalay na approved integration.'
+              : 'I am SmartPlus — your rule-based business assistant. I use the available sales and inventory records to provide clear suggestions.\n\nAsk about:\n• Top 5 products last month\n• Low stock and reorder suggestions\n• Sales performance this week\n• Product pairs for upsells\n• Unusual discounts to review\n\nI do not place supplier orders, complete checkout, or execute voice commands without a separate approved integration.',
+          isUser: false,
+        ),
+      );
+      return;
+    }
     _messages.add(
       ChatMessage(
         text: isFilipino
@@ -561,6 +580,23 @@ On the login screen:
     );
   }
 
+  /// Starts a fresh, data-backed SmartPlus conversation. This remains
+  /// deterministic and local: it never sends business records to an AI vendor.
+  void startSmartPlus() {
+    _smartPlusMode = true;
+    _messages.clear();
+    _addWelcomeMessage();
+    notifyListeners();
+  }
+
+  /// Restores the existing help-only assistant for normal AI Help entry points.
+  void startHelp() {
+    _smartPlusMode = false;
+    _messages.clear();
+    _addWelcomeMessage();
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     LocaleController.locale.removeListener(_onLocaleChanged);
@@ -569,19 +605,26 @@ On the login screen:
 
   /// Send a user message and get AI response
   Future<void> sendMessage(String userMessage) async {
-    if (userMessage.trim().isEmpty) return;
+    if (userMessage.trim().isEmpty || _isThinking) return;
 
     // Add user message
     _messages.add(ChatMessage(text: userMessage.trim(), isUser: true));
+    _isThinking = true;
     notifyListeners();
 
-    // Simulate thinking delay
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Generate AI response
-    final response = _generateResponse(userMessage.toLowerCase().trim());
-    _messages.add(ChatMessage(text: response, isUser: false));
-    notifyListeners();
+    try {
+      // Keep a short, honest thinking state so the response does not appear
+      // abruptly while data rules are evaluated.
+      await Future.delayed(const Duration(milliseconds: 650));
+      final query = userMessage.toLowerCase().trim();
+      final response = _smartPlusMode
+          ? _generateSmartPlusResponse(query)
+          : _generateResponse(query);
+      _messages.add(ChatMessage(text: response, isUser: false));
+    } finally {
+      _isThinking = false;
+      notifyListeners();
+    }
   }
 
   /// Generate response based on user query and current language
@@ -655,6 +698,118 @@ On the login screen:
               '• "change theme" - Customize appearance\n'
               '• "sales reports" - View and export reports\n\n'
               'Try rephrasing your question or ask about one of these topics!';
+  }
+
+  String _generateSmartPlusResponse(String query) {
+    final pos = GetIt.I<POSService>();
+    final products = pos.products;
+    final completedSales = pos.recentSales
+        .where((sale) => sale.status == SaleStatus.completed)
+        .toList();
+
+    if (query.contains('voice') || query.contains('checkout') || query.contains('add 2')) {
+      return 'Voice-enabled checkout is not enabled in this system yet. SmartPlus can explain a checkout instruction, but it cannot add items, apply discounts, or complete a sale automatically.';
+    }
+
+    if (query.contains('reorder') || query.contains('low stock') || query.contains('stock')) {
+      final lowStock = products.where((product) => product.lowStock).toList()
+        ..sort((a, b) => a.quantity.compareTo(b.quantity));
+      if (lowStock.isEmpty) {
+        return 'No products are currently at or below their reorder level. Keep reviewing stock after each delivery and sale.';
+      }
+      final suggestions = lowStock.take(5).map((product) {
+        final suggestedQuantity = (product.reorderLevel * 2 - product.quantity)
+            .clamp(product.reorderLevel, 999999);
+        return '• ${product.name}: ${product.quantity} in stock (reorder level ${product.reorderLevel}) — suggest ordering $suggestedQuantity';
+      }).join('\n');
+      return 'Smart reordering suggestion (rule: replenish to roughly twice the reorder level):\n$suggestions\n\nReview the quantities and supplier availability before creating an order. SmartPlus does not place supplier orders automatically.';
+    }
+
+    if (query.contains('discount') || query.contains('fraud') || query.contains('suspicious')) {
+      final cutoff = DateTime.now().subtract(const Duration(days: 30));
+      final flagged = completedSales.where((sale) {
+        return sale.saleDate.isAfter(cutoff) &&
+            sale.subtotal > 0 &&
+            sale.discountAmount / sale.subtotal >= 0.20;
+      }).toList();
+      if (flagged.isEmpty) {
+        return 'No completed sale in the last 30 days has a discount of 20% or more. This is a review rule, not a fraud determination.';
+      }
+      final samples = flagged.take(5).map(
+        (sale) => '• ${sale.saleNumber}: ${AppCurrency.peso(sale.discountAmount)} discount on ${AppCurrency.peso(sale.subtotal)}',
+      ).join('\n');
+      return '${flagged.length} completed sale(s) in the last 30 days meet the 20% discount review threshold:\n$samples\n\nAsk the cashier or manager for the approved discount reason before taking action.';
+    }
+
+    if (query.contains('upsell') || query.contains('pair') || query.contains('often buy')) {
+      final pairCounts = <String, int>{};
+      for (final sale in completedSales) {
+        final names = sale.items.map((item) => item.productName).toSet().toList()
+          ..sort();
+        for (var first = 0; first < names.length; first++) {
+          for (var second = first + 1; second < names.length; second++) {
+            final key = '${names[first]}|${names[second]}';
+            pairCounts[key] = (pairCounts[key] ?? 0) + 1;
+          }
+        }
+      }
+      final pairs = pairCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      if (pairs.isEmpty) {
+        return 'There are not enough completed sales with multiple items to identify product pairs yet. Complete more multi-item transactions, then ask again.';
+      }
+      return 'Best current cross-sell pair(s), based on completed transactions:\n${pairs.take(3).map((pair) => '• ${pair.key.replaceFirst('|', ' + ')} — bought together ${pair.value} time(s)').join('\n')}\n\nUse these as cashier suggestions, not automatic cart changes.';
+    }
+
+    if (query.contains('forecast') || query.contains('christmas') || query.contains('season')) {
+      final quantities = _salesQuantities(completedSales, days: 90);
+      final ranked = quantities.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      if (ranked.isEmpty) {
+        return 'There is not enough completed-sale history to create a forecast. Add at least several weeks of sales data and try again.';
+      }
+      return 'Rule-based demand signal from the last 90 days (not a true seasonal forecast):\n${ranked.take(5).map((entry) => '• ${entry.key}: ${entry.value} unit(s) sold').join('\n')}\n\nFor a Christmas forecast, retain data from prior Christmas periods. SmartPlus will not claim seasonal demand without that history.';
+    }
+
+    if (query.contains('top') || query.contains('selling') || query.contains('last month')) {
+      final quantities = _salesQuantities(completedSales, days: 31);
+      final ranked = quantities.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      if (ranked.isEmpty) {
+        return 'No completed item-level sales were found in the last 31 days.';
+      }
+      return 'Top selling products from the last 31 days:\n${ranked.take(5).toList().asMap().entries.map((entry) => '${entry.key + 1}. ${entry.value.key} — ${entry.value.value} unit(s)').join('\n')}';
+    }
+
+    if (query.contains('sales') || query.contains('insight') || query.contains('week')) {
+      final now = DateTime.now();
+      final recentStart = now.subtract(const Duration(days: 7));
+      final previousStart = now.subtract(const Duration(days: 14));
+      final recent = completedSales.where((sale) => sale.saleDate.isAfter(recentStart));
+      final previous = completedSales.where(
+        (sale) => sale.saleDate.isAfter(previousStart) && !sale.saleDate.isAfter(recentStart),
+      );
+      final recentTotal = recent.fold<double>(0, (sum, sale) => sum + sale.totalAmount);
+      final previousTotal = previous.fold<double>(0, (sum, sale) => sum + sale.totalAmount);
+      final change = previousTotal == 0 ? null : ((recentTotal - previousTotal) / previousTotal) * 100;
+      final comparison = change == null
+          ? 'There is no previous-week baseline yet.'
+          : '${change >= 0 ? 'up' : 'down'} ${change.abs().toStringAsFixed(1)}% from the prior 7 days.';
+      return 'Sales insight: ${AppCurrency.peso(recentTotal)} from ${recent.length} completed transaction(s) in the last 7 days — $comparison\n\nSmartPlus can identify the change in sales records, but it cannot determine the cause (such as foot traffic) without that data.';
+    }
+
+    return 'SmartPlus can answer rule-based questions using your current records. Try: “What are my top 5 selling items last month?”, “Show low-stock reorder suggestions”, “Find upsell pairs”, “Review unusual discounts”, or “Compare sales this week.”';
+  }
+
+  Map<String, int> _salesQuantities(List<Sale> sales, {required int days}) {
+    final cutoff = DateTime.now().subtract(Duration(days: days));
+    final quantities = <String, int>{};
+    for (final sale in sales.where((sale) => sale.saleDate.isAfter(cutoff))) {
+      for (final item in sale.items) {
+        quantities[item.productName] = (quantities[item.productName] ?? 0) + item.quantity;
+      }
+    }
+    return quantities;
   }
 
   /// Clear conversation history

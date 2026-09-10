@@ -58,16 +58,24 @@ class PackageService extends ChangeNotifier {
       _selectedPackage?.hasExpenseTracking ?? false;
   bool get hasBirReportsAccess => _selectedPackage?.hasBirReports ?? false;
 
-  // Attendance feature: available for Standard and above
+  // Attendance and payroll are Premium-only operational modules.
   bool get hasAttendanceAccess {
     if (_selectedPackage == null) return false;
-    return _selectedPackage!.type != PackageType.basic;
+    return _selectedPackage!.type == PackageType.premium ||
+        _selectedPackage!.type == PackageType.enterprise;
   }
 
-  // Payroll feature: available for Standard and above (Basic package locked)
   bool get hasPayrollAccess {
     if (_selectedPackage == null) return false;
-    return _selectedPackage!.type != PackageType.basic;
+    return _selectedPackage!.type == PackageType.premium ||
+        _selectedPackage!.type == PackageType.enterprise;
+  }
+
+  // Standard deliberately excludes delivery management. Basic keeps its
+  // existing delivery entitlement; Premium and Enterprise include it too.
+  bool get hasDeliveryManagementAccess {
+    if (_selectedPackage == null) return false;
+    return _selectedPackage!.type != PackageType.standard;
   }
 
   // Backup & Restore: treat Basic the same as Standard for backup/restore access

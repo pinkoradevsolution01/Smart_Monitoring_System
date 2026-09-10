@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import '../../utils/app_localizations.dart';
 import '../../services/attendance_service.dart';
 import '../cashier/cashier_pos.dart';
@@ -6,6 +7,7 @@ import '../cashier/price_checker_screen.dart';
 import '../../models/user.dart';
 import '../owner/for_delivery_screen.dart';
 import '../../utils/responsive_utils.dart';
+import '../../services/package_service.dart';
 
 class SalesPromoterDashboard extends StatelessWidget {
   final User user;
@@ -13,6 +15,7 @@ class SalesPromoterDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final packageService = GetIt.I<PackageService>();
     return Scaffold(
       appBar: AppBar(title: Text(AppLocalizations.t('sales_promoter'))),
       body: Center(
@@ -58,12 +61,12 @@ class SalesPromoterDashboard extends StatelessWidget {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     children: [
-                      _ActionTile(
-                        icon: Icons.access_time,
-                        color: Colors.indigo,
-                        title: AppLocalizations.t('attendance'),
-                        onTap: () {
-                          showDialog(
+                      if (packageService.hasAttendanceAccess)
+                        _ActionTile(
+                          icon: Icons.access_time,
+                          color: Colors.indigo,
+                          title: AppLocalizations.t('attendance'),
+                          onTap: () => showDialog(
                             context: context,
                             builder: (_) => Dialog(
                               child: Padding(
@@ -71,9 +74,8 @@ class SalesPromoterDashboard extends StatelessWidget {
                                 child: _AttendanceCard(user: user),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        ),
                       _ActionTile(
                         icon: Icons.point_of_sale,
                         color: Colors.teal,
@@ -96,17 +98,18 @@ class SalesPromoterDashboard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _ActionTile(
-                        icon: Icons.local_shipping,
-                        color: Colors.blue,
-                        title: AppLocalizations.t('for_delivery'),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ForDeliveryScreen(user: user),
+                      if (packageService.hasDeliveryManagementAccess)
+                        _ActionTile(
+                          icon: Icons.local_shipping,
+                          color: Colors.blue,
+                          title: AppLocalizations.t('for_delivery'),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ForDeliveryScreen(user: user),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),

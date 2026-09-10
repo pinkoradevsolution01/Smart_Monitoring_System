@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:smart_monitoring_system/screens/auth/login_screen.dart';
@@ -28,6 +30,7 @@ import '../../theme.dart';
 import '../../utils/interaction_feedback.dart';
 import '../../utils/currency_formatter.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
+import 'package:smart_monitoring_system/widgets/smart_plus_notification_button.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 import 'package:smart_monitoring_system/widgets/first_time_setup_card.dart';
@@ -69,6 +72,35 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     );
   }
 
+  void _openDrawerDestination(Widget destination) {
+    Navigator.of(context).pop();
+    Future<void>.delayed(const Duration(milliseconds: 160), () {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        PageRouteBuilder<void>(
+          pageBuilder: (_, animation, _) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.025, 0),
+                end: Offset.zero,
+              ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation),
+              child: destination,
+            ),
+          ),
+          transitionDuration: const Duration(milliseconds: 220),
+        ),
+      );
+    });
+  }
+
+  void _openSmartPlus() {
+    Navigator.of(context).pop();
+    Future<void>.delayed(const Duration(milliseconds: 160), () {
+      if (mounted) showSmartPlusDialog(context);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final packageService = GetIt.I<PackageService>();
@@ -104,8 +136,23 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     return AnimatedBuilder(
       animation: Listenable.merge([packageService, pos]),
       builder: (context, _) => Scaffold(
+        drawerScrimColor: Colors.black.withValues(alpha: 0.18),
+        drawer: _OwnerNavigationDrawer(
+          user: widget.user,
+          packageService: packageService,
+          onOpen: _openDrawerDestination,
+          onOpenSmartPlus: _openSmartPlus,
+        ),
         appBar: AppBar(
-          title: Text(AppLocalizations.t('owner_dashboard')),
+          automaticallyImplyLeading: false,
+          leading: Builder(
+            builder: (drawerContext) => IconButton(
+              tooltip: 'Open navigation menu',
+              icon: const Icon(Icons.menu_rounded),
+              onPressed: () => Scaffold.of(drawerContext).openDrawer(),
+            ),
+          ),
+          title: const SizedBox.shrink(),
           actions: [
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -114,6 +161,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               ),
               child: const HeaderClock(),
             ),
+            const SmartPlusNotificationButton(),
             IconButton(
               tooltip: AppLocalizations.t('settings'),
               icon: const Icon(Icons.settings),
@@ -473,45 +521,19 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                               ),
                       );
 
-                      // CCTV tile (always visible; locked if no access)
-                      items.add(
-                        packageService.hasCCTVAccess
-                            ? _DashboardSquareTile(
-                                icon: Icons.camera_alt,
-                                color: Colors.blue,
-                                title: AppLocalizations.t('monitor_cctv'),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => CCTVScreen(),
-                                    ),
-                                  );
-                                },
-                              )
-                            : _DashboardSquareTile(
-                                icon: Icons.lock_outline,
-                                color: Colors.grey,
-                                title: AppLocalizations.t('monitor_cctv'),
-                                onTap: () => showDialog(
-                                  context: context,
-                                  builder: (ctx) => AlertDialog(
-                                    title: const Text('Feature Locked'),
-                                    content: const Text(
-                                      'This feature is only available in the Premium package and above.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(ctx),
-                                        child: Text(
-                                          AppLocalizations.t('close'),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                      );
+                      if (packageService.hasCCTVAccess) {
+                        items.add(
+                          _DashboardSquareTile(
+                            icon: Icons.camera_alt,
+                            color: Colors.blue,
+                            title: AppLocalizations.t('monitor_cctv'),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => CCTVScreen()),
+                            ),
+                          ),
+                        );
+                      }
 
                       items.add(
                         _DashboardSquareTile(
@@ -530,23 +552,21 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                         ),
                       );
 
-                      // For Delivery
-                      items.add(
-                        _DashboardSquareTile(
-                          icon: Icons.local_shipping,
-                          color: Colors.brown,
-                          title: 'For Delivery',
-                          onTap: () {
-                            Navigator.push(
+                      if (packageService.hasDeliveryManagementAccess) {
+                        items.add(
+                          _DashboardSquareTile(
+                            icon: Icons.local_shipping,
+                            color: Colors.brown,
+                            title: 'For Delivery',
+                            onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    ForDeliveryScreen(user: widget.user),
+                                builder: (_) => ForDeliveryScreen(user: widget.user),
                               ),
-                            );
-                          },
-                        ),
-                      );
+                            ),
+                          ),
+                        );
+                      }
 
                       // Supplier Management (always visible; locked if no access)
                       items.add(
@@ -661,6 +681,284 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
 }
 
 // _DashboardCard removed — replaced by square tiles in dashboard layout
+
+/// This menu belongs to the owner dashboard shell, so it behaves consistently
+/// on Android, Windows, and the web. Developer tools are intentionally absent.
+class _OwnerNavigationDrawer extends StatelessWidget {
+  final User user;
+  final PackageService packageService;
+  final ValueChanged<Widget> onOpen;
+  final VoidCallback onOpenSmartPlus;
+
+  const _OwnerNavigationDrawer({
+    required this.user,
+    required this.packageService,
+    required this.onOpen,
+    required this.onOpenSmartPlus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isWide = MediaQuery.sizeOf(context).width >= 700;
+    return Drawer(
+      width: isWide ? 340 : 304,
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(28),
+          bottomRight: Radius.circular(28),
+        ),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Material(
+            color: colors.surface.withValues(alpha: 0.86),
+            child: SafeArea(
+              right: false,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 4, 8, 20),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: colors.primaryContainer,
+                          foregroundColor: colors.onPrimaryContainer,
+                          child: Text(
+                            user.name.trim().isEmpty
+                                ? 'O'
+                                : user.name.trim()[0].toUpperCase(),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Owner workspace',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: colors.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close navigation menu',
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const _DrawerSectionLabel('Dashboard'),
+                  _DrawerNavItem(
+                    icon: Icons.dashboard_rounded,
+                    label: 'Owner Dashboard',
+                    selected: true,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const _DrawerSectionLabel('Smart tools'),
+                  _DrawerNavItem(
+                    icon: Icons.auto_awesome_rounded,
+                    label: 'SmartPlus',
+                    subtitle: 'Rule-based business insights',
+                    onTap: onOpenSmartPlus,
+                  ),
+                  const _DrawerSectionLabel('Operations'),
+                  _DrawerNavItem(
+                    icon: Icons.point_of_sale_rounded,
+                    label: 'Point of Sale',
+                    onTap: () => onOpen(CashierPOS(cashierName: user.name)),
+                  ),
+                  _DrawerNavItem(
+                    icon: Icons.inventory_2_rounded,
+                    label: 'Inventory',
+                    onTap: () => onOpen(InventoryScreen(user: user)),
+                  ),
+                  if (packageService.hasDeliveryManagementAccess)
+                    _DrawerNavItem(
+                      icon: Icons.local_shipping_rounded,
+                      label: 'Delivery',
+                      onTap: () => onOpen(ForDeliveryScreen(user: user)),
+                    ),
+                  if (packageService.hasCCTVAccess)
+                    _DrawerNavItem(
+                      icon: Icons.videocam_rounded,
+                      label: 'Monitor CCTV',
+                      onTap: () => onOpen(const CCTVScreen()),
+                    ),
+                  const _DrawerSectionLabel('Management'),
+                  _DrawerNavItem(
+                    icon: Icons.people_alt_rounded,
+                    label: 'Customers',
+                    onTap: () => onOpen(const CustomerManagementScreen()),
+                  ),
+                  _DrawerNavItem(
+                    icon: Icons.workspace_premium_rounded,
+                    label: 'Loyalty rewards',
+                    onTap: () => onOpen(const LoyaltyRewardsScreen()),
+                  ),
+                  if (packageService.hasSupplierManagementAccess)
+                    _DrawerNavItem(
+                      icon: Icons.local_shipping_outlined,
+                      label: 'Suppliers',
+                      onTap: () => onOpen(const SupplierManagementScreen()),
+                    ),
+                  if (packageService.hasExpenseTrackingAccess)
+                    _DrawerNavItem(
+                      icon: Icons.account_balance_wallet_rounded,
+                      label: 'Expenses & BIR reports',
+                      onTap: () => onOpen(const FinancialComplianceScreen()),
+                    ),
+                  const _DrawerSectionLabel('Reports & settings'),
+                  _DrawerNavItem(
+                    icon: Icons.assessment_rounded,
+                    label: 'Sales reports',
+                    onTap: () => onOpen(const SalesReportScreen()),
+                  ),
+                  if (packageService.hasBackupRestoreAccess)
+                    _DrawerNavItem(
+                      icon: Icons.backup_rounded,
+                      label: 'Backup & restore',
+                      onTap: () => onOpen(const BackupRestoreScreen()),
+                    ),
+                  _DrawerNavItem(
+                    icon: Icons.manage_accounts_rounded,
+                    label: 'Owner account',
+                    onTap: () => onOpen(const ManageOwnerAccountScreen()),
+                  ),
+                  _DrawerNavItem(
+                    icon: Icons.settings_rounded,
+                    label: 'Settings',
+                    onTap: () => onOpen(const SettingsScreen()),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerSectionLabel extends StatelessWidget {
+  final String label;
+  const _DrawerSectionLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+        child: Text(
+          label.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+              ),
+        ),
+      );
+}
+
+class _DrawerNavItem extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final String? subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _DrawerNavItem({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+    this.selected = false,
+  });
+
+  @override
+  State<_DrawerNavItem> createState() => _DrawerNavItemState();
+}
+
+class _DrawerNavItemState extends State<_DrawerNavItem> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final foreground = widget.selected ? colors.onPrimaryContainer : colors.onSurface;
+    return Semantics(
+      button: true,
+      label: 'Open ${widget.label}',
+      child: AnimatedScale(
+        scale: _pressed ? 0.975 : 1,
+        duration: const Duration(milliseconds: 110),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Material(
+            color: widget.selected
+                ? colors.primaryContainer.withValues(alpha: 0.82)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onHighlightChanged: (value) => setState(() => _pressed = value),
+              onTap: widget.onTap,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                child: Row(
+                  children: [
+                    Icon(widget.icon, color: foreground, size: 21),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.label,
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  color: foreground,
+                                  fontWeight: widget.selected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                ),
+                          ),
+                          if (widget.subtitle != null)
+                            Text(
+                              widget.subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: foreground.withValues(alpha: 0.72),
+                                  ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: foreground),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _DashboardSquareTile extends StatelessWidget {
   final IconData icon;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import '../../utils/app_localizations.dart';
 import '../../models/user.dart';
 import '../../services/attendance_service.dart';
@@ -6,6 +7,7 @@ import '../shared/inventory_screen.dart';
 import '../owner/supplier_management_screen.dart';
 import '../owner/delivery_pos.dart';
 import '../../utils/responsive_utils.dart';
+import '../../services/package_service.dart';
 
 class InventoryClerkDashboard extends StatelessWidget {
   final User user;
@@ -13,6 +15,7 @@ class InventoryClerkDashboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final packageService = GetIt.I<PackageService>();
     return Scaffold(
       appBar: AppBar(title: Text(AppLocalizations.t('inventory_clerk'))),
       body: Center(
@@ -58,12 +61,12 @@ class InventoryClerkDashboard extends StatelessWidget {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                     children: [
-                      _ActionTile(
-                        icon: Icons.access_time,
-                        color: Colors.teal,
-                        title: AppLocalizations.t('attendance'),
-                        onTap: () {
-                          showDialog(
+                      if (packageService.hasAttendanceAccess)
+                        _ActionTile(
+                          icon: Icons.access_time,
+                          color: Colors.teal,
+                          title: AppLocalizations.t('attendance'),
+                          onTap: () => showDialog(
                             context: context,
                             builder: (_) => Dialog(
                               child: Padding(
@@ -71,9 +74,8 @@ class InventoryClerkDashboard extends StatelessWidget {
                                 child: _AttendanceCard(user: user),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        ),
                       _ActionTile(
                         icon: Icons.inventory_2,
                         color: Colors.indigo,
@@ -96,18 +98,18 @@ class InventoryClerkDashboard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _ActionTile(
-                        icon: Icons.local_shipping,
-                        color: Colors.blue,
-                        title: AppLocalizations.t('for_delivery'),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                DeliveryPOS(operatorName: user.name),
+                      if (packageService.hasDeliveryManagementAccess)
+                        _ActionTile(
+                          icon: Icons.local_shipping,
+                          color: Colors.blue,
+                          title: AppLocalizations.t('for_delivery'),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => DeliveryPOS(operatorName: user.name),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
