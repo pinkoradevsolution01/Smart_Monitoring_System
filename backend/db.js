@@ -333,11 +333,33 @@ async function ensureOwnerPinResetTokensTable() {
   `);
 }
 
+async function foreignKeyColumnDefinition(tableName, columnName) {
+  const [rows] = await pool.execute(
+    `SELECT column_type, character_set_name, collation_name
+       FROM information_schema.columns
+      WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?
+      LIMIT 1`,
+    [tableName, columnName],
+  );
+  const column = rows[0];
+  if (!column?.column_type) {
+    throw new Error(`Cannot create expenses: ${tableName}.${columnName} does not exist.`);
+  }
+
+  // A foreign-key child must use the same type, charset, and collation as its
+  // parent. Older production databases predate the current VARCHAR(64) schema.
+  const charset = column.character_set_name ? ` CHARACTER SET ${column.character_set_name}` : '';
+  const collation = column.collation_name ? ` COLLATE ${column.collation_name}` : '';
+  return `${column.column_type}${charset}${collation}`;
+}
+
 async function ensureExpensesTable() {
+  const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
+  const userIdDefinition = await foreignKeyColumnDefinition('users', 'id');
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS expenses (
       id CHAR(36) NOT NULL PRIMARY KEY,
-      business_id VARCHAR(64) NOT NULL,
+      business_id ${businessIdDefinition} NOT NULL,
       category VARCHAR(64) NOT NULL,
       description VARCHAR(255) NOT NULL,
       amount DECIMAL(12, 2) NOT NULL,
@@ -345,7 +367,7 @@ async function ensureExpensesTable() {
       expense_date DATE NOT NULL,
       vendor VARCHAR(255) NULL,
       reference_no VARCHAR(255) NULL,
-      created_by VARCHAR(64) NULL,
+      created_by ${userIdDefinition} NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY idx_expenses_business_date (business_id, expense_date),
