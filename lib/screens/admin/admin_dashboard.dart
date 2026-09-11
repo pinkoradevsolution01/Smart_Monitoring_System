@@ -7,7 +7,6 @@ import '../../services/supabase_sync_service.dart';
 import '../../services/pos_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/app_localizations.dart';
-import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'manage_users_screen.dart';
@@ -67,7 +66,6 @@ class AdminDashboard extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: const AIHelpButton(),
       bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
           ? NavigationBar(
               selectedIndex: 0,

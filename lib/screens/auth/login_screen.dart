@@ -14,7 +14,6 @@ import '../admin/admin_dashboard.dart';
 import '../../services/business_info_service.dart';
 import '../../services/package_service.dart';
 import '../../services/demo_session_service.dart';
-import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import '../owner/owner_dashboard.dart';
 import '../cashier/cashier_dashboard.dart';
@@ -548,10 +547,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 );
               },
             ),
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            onPressed: () => showAIHelpDialog(context),
-          ),
         ],
       ),
       body: Center(

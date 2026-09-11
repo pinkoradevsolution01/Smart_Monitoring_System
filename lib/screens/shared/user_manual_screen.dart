@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:file_picker/file_picker.dart';
@@ -8,6 +9,7 @@ import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 // 'dart:typed_data' not required; provided by other imports
 import '../../utils/app_localizations.dart';
+import '../../services/setup_progress_service.dart';
 
 class UserManualScreen extends StatefulWidget {
   const UserManualScreen({super.key});
@@ -413,6 +415,39 @@ class _UserManualScreenState extends State<UserManualScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final setup = GetIt.I<SetupProgressService>();
+    if (!setup.isComplete) {
+      return Scaffold(
+        appBar: AppBar(title: Text(AppLocalizations.t('user_manual'))),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 52,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'User Manual is locked',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Complete all business setup tasks to unlock the User Manual.',
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMobile = MediaQuery.of(context).size.width < 768;
 

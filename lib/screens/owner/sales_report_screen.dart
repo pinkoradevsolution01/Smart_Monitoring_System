@@ -119,6 +119,25 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     if (mounted) setState(() {});
   }
 
+  MapEntry<String, int>? _topCustomerByPoints(Iterable<Sale> sales) {
+    final earnedPointsByCustomer = <String, int>{};
+    for (final sale in sales) {
+      final customerName = sale.customerName?.trim();
+      if (sale.status != SaleStatus.completed ||
+          customerName == null ||
+          customerName.isEmpty) {
+        continue;
+      }
+      earnedPointsByCustomer[customerName] =
+          (earnedPointsByCustomer[customerName] ?? 0) +
+          sale.loyaltyPointsEarned;
+    }
+    if (earnedPointsByCustomer.isEmpty) return null;
+    final ranked = earnedPointsByCustomer.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return ranked.first;
+  }
+
   // helper removed: not needed after refactor
 
   Future<void> _loadAllSales() async {
@@ -1462,6 +1481,7 @@ class _SalesReportScreenState extends State<SalesReportScreen>
     for (final s in sales) {
       if (s.status == SaleStatus.completed) total += s.totalAmount;
     }
+    final topCustomer = _topCustomerByPoints(sales);
 
     return Scaffold(
       appBar: AppBar(
@@ -1563,6 +1583,11 @@ class _SalesReportScreenState extends State<SalesReportScreen>
                       onRefresh: () => _loadDailySummary(_selectedDay),
                       onExportCsv: _exportCsv,
                       onExportPdf: _exportPdf,
+                    ),
+                    _TopCustomerHighlight(
+                      customerName: topCustomer?.key,
+                      pointsEarned: topCustomer?.value ?? 0,
+                      range: _range,
                     ),
                     const SizedBox(height: 8),
                     // Search Bar
@@ -1800,6 +1825,72 @@ class _SalesReportScreenState extends State<SalesReportScreen>
             onExportPdf: _exportFinancialPdf,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TopCustomerHighlight extends StatelessWidget {
+  final String? customerName;
+  final int pointsEarned;
+  final DateTimeRange? range;
+
+  const _TopCustomerHighlight({
+    required this.customerName,
+    required this.pointsEarned,
+    required this.range,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final period = range == null
+        ? 'the selected report period'
+        : '${DateFormat('MMM d').format(range!.start)} – ${DateFormat('MMM d, y').format(range!.end)}';
+    final hasCustomer = customerName != null && pointsEarned > 0;
+
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      color: colors.tertiaryContainer.withValues(alpha: 0.48),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 23,
+              backgroundColor: colors.tertiary,
+              foregroundColor: colors.onTertiary,
+              child: Icon(
+                hasCustomer
+                    ? Icons.emoji_events_rounded
+                    : Icons.people_outline_rounded,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hasCustomer ? 'Top customer' : 'Customer points highlight',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    hasCustomer
+                        ? '$customerName earned $pointsEarned point${pointsEarned == 1 ? '' : 's'} during $period.'
+                        : 'No customer points were earned during $period yet.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

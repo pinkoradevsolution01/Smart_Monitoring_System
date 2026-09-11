@@ -18,8 +18,9 @@ import 'app_design_system.dart';
 /// from the existing services; it does not create duplicate setup records.
 class FirstTimeSetupCard extends StatefulWidget {
   final User owner;
+  final VoidCallback? onCompleted;
 
-  const FirstTimeSetupCard({super.key, required this.owner});
+  const FirstTimeSetupCard({super.key, required this.owner, this.onCompleted});
 
   @override
   State<FirstTimeSetupCard> createState() => _FirstTimeSetupCardState();
@@ -109,7 +110,9 @@ class _FirstTimeSetupCardState extends State<FirstTimeSetupCard> {
           _SetupStep(
             title: 'First sale',
             detail: 'Complete a test or live sale to verify your workflow.',
-            complete: _hasFirstSale,
+            complete: _hasFirstSale || _pos.recentSales.any(
+              (sale) => sale.status == SaleStatus.completed,
+            ),
             actionLabel: 'Open POS',
             onAction: () => _open(
               context,
@@ -118,6 +121,15 @@ class _FirstTimeSetupCardState extends State<FirstTimeSetupCard> {
           ),
         ];
         final completeCount = steps.where((step) => step.complete).length;
+        final isComplete = completeCount == steps.length;
+        if (isComplete) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) widget.onCompleted?.call();
+          });
+          // Completion is celebrated in the Owner Dashboard; the checklist no
+          // longer occupies the main screen once every task is done.
+          return const SizedBox.shrink();
+        }
         final progress = completeCount / steps.length;
 
         return Card(
@@ -129,17 +141,13 @@ class _FirstTimeSetupCardState extends State<FirstTimeSetupCard> {
                 Row(
                   children: [
                     Icon(
-                      completeCount == steps.length
-                          ? Icons.task_alt_outlined
-                          : Icons.rocket_launch_outlined,
+                      Icons.rocket_launch_outlined,
                       color: Theme.of(context).colorScheme.primary,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        completeCount == steps.length
-                            ? 'Business setup complete'
-                            : 'Finish setting up your business',
+                        'Finish setting up your business',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
@@ -147,9 +155,7 @@ class _FirstTimeSetupCardState extends State<FirstTimeSetupCard> {
                     ),
                     AppStatusBadge(
                       label: '$completeCount of ${steps.length}',
-                      status: completeCount == steps.length
-                          ? AppStatus.success
-                          : AppStatus.warning,
+                      status: AppStatus.warning,
                     ),
                   ],
                 ),

@@ -29,6 +29,7 @@ import 'services/admin_service.dart';
 import 'services/developer_service.dart';
 import 'services/ai_help_service.dart';
 import 'services/smart_plus_notification_service.dart';
+import 'services/setup_progress_service.dart';
 import 'services/business_info_service.dart';
 import 'services/package_service.dart';
 import 'services/subscriber_service.dart';
@@ -125,6 +126,14 @@ Future<void> main() async {
   final packageService = PackageService();
   await packageService.initialize();
   GetIt.I.registerSingleton<PackageService>(packageService);
+
+  final setupProgressService = SetupProgressService(
+    business: businessInfoService,
+    package: packageService,
+    pos: posService,
+    users: userService,
+  );
+  GetIt.I.registerSingleton<SetupProgressService>(setupProgressService);
 
   // Initialize Shared API Service (fetches a single shared data object)
   final sharedApiService = SharedApiService();

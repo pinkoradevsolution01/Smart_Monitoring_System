@@ -45,6 +45,9 @@ class POSService extends ChangeNotifier {
   // Initialize the POS service
   Future<void> initialize() async {
     await loadProducts();
+    // Owner dashboards, setup progress, and SmartPlus all rely on the recent
+    // transaction cache. Load it on startup instead of waiting for a new sale.
+    await loadRecentSales();
     await _checkAndPerformDailyBackup();
   }
 

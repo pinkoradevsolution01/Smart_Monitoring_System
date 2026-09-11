@@ -131,6 +131,7 @@ flutter:
   assets:
     - SMS_LOGO_NBG.png
     - assets/branding/smart_logo.png
+    - assets/branding/smartplus_icon.png
 
   # Offline application typography. The variable Inter file provides both
   # regular body copy and native bold display text without a network request.

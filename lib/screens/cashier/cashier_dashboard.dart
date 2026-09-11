@@ -7,7 +7,6 @@ import 'price_checker_screen.dart';
 import 'ewallet_transfer_screen.dart';
 import '../../models/user.dart';
 import '../../utils/app_localizations.dart';
-import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import '../../services/attendance_service.dart';
@@ -60,7 +59,6 @@ class CashierDashboard extends StatelessWidget {
             ),
           ],
         ),
-        floatingActionButton: const AIHelpButton(),
         bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
             ? NavigationBar(
                 selectedIndex: 0,

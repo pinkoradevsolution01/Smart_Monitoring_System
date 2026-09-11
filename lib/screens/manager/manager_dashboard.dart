@@ -12,7 +12,6 @@ import 'package:smart_monitoring_system/screens/cashier/price_checker_screen.dar
 import 'package:smart_monitoring_system/screens/cashier/ewallet_transfer_screen.dart';
 import '../../models/user.dart';
 import '../../utils/app_localizations.dart';
-import '../../widgets/ai_help_button.dart';
 import '../../services/package_service.dart';
 import '../../services/attendance_service.dart';
 import '../../utils/responsive_utils.dart';
@@ -46,7 +45,6 @@ class ManagerDashboard extends StatelessWidget {
             ),
           ],
         ),
-        floatingActionButton: const AIHelpButton(),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),

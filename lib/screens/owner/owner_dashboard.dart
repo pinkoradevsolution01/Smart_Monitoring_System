@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import 'package:smart_monitoring_system/screens/cashier/price_checker_screen.dar
 import 'package:smart_monitoring_system/screens/cashier/ewallet_transfer_screen.dart';
 import '../../models/user.dart';
 import '../../models/sale.dart';
+import '../../models/product.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/ai_help_button.dart';
 import '../../utils/responsive_utils.dart';
@@ -26,15 +28,18 @@ import '../../services/package_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/pos_service.dart';
+import '../../services/smart_plus_notification_service.dart';
 import '../../theme.dart';
 import '../../utils/interaction_feedback.dart';
 import '../../utils/currency_formatter.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/widgets/smart_plus_notification_button.dart';
 import 'package:smart_monitoring_system/screens/shared/settings_screen.dart';
+import 'package:smart_monitoring_system/screens/shared/user_manual_screen.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 import 'package:smart_monitoring_system/widgets/first_time_setup_card.dart';
 import 'package:smart_monitoring_system/widgets/package_upgrade_dialog.dart';
+import 'package:smart_monitoring_system/services/setup_progress_service.dart';
 
 class OwnerDashboard extends StatefulWidget {
   final User user;
@@ -51,14 +56,68 @@ class OwnerDashboard extends StatefulWidget {
 }
 
 class _OwnerDashboardState extends State<OwnerDashboard> {
+  bool _celebratingSetupCompletion = false;
+  final List<Sale> _dashboardSales = <Sale>[];
+  final List<Product> _dashboardProducts = <Product>[];
+  Timer? _metricsRefreshDebounce;
+  int _metricsRequest = 0;
+  bool _metricsLoading = true;
+  late final POSService _pos;
+  late final SupabaseSyncService _sync;
+
   @override
   void initState() {
     super.initState();
+    _pos = GetIt.I<POSService>();
+    _sync = GetIt.I<SupabaseSyncService>();
+    _pos.addListener(_scheduleMetricsRefresh);
+    _sync.addListener(_scheduleMetricsRefresh);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshMetrics());
     // If showManageAccount is true, show the manage account screen after a brief delay
     if (widget.showManageAccount) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showManageAccountScreen();
       });
+    }
+  }
+
+  @override
+  void dispose() {
+    _metricsRefreshDebounce?.cancel();
+    _pos.removeListener(_scheduleMetricsRefresh);
+    _sync.removeListener(_scheduleMetricsRefresh);
+    super.dispose();
+  }
+
+  void _scheduleMetricsRefresh() {
+    _metricsRefreshDebounce?.cancel();
+    _metricsRefreshDebounce = Timer(
+      const Duration(milliseconds: 350),
+      _refreshMetrics,
+    );
+  }
+
+  Future<void> _refreshMetrics() async {
+    final request = ++_metricsRequest;
+    try {
+      final results = await Future.wait<Object>([
+        _pos.databaseService.getAllSales(),
+        _pos.databaseService.getAllProducts(),
+      ]);
+      if (!mounted || request != _metricsRequest) return;
+      setState(() {
+        _dashboardSales
+          ..clear()
+          ..addAll(results[0] as List<Sale>);
+        _dashboardProducts
+          ..clear()
+          ..addAll(results[1] as List<Product>);
+        _metricsLoading = false;
+      });
+    } catch (_) {
+      if (mounted && request == _metricsRequest) {
+        setState(() => _metricsLoading = false);
+      }
     }
   }
 
@@ -94,22 +153,54 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
     });
   }
 
-  void _openSmartPlus() {
-    Navigator.of(context).pop();
-    Future<void>.delayed(const Duration(milliseconds: 160), () {
-      if (mounted) showSmartPlusDialog(context);
-    });
+  Future<void> _celebrateSetupCompletion() async {
+    if (_celebratingSetupCompletion) return;
+    _celebratingSetupCompletion = true;
+
+    final setup = GetIt.I<SetupProgressService>();
+    if (!setup.isComplete || await setup.hasCelebrated(widget.user.id)) {
+      _celebratingSetupCompletion = false;
+      return;
+    }
+    await setup.markCelebrated(widget.user.id);
+    GetIt.I<SmartPlusNotificationService>().notifySetupCompleted();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        icon: Image.asset(
+          'assets/branding/smartplus_icon.png',
+          width: 58,
+          height: 58,
+          fit: BoxFit.contain,
+        ),
+        title: const Text('Congratulations!'),
+        content: const Text(
+          'Your business setup is complete. The User Manual and SmartPlus are now unlocked. Access SmartPlus AI for better business decisions.',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Open SmartPlus'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) showSmartPlusDialog(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final packageService = GetIt.I<PackageService>();
-    final pos = GetIt.I<POSService>();
-    final lowStockCount = pos.products
+    final pos = _pos;
+    final setupProgress = GetIt.I<SetupProgressService>();
+    final lowStockCount = _dashboardProducts
         .where((product) => product.lowStock || product.quantity == 0)
         .length;
     final now = DateTime.now();
-    final todaySales = pos.recentSales.where(
+    final todaySales = _dashboardSales.where(
       (sale) =>
           sale.status == SaleStatus.completed &&
           sale.saleDate.year == now.year &&
@@ -120,7 +211,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       0,
       (sum, sale) => sum + sale.totalAmount,
     );
-    final productsById = {for (final product in pos.products) product.id: product};
+    final productsById = {
+      for (final product in _dashboardProducts) product.id: product,
+    };
     final estimatedProfit = todaySales.fold<double>(0, (sum, sale) {
       final saleProfit = sale.items.fold<double>(0, (itemSum, item) {
         final buyingPrice =
@@ -129,19 +222,35 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
       });
       return sum + saleProfit;
     });
-    final pendingOrders = pos.recentSales
-        .where((sale) => sale.status == SaleStatus.pending)
-        .length;
+    final todayPoints = _dashboardSales
+        .where(
+          (sale) =>
+              sale.status == SaleStatus.completed &&
+              sale.saleDate.year == now.year &&
+              sale.saleDate.month == now.month &&
+              sale.saleDate.day == now.day,
+        )
+        .fold<int>(0, (sum, sale) => sum + sale.loyaltyPointsEarned);
+    final weekStart = DateTime(now.year, now.month, now.day).subtract(
+      Duration(days: now.weekday - DateTime.monday),
+    );
+    final weekPoints = _dashboardSales
+        .where(
+          (sale) =>
+              sale.status == SaleStatus.completed &&
+              !sale.saleDate.isBefore(weekStart),
+        )
+        .fold<int>(0, (sum, sale) => sum + sale.loyaltyPointsEarned);
 
     return AnimatedBuilder(
-      animation: Listenable.merge([packageService, pos]),
+      animation: Listenable.merge([packageService, pos, setupProgress]),
       builder: (context, _) => Scaffold(
         drawerScrimColor: Colors.black.withValues(alpha: 0.18),
         drawer: _OwnerNavigationDrawer(
           user: widget.user,
           packageService: packageService,
           onOpen: _openDrawerDestination,
-          onOpenSmartPlus: _openSmartPlus,
+          setupComplete: setupProgress.isComplete,
         ),
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -161,7 +270,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               ),
               child: const HeaderClock(),
             ),
-            const SmartPlusNotificationButton(),
+            if (setupProgress.isComplete)
+              const SmartPlusNotificationButton(),
             IconButton(
               tooltip: AppLocalizations.t('settings'),
               icon: const Icon(Icons.settings),
@@ -194,7 +304,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
             ),
           ],
         ),
-        floatingActionButton: const AIHelpButton(),
+        floatingActionButton: setupProgress.isComplete
+            ? const SmartPlusFloatingButton()
+            : null,
         bottomNavigationBar: MediaQuery.sizeOf(context).width < 700
             ? NavigationBar(
                 selectedIndex: 0,
@@ -287,7 +399,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  FirstTimeSetupCard(owner: widget.user),
+                  FirstTimeSetupCard(
+                    owner: widget.user,
+                    onCompleted: _celebrateSetupCompletion,
+                  ),
                   const SizedBox(height: 20),
                   LayoutBuilder(
                     builder: (context, constraints) {
@@ -309,14 +424,18 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                             value: AppCurrency.peso(todayRevenue),
                             icon: Icons.payments_outlined,
                             color: Theme.of(context).colorScheme.primary,
-                            detail: '${todaySales.length} completed transactions',
+                            detail: _metricsLoading
+                                ? 'Updating business data...'
+                                : '${todaySales.length} completed transactions',
                           ),
                           AppMetricCard(
                             label: 'Estimated profit',
                             value: AppCurrency.peso(estimatedProfit),
                             icon: Icons.trending_up_outlined,
                             color: AppColors.successGreen,
-                            detail: 'Based on current product cost',
+                            detail: _metricsLoading
+                                ? 'Updating business data...'
+                                : 'Based on current product cost',
                           ),
                           AppMetricCard(
                             label: 'Low-stock alerts',
@@ -325,18 +444,20 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                             color: lowStockCount == 0
                                 ? AppColors.successGreen
                                 : AppColors.warningOrange,
-                            detail: lowStockCount == 0
+                            detail: _metricsLoading
+                                ? 'Updating business data...'
+                                : lowStockCount == 0
                                 ? 'Inventory levels look healthy'
                                 : 'Review items that need restocking',
                           ),
                           AppMetricCard(
-                            label: 'Pending orders',
-                            value: '$pendingOrders',
-                            icon: Icons.pending_actions_outlined,
+                            label: 'Customer points',
+                            value: '$todayPoints',
+                            icon: Icons.workspace_premium_rounded,
                             color: AppColors.accentTeal,
-                            detail: pendingOrders == 0
-                                ? 'No pending orders'
-                                : 'Orders awaiting completion',
+                            detail: _metricsLoading
+                                ? 'Updating business data...'
+                                : '$weekPoints points earned this week',
                           ),
                         ],
                       );
@@ -688,13 +809,13 @@ class _OwnerNavigationDrawer extends StatelessWidget {
   final User user;
   final PackageService packageService;
   final ValueChanged<Widget> onOpen;
-  final VoidCallback onOpenSmartPlus;
+  final bool setupComplete;
 
   const _OwnerNavigationDrawer({
     required this.user,
     required this.packageService,
     required this.onOpen,
-    required this.onOpenSmartPlus,
+    required this.setupComplete,
   });
 
   @override
@@ -770,13 +891,6 @@ class _OwnerNavigationDrawer extends StatelessWidget {
                     selected: true,
                     onTap: () => Navigator.of(context).pop(),
                   ),
-                  const _DrawerSectionLabel('Smart tools'),
-                  _DrawerNavItem(
-                    icon: Icons.auto_awesome_rounded,
-                    label: 'SmartPlus',
-                    subtitle: 'Rule-based business insights',
-                    onTap: onOpenSmartPlus,
-                  ),
                   const _DrawerSectionLabel('Operations'),
                   _DrawerNavItem(
                     icon: Icons.point_of_sale_rounded,
@@ -845,6 +959,13 @@ class _OwnerNavigationDrawer extends StatelessWidget {
                     label: 'Settings',
                     onTap: () => onOpen(const SettingsScreen()),
                   ),
+                  if (setupComplete)
+                    _DrawerNavItem(
+                      icon: Icons.menu_book_rounded,
+                      label: 'User Manual',
+                      subtitle: 'Guides and troubleshooting',
+                      onTap: () => onOpen(const UserManualScreen()),
+                    ),
                 ],
               ),
             ),

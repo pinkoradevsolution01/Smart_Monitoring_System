@@ -9,11 +9,9 @@ import '../utils/locale_controller.dart';
 /// Service to handle AI help assistant interactions
 class AIHelpService extends ChangeNotifier {
   final List<ChatMessage> _messages = [];
-  bool _smartPlusMode = false;
   bool _isThinking = false;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
-  bool get isSmartPlusMode => _smartPlusMode;
   bool get isThinking => _isThinking;
 
   // Bilingual knowledge base - English
@@ -541,7 +539,8 @@ On the login screen:
   };
 
   AIHelpService() {
-    // Add welcome message in current language
+    // SmartPlus is the only user-facing assistant. The existing system-help
+    // knowledge base is retained below and used as part of its responses.
     _addWelcomeMessage();
 
     // Listen to locale changes and update welcome message
@@ -559,22 +558,11 @@ On the login screen:
 
   void _addWelcomeMessage() {
     final isFilipino = LocaleController.locale.value.languageCode == 'fil';
-    if (_smartPlusMode) {
-      _messages.add(
-        ChatMessage(
-          text: isFilipino
-              ? 'Ako ang SmartPlus — ang rule-based business assistant mo. Gumagamit ako ng available na sales at inventory records para magbigay ng malinaw na suggestions.\n\nMaaari mong itanong:\n• Top 5 products noong nakaraang buwan\n• Low-stock at reorder suggestions\n• Sales performance nitong linggo\n• Product pairs para sa upsell\n• Unusual discounts na kailangang i-review\n\nHindi ako gumagawa ng supplier orders, checkout, o voice commands nang walang hiwalay na approved integration.'
-              : 'I am SmartPlus — your rule-based business assistant. I use the available sales and inventory records to provide clear suggestions.\n\nAsk about:\n• Top 5 products last month\n• Low stock and reorder suggestions\n• Sales performance this week\n• Product pairs for upsells\n• Unusual discounts to review\n\nI do not place supplier orders, complete checkout, or execute voice commands without a separate approved integration.',
-          isUser: false,
-        ),
-      );
-      return;
-    }
     _messages.add(
       ChatMessage(
         text: isFilipino
-            ? 'Kumusta! 👋 Ako ay iyong Smart Store Monitoring System assistant. Makakatulong ako sa iyo na maunawaan kung paano gamitin ang system na ito.\n\nMaaari mo akong tanungin tungkol sa:\n• User roles at features\n• Paano gamitin ang POS system\n• Pag-manage ng inventory at products\n• Paggawa ng reports at damage logs\n• Settings at customization\n• At marami pang iba!\n\nAno ang gusto mong malaman?'
-            : 'Hello! 👋 I\'m your Smart Store Monitoring System assistant. I can help you understand how to use this system.\n\nYou can ask me about:\n• User roles and features\n• How to use the POS system\n• Managing inventory and products\n• Creating reports and damage logs\n• Settings and customization\n• And more!\n\nWhat would you like to know?',
+            ? 'Ako ang SmartPlus — ang business assistant mo. Ginagamit ko ang available na sales at inventory records para magbigay ng malinaw na suggestions.\n\nMaaari mong itanong:\n• Top 5 products noong nakaraang buwan\n• Low-stock at reorder suggestions\n• Sales performance nitong linggo\n• Product pairs para sa upsell\n• Unusual discounts na kailangang i-review\n• Paano gamitin ang POS, reports, inventory, settings, at user roles\n\nHindi ako gumagawa ng supplier orders, checkout, o voice commands nang walang hiwalay na approved integration.'
+            : 'I am SmartPlus — your business assistant. I use the available sales and inventory records to provide clear suggestions.\n\nAsk about:\n• Top 5 products last month\n• Low stock and reorder suggestions\n• Sales performance this week\n• Product pairs for upsells\n• Unusual discounts to review\n• How to use POS, reports, inventory, settings, and user roles\n\nI do not place supplier orders, complete checkout, or execute voice commands without a separate approved integration.',
         isUser: false,
       ),
     );
@@ -583,15 +571,6 @@ On the login screen:
   /// Starts a fresh, data-backed SmartPlus conversation. This remains
   /// deterministic and local: it never sends business records to an AI vendor.
   void startSmartPlus() {
-    _smartPlusMode = true;
-    _messages.clear();
-    _addWelcomeMessage();
-    notifyListeners();
-  }
-
-  /// Restores the existing help-only assistant for normal AI Help entry points.
-  void startHelp() {
-    _smartPlusMode = false;
     _messages.clear();
     _addWelcomeMessage();
     notifyListeners();
@@ -617,9 +596,7 @@ On the login screen:
       // abruptly while data rules are evaluated.
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
-      final response = _smartPlusMode
-          ? _generateSmartPlusResponse(query)
-          : _generateResponse(query);
+      final response = _generateSmartPlusResponse(query);
       _messages.add(ChatMessage(text: response, isUser: false));
     } finally {
       _isThinking = false;
@@ -722,7 +699,7 @@ On the login screen:
             .clamp(product.reorderLevel, 999999);
         return '• ${product.name}: ${product.quantity} in stock (reorder level ${product.reorderLevel}) — suggest ordering $suggestedQuantity';
       }).join('\n');
-      return 'Smart reordering suggestion (rule: replenish to roughly twice the reorder level):\n$suggestions\n\nReview the quantities and supplier availability before creating an order. SmartPlus does not place supplier orders automatically.';
+      return 'Smart reordering suggestion (recommended target: roughly twice the reorder level):\n$suggestions\n\nReview the quantities and supplier availability before creating an order. SmartPlus does not place supplier orders automatically.';
     }
 
     if (query.contains('discount') || query.contains('fraud') || query.contains('suspicious')) {
@@ -768,7 +745,7 @@ On the login screen:
       if (ranked.isEmpty) {
         return 'There is not enough completed-sale history to create a forecast. Add at least several weeks of sales data and try again.';
       }
-      return 'Rule-based demand signal from the last 90 days (not a true seasonal forecast):\n${ranked.take(5).map((entry) => '• ${entry.key}: ${entry.value} unit(s) sold').join('\n')}\n\nFor a Christmas forecast, retain data from prior Christmas periods. SmartPlus will not claim seasonal demand without that history.';
+      return 'Demand signal from the last 90 days (not a true seasonal forecast):\n${ranked.take(5).map((entry) => '• ${entry.key}: ${entry.value} unit(s) sold').join('\n')}\n\nFor a Christmas forecast, retain data from prior Christmas periods. SmartPlus will not claim seasonal demand without that history.';
     }
 
     if (query.contains('top') || query.contains('selling') || query.contains('last month')) {
@@ -798,7 +775,9 @@ On the login screen:
       return 'Sales insight: ${AppCurrency.peso(recentTotal)} from ${recent.length} completed transaction(s) in the last 7 days — $comparison\n\nSmartPlus can identify the change in sales records, but it cannot determine the cause (such as foot traffic) without that data.';
     }
 
-    return 'SmartPlus can answer rule-based questions using your current records. Try: “What are my top 5 selling items last month?”, “Show low-stock reorder suggestions”, “Find upsell pairs”, “Review unusual discounts”, or “Compare sales this week.”';
+    // SmartPlus also carries the previous system-help knowledge, so owners can
+    // ask operational questions such as POS, roles, reports, or settings.
+    return _generateResponse(query);
   }
 
   Map<String, int> _salesQuantities(List<Sale> sales, {required int days}) {

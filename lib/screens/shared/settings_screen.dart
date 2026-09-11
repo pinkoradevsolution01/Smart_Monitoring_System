@@ -13,6 +13,7 @@ import '../../services/supabase_sync_service.dart';
 import '../../services/google_auth_service.dart';
 import '../../services/backend_config.dart';
 import '../../services/backend_server_resolver.dart';
+import '../../services/setup_progress_service.dart';
 import '../../models/pricing_package.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/print_settings.dart';
@@ -713,18 +714,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 16),
-            ListTile(
-              leading: Icon(
-                Icons.menu_book,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              title: Text(AppLocalizations.t('user_manual')),
-              subtitle: const Text('Installation, setup, and troubleshooting'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const UserManualScreen()),
+            ListenableBuilder(
+              listenable: GetIt.I<SetupProgressService>(),
+              builder: (context, _) {
+                final isUnlocked = GetIt.I<SetupProgressService>().isComplete;
+                return ListTile(
+                  leading: Icon(
+                    isUnlocked ? Icons.menu_book : Icons.lock_outline_rounded,
+                    color: isUnlocked
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(AppLocalizations.t('user_manual')),
+                  subtitle: Text(
+                    isUnlocked
+                        ? 'Installation, setup, and troubleshooting'
+                        : 'Complete business setup to unlock',
+                  ),
+                  trailing: Icon(
+                    isUnlocked
+                        ? Icons.chevron_right
+                        : Icons.lock_outline_rounded,
+                  ),
+                  onTap: () {
+                    if (!isUnlocked) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Complete all business setup tasks to unlock the User Manual.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const UserManualScreen(),
+                      ),
+                    );
+                  },
                 );
               },
             ),

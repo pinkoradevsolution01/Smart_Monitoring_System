@@ -30,12 +30,14 @@ class SmartPlusNotification {
       );
 }
 
-/// Produces in-app owner alerts from explicit business rules. It does not make
+/// Produces in-app owner alerts from observed business data. It does not make
 /// remote AI calls, send operating-system notifications, or mutate business
 /// data. Rules are recalculated whenever POS data changes.
 class SmartPlusNotificationService extends ChangeNotifier {
   final POSService _pos;
   final Set<String> _readIds = <String>{};
+  final Map<String, SmartPlusNotification> _milestones =
+      <String, SmartPlusNotification>{};
   List<SmartPlusNotification> _notifications = const [];
 
   SmartPlusNotificationService(this._pos) {
@@ -50,10 +52,22 @@ class SmartPlusNotificationService extends ChangeNotifier {
   void _onBusinessDataChanged() => refresh();
 
   void refresh() {
-    _notifications = _evaluate()
+    _notifications = [..._milestones.values, ..._evaluate()]
         .map((item) => item.copyWith(isRead: _readIds.contains(item.id)))
         .toList(growable: false);
     notifyListeners();
+  }
+
+  void notifySetupCompleted() {
+    const id = 'business-setup-complete';
+    _milestones[id] = const SmartPlusNotification(
+      id: id,
+      title: 'Business setup complete',
+      message:
+          'Congratulations! SmartPlus and the User Manual are now available to support your business decisions.',
+      level: SmartPlusNotificationLevel.info,
+    );
+    refresh();
   }
 
   void markAllRead() {

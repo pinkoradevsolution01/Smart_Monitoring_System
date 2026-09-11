@@ -241,7 +241,7 @@ flutter run -d android --dart-define=BACKEND_API_BASE_URL=https://api.smartmonit
 ```
 ```bash
 flutter run -d 10HF2HFM1Y0003Q --dart-define=BACKEND_API_BASE_URL=https://api.smartmonitoringsystem.store/api --dart-define=OAUTH_REDIRECT_URI=https://api.smartmonitoringsystem.store/api/auth/google/callback --dart-define=GOOGLE_WEB_CLIENT_ID=961390569053-ol7mutt2h2bp7eb0608041aeh824btcm.apps.googleusercontent.com
-```
+``` 
 
 ### Build Android APK
 

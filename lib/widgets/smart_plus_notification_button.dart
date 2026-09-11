@@ -3,7 +3,7 @@ import 'package:get_it/get_it.dart';
 
 import '../services/smart_plus_notification_service.dart';
 
-/// Owner-facing entry point for rule-based SmartPlus suggestions.
+/// Owner-facing entry point for SmartPlus suggestions.
 class SmartPlusNotificationButton extends StatelessWidget {
   const SmartPlusNotificationButton({super.key});
 
@@ -106,7 +106,7 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             Text(
-                              'Rule-based observations from your business data',
+                              'Suggestions based on your business activity',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: colors.onSurfaceVariant),
                             ),
@@ -142,7 +142,7 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'SmartPlus will add suggestions when its business rules detect something worth reviewing.',
+                                  'SmartPlus will add suggestions when there is something worth reviewing.',
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(color: colors.onSurfaceVariant),
