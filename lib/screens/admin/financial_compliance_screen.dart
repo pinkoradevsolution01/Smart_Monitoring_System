@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -179,7 +180,17 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
     final expenseCategories = _maps(profit['expensesByCategory']);
     final sales = _maps(report['eSales']);
     final generatedAt = _displayDateTime(zReading['generatedAt']);
+    // The default PDF Helvetica fonts cannot draw Philippine currency, Filipino
+    // names, en dashes, or other Unicode characters. Embed the application's
+    // offline Inter font in every report instead.
+    final regularFont = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Inter-Variable.ttf'),
+    );
+    final boldFont = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/Inter-Variable.ttf'),
+    );
     final doc = pw.Document(
+      theme: pw.ThemeData.withFont(base: regularFont, bold: boldFont),
       title: 'Financial and BIR-ready operational report',
       author: 'Smart Monitoring System',
       subject: 'Financial, Z-reading, VAT, and eSales report',
