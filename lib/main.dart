@@ -106,7 +106,8 @@ Future<void> main() async {
   GetIt.I.registerSingleton<AIHelpService>(aiHelpService);
 
   // SmartPlus watches local POS changes and produces owner-only, in-app
-  // suggestions. It does not send notifications outside the application.
+  // suggestions. The server may separately email a rate-limited summary to
+  // the registered business owner after a successful cloud sync.
   final smartPlusNotificationService = SmartPlusNotificationService(posService);
   GetIt.I.registerSingleton<SmartPlusNotificationService>(
     smartPlusNotificationService,

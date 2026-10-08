@@ -1,5 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../models/expense_record.dart';
 import '../../services/financial_reporting_service.dart';
@@ -89,13 +93,18 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
       await _service.addExpense(result);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Expense saved to the secure business record.')),
+        const SnackBar(
+          content: Text('Expense saved to the secure business record.'),
+        ),
       );
       await _load();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendlyError(error)), backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(
+          content: Text(_friendlyError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
@@ -104,40 +113,374 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
     final confirmed = await showAppDestructiveConfirmation(
       context,
       title: 'Delete expense?',
-      message: '${expense.description} will be removed from this business only.',
+      message:
+          '${expense.description} will be removed from this business only.',
       confirmLabel: 'Delete',
     );
     if (!confirmed) return;
     try {
       await _service.deleteExpense(expense.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Expense deleted.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Expense deleted.')));
       await _load();
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendlyError(error)), backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(
+          content: Text(_friendlyError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
 
-  Future<void> _copyCsv() async {
+  /// Produces a proper, printable PDF document.  Financial/BIR data must not
+  /// be shown as a clipboard-only CSV because that loses the report layout,
+  /// headings, summaries, and filing notice.
+  Future<void> _downloadPdfReport() async {
+    final report = _report;
+    if (report == null) return;
     setState(() => _exporting = true);
     try {
-      final csv = await _service.exportCsv(from: _from, to: _to);
-      await Clipboard.setData(ClipboardData(text: csv));
+      final bytes = await _buildPdfReport(report);
+      final filename =
+          'financial_bir_report_${_fileDate(_from)}_to_${_fileDate(_to)}.pdf';
+      // Opens the operating system's Save/Share sheet.  On desktop the user
+      // can choose a folder; on mobile it can be saved or shared as a file.
+      await Printing.sharePdf(bytes: bytes, filename: filename);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('BIR-ready CSV copied. Paste it into Excel or your filing workbook.')),
+        const SnackBar(
+          content: Text(
+            'Formatted Financial & BIR report is ready to save or share.',
+          ),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_friendlyError(error)), backgroundColor: Theme.of(context).colorScheme.error),
+        SnackBar(
+          content: Text(_friendlyError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  Future<Uint8List> _buildPdfReport(Map<String, dynamic> report) async {
+    final zReading = _map(report['zReading']);
+    final vat = _map(report['vatSummary']);
+    final profit = _map(report['profitAnalysis']);
+    final paymentMethods = _maps(zReading['paymentMethods']);
+    final expenseCategories = _maps(profit['expensesByCategory']);
+    final sales = _maps(report['eSales']);
+    final generatedAt = _displayDateTime(zReading['generatedAt']);
+    final doc = pw.Document(
+      title: 'Financial and BIR-ready operational report',
+      author: 'Smart Monitoring System',
+      subject: 'Financial, Z-reading, VAT, and eSales report',
+    );
+
+    final navy = PdfColor.fromInt(0xFF1E293B);
+    final indigo = PdfColor.fromInt(0xFF4338CA);
+    final paleIndigo = PdfColor.fromInt(0xFFEEF2FF);
+    final paleGray = PdfColor.fromInt(0xFFF8FAFC);
+    final line = PdfColor.fromInt(0xFFE2E8F0);
+    final muted = PdfColor.fromInt(0xFF475569);
+
+    pw.TextStyle heading(double size) => pw.TextStyle(
+      fontSize: size,
+      fontWeight: pw.FontWeight.bold,
+      color: navy,
+    );
+    pw.Widget amountRow(String label, dynamic value, {bool bold = false}) =>
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 3),
+          child: pw.Row(
+            children: [
+              pw.Expanded(
+                child: pw.Text(label, style: pw.TextStyle(color: muted)),
+              ),
+              pw.Text(
+                value is num ? _pdfMoney(value) : '$value',
+                style: pw.TextStyle(
+                  fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+                  color: navy,
+                ),
+              ),
+            ],
+          ),
+        );
+    pw.Widget section(String title, List<pw.Widget> children) => pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 16),
+      padding: const pw.EdgeInsets.all(14),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.white,
+        border: pw.Border.all(color: line),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(title, style: heading(13)),
+          pw.SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(36, 36, 36, 42),
+        header: (context) => context.pageNumber == 1
+            ? pw.SizedBox()
+            : pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 10),
+                child: pw.Text(
+                  'Smart Monitoring System - Financial & BIR-ready operational report',
+                  style: pw.TextStyle(fontSize: 8, color: muted),
+                ),
+              ),
+        footer: (context) => pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            'Generated $generatedAt  |  Page ${context.pageNumber} of ${context.pagesCount}',
+            style: pw.TextStyle(fontSize: 8, color: muted),
+          ),
+        ),
+        build: (context) => [
+          pw.Container(
+            padding: const pw.EdgeInsets.all(18),
+            decoration: pw.BoxDecoration(
+              color: indigo,
+              borderRadius: pw.BorderRadius.circular(8),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'SMART MONITORING SYSTEM',
+                  style: pw.TextStyle(fontSize: 9, color: PdfColors.white),
+                ),
+                pw.SizedBox(height: 6),
+                pw.Text(
+                  'Financial & BIR-Ready Operational Report',
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.white,
+                  ),
+                ),
+                pw.SizedBox(height: 5),
+                pw.Text(
+                  'Reporting period: ${_displayDate(_from)} to ${_displayDate(_to)}',
+                  style: pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                ),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 14),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              color: paleIndigo,
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Text(
+              '${report['notice'] ?? 'Review this operational summary against your registered invoicing and tax records before filing.'}',
+              style: pw.TextStyle(fontSize: 9, color: navy),
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text('Financial overview', style: heading(15)),
+          pw.SizedBox(height: 8),
+          pw.Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _pdfMetric(
+                'Net sales',
+                _pdfMoney(_amount(profit['netSales'])),
+                paleIndigo,
+                indigo,
+              ),
+              _pdfMetric(
+                'Operating expenses',
+                _pdfMoney(_amount(profit['operatingExpenses'])),
+                paleGray,
+                navy,
+              ),
+              _pdfMetric(
+                'Estimated cost of goods',
+                _pdfMoney(_amount(profit['estimatedCostOfGoods'])),
+                paleGray,
+                navy,
+              ),
+              _pdfMetric(
+                'Estimated profit',
+                _pdfMoney(_amount(profit['estimatedProfit'])),
+                paleIndigo,
+                indigo,
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 16),
+          section('Z-reading summary', [
+            amountRow(
+              'Completed transactions',
+              '${zReading['completedTransactions'] ?? 0}',
+            ),
+            amountRow(
+              'Cancelled transactions',
+              '${zReading['cancelledTransactions'] ?? 0}',
+            ),
+            amountRow('Gross sales', _amount(zReading['grossSales'])),
+            amountRow('Discounts', _amount(zReading['discounts'])),
+            amountRow('Net sales', _amount(zReading['netSales']), bold: true),
+            amountRow('Cancelled amount', _amount(zReading['cancelledAmount'])),
+          ]),
+          if (paymentMethods.isNotEmpty)
+            section('Payment method totals', [
+              _pdfTable(
+                headers: const ['Payment method', 'Transactions', 'Total'],
+                rows: paymentMethods
+                    .map(
+                      (entry) => [
+                        '${entry['payment_method'] ?? 'Not recorded'}',
+                        '${entry['transactions'] ?? 0}',
+                        _pdfMoney(_amount(entry['total'])),
+                      ],
+                    )
+                    .toList(),
+                headerColor: paleIndigo,
+                line: line,
+              ),
+            ]),
+          section('VAT summary (estimated)', [
+            amountRow(
+              'VAT rate',
+              '${_amount(vat['ratePercent']).toStringAsFixed(0)}%',
+            ),
+            amountRow('VAT-inclusive sales', _amount(vat['vatInclusiveSales'])),
+            amountRow(
+              'Estimated taxable sales',
+              _amount(vat['estimatedTaxableSales']),
+            ),
+            amountRow(
+              'Estimated output VAT',
+              _amount(vat['estimatedOutputVat']),
+            ),
+            amountRow('Recorded input VAT', _amount(vat['recordedInputVat'])),
+            amountRow(
+              'Estimated VAT payable',
+              _amount(vat['estimatedVatPayable']),
+              bold: true,
+            ),
+          ]),
+          section('Profit analysis', [
+            amountRow('Net sales', _amount(profit['netSales'])),
+            amountRow(
+              'Estimated cost of goods',
+              _amount(profit['estimatedCostOfGoods']),
+            ),
+            amountRow(
+              'Operating expenses',
+              _amount(profit['operatingExpenses']),
+            ),
+            amountRow(
+              'Estimated profit',
+              _amount(profit['estimatedProfit']),
+              bold: true,
+            ),
+          ]),
+          if (expenseCategories.isNotEmpty)
+            section('Expenses by category', [
+              _pdfTable(
+                headers: const ['Category', 'Recorded amount'],
+                rows: expenseCategories
+                    .map(
+                      (entry) => [
+                        '${entry['category'] ?? 'Other'}',
+                        _pdfMoney(_amount(entry['total'])),
+                      ],
+                    )
+                    .toList(),
+                headerColor: paleIndigo,
+                line: line,
+              ),
+            ]),
+          pw.NewPage(),
+          pw.Text('eSales transaction detail', style: heading(15)),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            '${sales.length} completed transaction${sales.length == 1 ? '' : 's'} for the reporting period.',
+            style: pw.TextStyle(fontSize: 9, color: muted),
+          ),
+          pw.SizedBox(height: 10),
+          if (sales.isEmpty)
+            pw.Container(
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                color: paleGray,
+                borderRadius: pw.BorderRadius.circular(6),
+              ),
+              child: pw.Text(
+                'No completed sales were recorded for this reporting period.',
+                style: pw.TextStyle(color: muted),
+              ),
+            )
+          else
+            _pdfTable(
+              headers: const [
+                'Date/time',
+                'Reference',
+                'Cashier',
+                'Customer',
+                'Payment',
+                'Subtotal',
+                'Discount',
+                'Total',
+              ],
+              rows: sales
+                  .map(
+                    (sale) => [
+                      _displayDateTime(sale['datetime']),
+                      _shortText(sale['reference_code'] ?? sale['id']),
+                      _shortText(sale['cashier_name']),
+                      _shortText(sale['customer_name']),
+                      _shortText(sale['payment_method']),
+                      _pdfMoney(_amount(sale['subtotal'])),
+                      _pdfMoney(_amount(sale['discount'])),
+                      _pdfMoney(_amount(sale['total_amount'])),
+                    ],
+                  )
+                  .toList(),
+              headerColor: paleIndigo,
+              line: line,
+              compact: true,
+            ),
+        ],
+      ),
+    );
+    return Uint8List.fromList(await doc.save());
+  }
+
+  String _fileDate(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}${value.month.toString().padLeft(2, '0')}${value.day.toString().padLeft(2, '0')}';
+
+  String _displayDate(DateTime value) =>
+      '${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}/${value.year}';
+
+  String _displayDateTime(dynamic value) {
+    final parsed = DateTime.tryParse('${value ?? ''}');
+    if (parsed == null) return '${value ?? 'Not recorded'}';
+    final local = parsed.toLocal();
+    return '${_displayDate(local)} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -153,10 +496,14 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
             icon: const Icon(Icons.date_range_outlined),
           ),
           IconButton(
-            tooltip: 'Copy CSV export',
-            onPressed: _loading || _exporting ? null : _copyCsv,
+            tooltip: 'Download formatted PDF report',
+            onPressed: _loading || _exporting ? null : _downloadPdfReport,
             icon: _exporting
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Icon(Icons.file_download_outlined),
           ),
         ],
@@ -173,7 +520,8 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
           children: [
             AppPageHeader(
               title: 'Profit and reporting',
-              subtitle: '${_date(_from)} – ${_date(_to)} · Standard/Premium workspace',
+              subtitle:
+                  '${_date(_from)} – ${_date(_to)} · Standard/Premium workspace',
               breadcrumbs: const ['Reports', 'Financial'],
               action: OutlinedButton.icon(
                 onPressed: _loading ? null : _pickRange,
@@ -213,31 +561,129 @@ Map<String, dynamic> _map(dynamic value) =>
     value is Map ? Map<String, dynamic>.from(value) : const <String, dynamic>{};
 
 List<Map<String, dynamic>> _maps(dynamic value) => value is List
-    ? value.whereType<Map>().map((entry) => Map<String, dynamic>.from(entry)).toList()
+    ? value
+          .whereType<Map>()
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList()
     : const <Map<String, dynamic>>[];
 
-double _amount(dynamic value) => value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+double _amount(dynamic value) =>
+    value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+String _pdfMoney(dynamic value) {
+  final amount = _amount(value);
+  final parts = amount.abs().toStringAsFixed(2).split('.');
+  final grouped = parts.first.replaceAllMapped(
+    RegExp(r'(?<!^)(?=(\d{3})+$)'),
+    (_) => ',',
+  );
+  return '${amount < 0 ? '-' : ''}PHP $grouped.${parts.last}';
+}
+
+String _shortText(dynamic value, {int maxLength = 26}) {
+  final text = '${value ?? 'Not recorded'}'
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return text.length <= maxLength
+      ? text
+      : '${text.substring(0, maxLength - 1)}…';
+}
+
+pw.Widget _pdfMetric(
+  String label,
+  String value,
+  PdfColor background,
+  PdfColor accent,
+) => pw.Container(
+  width: 245,
+  padding: const pw.EdgeInsets.all(12),
+  decoration: pw.BoxDecoration(
+    color: background,
+    border: pw.Border(left: pw.BorderSide(color: accent, width: 3)),
+    borderRadius: pw.BorderRadius.circular(5),
+  ),
+  child: pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        label,
+        style: pw.TextStyle(fontSize: 8, color: PdfColor.fromInt(0xFF475569)),
+      ),
+      pw.SizedBox(height: 4),
+      pw.Text(
+        value,
+        style: pw.TextStyle(
+          fontSize: 13,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromInt(0xFF1E293B),
+        ),
+      ),
+    ],
+  ),
+);
+
+pw.Widget _pdfTable({
+  required List<String> headers,
+  required List<List<String>> rows,
+  required PdfColor headerColor,
+  required PdfColor line,
+  bool compact = false,
+}) {
+  final fontSize = compact ? 6.3 : 8.5;
+  final padding = compact ? 3.0 : 5.0;
+  pw.TableRow tableRow(List<String> values, {bool header = false}) =>
+      pw.TableRow(
+        decoration: header ? pw.BoxDecoration(color: headerColor) : null,
+        children: values
+            .map(
+              (value) => pw.Padding(
+                padding: pw.EdgeInsets.all(padding),
+                child: pw.Text(
+                  value,
+                  style: pw.TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: header
+                        ? pw.FontWeight.bold
+                        : pw.FontWeight.normal,
+                    color: PdfColor.fromInt(0xFF1E293B),
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      );
+
+  return pw.Table(
+    border: pw.TableBorder.all(color: line, width: 0.5),
+    defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+    columnWidths: {
+      for (var index = 0; index < headers.length; index++)
+        index: const pw.FlexColumnWidth(),
+    },
+    children: [tableRow(headers, header: true), ...rows.map(tableRow)],
+  );
+}
 
 class _NoticeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
-        color: Theme.of(context).colorScheme.secondaryContainer,
-        child: const Padding(
-          padding: EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.info_outline),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'These are review-ready operational summaries. Confirm tax treatment, invoices, and BIR filing requirements with your registered POS/invoicing records and tax adviser before filing.',
-                ),
-              ),
-            ],
+    color: Theme.of(context).colorScheme.secondaryContainer,
+    child: const Padding(
+      padding: EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'These are review-ready operational summaries. Confirm tax treatment, invoices, and BIR filing requirements with your registered POS/invoicing records and tax adviser before filing.',
+            ),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }
 
 class _ProfitCards extends StatelessWidget {
@@ -249,12 +695,36 @@ class _ProfitCards extends StatelessWidget {
     final profit = _map(report['profitAnalysis']);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 840 ? 4 : constraints.maxWidth >= 500 ? 2 : 1;
+        final columns = constraints.maxWidth >= 840
+            ? 4
+            : constraints.maxWidth >= 500
+            ? 2
+            : 1;
         final cards = [
-          ('Net sales', _amount(profit['netSales']), Icons.payments_outlined, Theme.of(context).colorScheme.primary),
-          ('Cost of goods', _amount(profit['estimatedCostOfGoods']), Icons.inventory_2_outlined, Colors.orange),
-          ('Expenses', _amount(profit['operatingExpenses']), Icons.receipt_long_outlined, Colors.redAccent),
-          ('Estimated profit', _amount(profit['estimatedProfit']), Icons.trending_up_outlined, Colors.green),
+          (
+            'Net sales',
+            _amount(profit['netSales']),
+            Icons.payments_outlined,
+            Theme.of(context).colorScheme.primary,
+          ),
+          (
+            'Cost of goods',
+            _amount(profit['estimatedCostOfGoods']),
+            Icons.inventory_2_outlined,
+            Colors.orange,
+          ),
+          (
+            'Expenses',
+            _amount(profit['operatingExpenses']),
+            Icons.receipt_long_outlined,
+            Colors.redAccent,
+          ),
+          (
+            'Estimated profit',
+            _amount(profit['estimatedProfit']),
+            Icons.trending_up_outlined,
+            Colors.green,
+          ),
         ];
         return GridView.count(
           crossAxisCount: columns,
@@ -264,13 +734,17 @@ class _ProfitCards extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: cards
-              .map((card) => AppMetricCard(
-                    label: card.$1,
-                    value: AppCurrency.peso(card.$2),
-                    icon: card.$3,
-                    color: card.$4,
-                    detail: card.$1 == 'Estimated profit' ? 'Sales less recorded costs' : 'Selected date range',
-                  ))
+              .map(
+                (card) => AppMetricCard(
+                  label: card.$1,
+                  value: AppCurrency.peso(card.$2),
+                  icon: card.$3,
+                  color: card.$4,
+                  detail: card.$1 == 'Estimated profit'
+                      ? 'Sales less recorded costs'
+                      : 'Selected date range',
+                ),
+              )
               .toList(),
         );
       },
@@ -284,19 +758,43 @@ class _ZReadingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Z-reading summary', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            _AmountLine(label: 'Completed transactions', value: '${reading['completedTransactions'] ?? 0}'),
-            _AmountLine(label: 'Cancelled transactions', value: '${reading['cancelledTransactions'] ?? 0}'),
-            _AmountLine(label: 'Gross sales', value: AppCurrency.peso(_amount(reading['grossSales']))),
-            _AmountLine(label: 'Discounts', value: AppCurrency.peso(_amount(reading['discounts']))),
-            _AmountLine(label: 'Net sales', value: AppCurrency.peso(_amount(reading['netSales'])), emphasized: true),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Z-reading summary',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 12),
+          _AmountLine(
+            label: 'Completed transactions',
+            value: '${reading['completedTransactions'] ?? 0}',
+          ),
+          _AmountLine(
+            label: 'Cancelled transactions',
+            value: '${reading['cancelledTransactions'] ?? 0}',
+          ),
+          _AmountLine(
+            label: 'Gross sales',
+            value: AppCurrency.peso(_amount(reading['grossSales'])),
+          ),
+          _AmountLine(
+            label: 'Discounts',
+            value: AppCurrency.peso(_amount(reading['discounts'])),
+          ),
+          _AmountLine(
+            label: 'Net sales',
+            value: AppCurrency.peso(_amount(reading['netSales'])),
+            emphasized: true,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _VatCard extends StatelessWidget {
@@ -305,35 +803,70 @@ class _VatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('VAT summary (estimated)', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            _AmountLine(label: 'VAT rate', value: '${_amount(summary['ratePercent']).toStringAsFixed(0)}%'),
-            _AmountLine(label: 'Estimated taxable sales', value: AppCurrency.peso(_amount(summary['estimatedTaxableSales']))),
-            _AmountLine(label: 'Estimated output VAT', value: AppCurrency.peso(_amount(summary['estimatedOutputVat']))),
-            _AmountLine(label: 'Recorded input VAT', value: AppCurrency.peso(_amount(summary['recordedInputVat']))),
-            _AmountLine(label: 'Estimated VAT payable', value: AppCurrency.peso(_amount(summary['estimatedVatPayable'])), emphasized: true),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'VAT summary (estimated)',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 12),
+          _AmountLine(
+            label: 'VAT rate',
+            value: '${_amount(summary['ratePercent']).toStringAsFixed(0)}%',
+          ),
+          _AmountLine(
+            label: 'Estimated taxable sales',
+            value: AppCurrency.peso(_amount(summary['estimatedTaxableSales'])),
+          ),
+          _AmountLine(
+            label: 'Estimated output VAT',
+            value: AppCurrency.peso(_amount(summary['estimatedOutputVat'])),
+          ),
+          _AmountLine(
+            label: 'Recorded input VAT',
+            value: AppCurrency.peso(_amount(summary['recordedInputVat'])),
+          ),
+          _AmountLine(
+            label: 'Estimated VAT payable',
+            value: AppCurrency.peso(_amount(summary['estimatedVatPayable'])),
+            emphasized: true,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _AmountLine extends StatelessWidget {
   final String label;
   final String value;
   final bool emphasized;
-  const _AmountLine({required this.label, required this.value, this.emphasized = false});
+  const _AmountLine({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+  });
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 5),
-        child: Row(children: [
-          Expanded(child: Text(label)),
-          Text(value, style: TextStyle(fontWeight: emphasized ? FontWeight.w800 : FontWeight.w600)),
-        ]),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      children: [
+        Expanded(child: Text(label)),
+        Text(
+          value,
+          style: TextStyle(
+            fontWeight: emphasized ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ExpenseSection extends StatelessWidget {
@@ -343,41 +876,74 @@ class _ExpenseSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Expense tracking', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            Text('Supplies, utilities, rent, and other recorded operating costs.', style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 10),
-            if (expenses.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: Text('No expenses recorded for this date range.')),
-              )
-            else
-              ...expenses.map((expense) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(child: Icon(_expenseIcon(expense.category))),
-                    title: Text(expense.description, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    subtitle: Text('${expense.category} · ${expense.expenseDate.month}/${expense.expenseDate.day}/${expense.expenseDate.year}${expense.vendor?.isNotEmpty == true ? ' · ${expense.vendor}' : ''}'),
-                    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(AppCurrency.peso(expense.amount), style: const TextStyle(fontWeight: FontWeight.w700)),
-                      IconButton(tooltip: 'Delete expense', onPressed: () => onDelete(expense), icon: const Icon(Icons.delete_outline)),
-                    ]),
-                  )),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Expense tracking',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Supplies, utilities, rent, and other recorded operating costs.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 10),
+          if (expenses.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text('No expenses recorded for this date range.'),
+              ),
+            )
+          else
+            ...expenses.map(
+              (expense) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: CircleAvatar(
+                  child: Icon(_expenseIcon(expense.category)),
+                ),
+                title: Text(
+                  expense.description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  '${expense.category} · ${expense.expenseDate.month}/${expense.expenseDate.day}/${expense.expenseDate.year}${expense.vendor?.isNotEmpty == true ? ' · ${expense.vendor}' : ''}',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppCurrency.peso(expense.amount),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete expense',
+                      onPressed: () => onDelete(expense),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 IconData _expenseIcon(String category) => switch (category.toLowerCase()) {
-      'supplies' => Icons.inventory_2_outlined,
-      'utilities' => Icons.bolt_outlined,
-      'rent' => Icons.storefront_outlined,
-      'payroll' => Icons.groups_outlined,
-      _ => Icons.receipt_long_outlined,
-    };
+  'supplies' => Icons.inventory_2_outlined,
+  'utilities' => Icons.bolt_outlined,
+  'rent' => Icons.storefront_outlined,
+  'payroll' => Icons.groups_outlined,
+  _ => Icons.receipt_long_outlined,
+};
 
 class _ESalesSection extends StatelessWidget {
   final List<Map<String, dynamic>> sales;
@@ -385,34 +951,57 @@ class _ESalesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('eSales detail', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            Text('${sales.length} completed transaction${sales.length == 1 ? '' : 's'} in the selected range.', style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 8),
-            if (sales.isEmpty)
-              const Padding(padding: EdgeInsets.all(20), child: Center(child: Text('No completed sales for this range.')))
-            else
-              ...sales.map((sale) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${sale['reference_code'] ?? sale['id'] ?? 'Sale'}'),
-                    subtitle: Text('${sale['datetime'] ?? ''} · ${sale['payment_method'] ?? 'Payment not recorded'}'),
-                    trailing: Text(AppCurrency.peso(_amount(sale['total_amount'])), style: const TextStyle(fontWeight: FontWeight.w700)),
-                  )),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'eSales detail',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${sales.length} completed transaction${sales.length == 1 ? '' : 's'} in the selected range.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          if (sales.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Center(child: Text('No completed sales for this range.')),
+            )
+          else
+            ...sales.map(
+              (sale) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  '${sale['reference_code'] ?? sale['id'] ?? 'Sale'}',
+                ),
+                subtitle: Text(
+                  '${sale['datetime'] ?? ''} · ${sale['payment_method'] ?? 'Payment not recorded'}',
+                ),
+                trailing: Text(
+                  AppCurrency.peso(_amount(sale['total_amount'])),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _LoadingState extends StatelessWidget {
   const _LoadingState();
   @override
   Widget build(BuildContext context) => const Padding(
-        padding: EdgeInsets.all(48),
-        child: Center(child: CircularProgressIndicator()),
-      );
+    padding: EdgeInsets.all(48),
+    child: Center(child: CircularProgressIndicator()),
+  );
 }
 
 class _ErrorState extends StatelessWidget {
@@ -421,17 +1010,27 @@ class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(children: [
-            Icon(Icons.lock_outline, size: 40, color: Theme.of(context).colorScheme.error),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Retry')),
-          ]),
-        ),
-      );
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          Icon(
+            Icons.lock_outline,
+            size: 40,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _AddExpenseDialog extends StatefulWidget {
@@ -452,60 +1051,147 @@ class _AddExpenseDialogState extends State<_AddExpenseDialog> {
   late DateTime _date;
 
   @override
-  void initState() { super.initState(); _date = widget.initialDate; }
+  void initState() {
+    super.initState();
+    _date = widget.initialDate;
+  }
+
   @override
-  void dispose() { _description.dispose(); _amount.dispose(); _tax.dispose(); _vendor.dispose(); _reference.dispose(); super.dispose(); }
+  void dispose() {
+    _description.dispose();
+    _amount.dispose();
+    _tax.dispose();
+    _vendor.dispose();
+    _reference.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Add expense'),
-        content: SingleChildScrollView(
-          child: SizedBox(
-            width: 420,
-            child: Form(
-              key: _formKey,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                DropdownButtonFormField<String>(
-                  initialValue: _category,
-                  decoration: const InputDecoration(labelText: 'Category'),
-                  items: const ['Supplies', 'Utilities', 'Rent', 'Payroll', 'Delivery', 'Other']
-                      .map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-                  onChanged: (value) => setState(() => _category = value ?? _category),
+    title: const Text('Add expense'),
+    content: SingleChildScrollView(
+      child: SizedBox(
+        width: 420,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Category'),
+                items:
+                    const [
+                          'Supplies',
+                          'Utilities',
+                          'Rent',
+                          'Payroll',
+                          'Delivery',
+                          'Other',
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(value),
+                          ),
+                        )
+                        .toList(),
+                onChanged: (value) =>
+                    setState(() => _category = value ?? _category),
+              ),
+              TextFormField(
+                controller: _description,
+                decoration: const InputDecoration(labelText: 'Description'),
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? 'Description is required.'
+                    : null,
+              ),
+              TextFormField(
+                controller: _amount,
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: '₱ ',
                 ),
-                TextFormField(controller: _description, decoration: const InputDecoration(labelText: 'Description'), validator: (value) => value == null || value.trim().isEmpty ? 'Description is required.' : null),
-                TextFormField(controller: _amount, decoration: const InputDecoration(labelText: 'Amount', prefixText: '₱ '), keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: (value) => (double.tryParse(value ?? '') ?? 0) > 0 ? null : 'Enter an amount greater than zero.'),
-                TextFormField(controller: _tax, decoration: const InputDecoration(labelText: 'Input VAT / tax amount (optional)', prefixText: '₱ '), keyboardType: const TextInputType.numberWithOptions(decimal: true), validator: (value) => (double.tryParse(value ?? '0') ?? -1) >= 0 ? null : 'Enter zero or a positive amount.'),
-                TextFormField(controller: _vendor, decoration: const InputDecoration(labelText: 'Vendor (optional)')),
-                TextFormField(controller: _reference, decoration: const InputDecoration(labelText: 'Receipt/reference no. (optional)')),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () async {
-                      final selected = await showDatePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime.now(), initialDate: _date);
-                      if (selected != null) setState(() => _date = selected);
-                    },
-                    icon: const Icon(Icons.calendar_today_outlined),
-                    label: Text('Date: ${_date.month}/${_date.day}/${_date.year}'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) => (double.tryParse(value ?? '') ?? 0) > 0
+                    ? null
+                    : 'Enter an amount greater than zero.',
+              ),
+              TextFormField(
+                controller: _tax,
+                decoration: const InputDecoration(
+                  labelText: 'Input VAT / tax amount (optional)',
+                  prefixText: '₱ ',
+                ),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) => (double.tryParse(value ?? '0') ?? -1) >= 0
+                    ? null
+                    : 'Enter zero or a positive amount.',
+              ),
+              TextFormField(
+                controller: _vendor,
+                decoration: const InputDecoration(
+                  labelText: 'Vendor (optional)',
+                ),
+              ),
+              TextFormField(
+                controller: _reference,
+                decoration: const InputDecoration(
+                  labelText: 'Receipt/reference no. (optional)',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final selected = await showDatePicker(
+                      context: context,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now(),
+                      initialDate: _date,
+                    );
+                    if (selected != null) setState(() => _date = selected);
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined),
+                  label: Text(
+                    'Date: ${_date.month}/${_date.day}/${_date.year}',
                   ),
                 ),
-              ]),
-            ),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (!(_formKey.currentState?.validate() ?? false)) return;
-              Navigator.pop(context, ExpenseRecord(
-                id: '', category: _category, description: _description.text.trim(), amount: double.parse(_amount.text),
-                taxAmount: double.tryParse(_tax.text) ?? 0, expenseDate: _date,
-                vendor: _vendor.text.trim(), referenceNo: _reference.text.trim(),
-              ));
-            },
-            child: const Text('Save expense'),
-          ),
-        ],
-      );
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (!(_formKey.currentState?.validate() ?? false)) return;
+          Navigator.pop(
+            context,
+            ExpenseRecord(
+              id: '',
+              category: _category,
+              description: _description.text.trim(),
+              amount: double.parse(_amount.text),
+              taxAmount: double.tryParse(_tax.text) ?? 0,
+              expenseDate: _date,
+              vendor: _vendor.text.trim(),
+              referenceNo: _reference.text.trim(),
+            ),
+          );
+        },
+        child: const Text('Save expense'),
+      ),
+    ],
+  );
 }

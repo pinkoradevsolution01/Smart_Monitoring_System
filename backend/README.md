@@ -33,6 +33,22 @@ This backend provides a Node.js REST API for the Smart Monitoring System, replac
 ### System email configuration
 
 Activation-code fulfillment and owner PIN-reset requests use Resend's HTTPS API.
+
+## SmartPlus owner email updates
+
+SmartPlus suggestions remain visible in the Owner Dashboard notification bell.
+To additionally email a short, actionable daily digest to the registered,
+active business owner after a successful sync, enable this server-only setting:
+
+```env
+SMARTPLUS_OWNER_EMAIL_ENABLED=true
+```
+
+The recipient is always read from `businesses.owner_email`; Flutter and web
+clients cannot choose an address. Delivery is limited to one digest per
+business per Philippines business day and is skipped when no actionable
+out-of-stock, low-stock, or discount-review suggestion exists. `RESEND_API_KEY`
+and `FROM_EMAIL` must already be configured for Resend.
 This avoids the SMTP ports blocked by DigitalOcean Droplets. Add these server-only
 values to `backend/.env`:
 

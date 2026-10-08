@@ -328,6 +328,24 @@ CREATE TABLE IF NOT EXISTS expenses (
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS smartplus_email_deliveries (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  notification_key VARCHAR(128) NOT NULL,
+  owner_email VARCHAR(255) NOT NULL,
+  status ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+  provider_message_id VARCHAR(255) NULL,
+  error_message TEXT NULL,
+  sent_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_smartplus_email_delivery (business_id, notification_key),
+  KEY idx_smartplus_email_delivery_status (status, created_at),
+  CONSTRAINT fk_smartplus_email_delivery_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS sale_items (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   sale_id VARCHAR(64) NOT NULL,

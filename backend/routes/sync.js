@@ -1,5 +1,6 @@
 const express = require('express');
 const { query, getConnection } = require('../db');
+const { dispatchOwnerDigest } = require('../services/smartplus_owner_notifications');
 const router = express.Router();
 const SYNC_ROLES = new Set(['owner', 'admin', 'manager']);
 
@@ -757,6 +758,12 @@ router.post('/push', async (req, res) => {
     }
 
     await connection.commit();
+    // The server evaluates tenant-scoped data only after it is committed. It
+    // is deliberately fire-and-forget so an email provider issue can never
+    // cause a successful POS/inventory sync to fail.
+    void dispatchOwnerDigest(resolvedBusinessId).catch((error) => {
+      console.error('SmartPlus owner email notification error:', error.message);
+    });
     return res.json({ success: true, stats });
   } catch (error) {
     await connection.rollback();

@@ -395,6 +395,29 @@ async function ensureExpensesTable() {
   `);
 }
 
+async function ensureSmartPlusEmailDeliveriesTable() {
+  const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS smartplus_email_deliveries (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      business_id ${businessIdDefinition} NOT NULL,
+      notification_key VARCHAR(128) NOT NULL,
+      owner_email VARCHAR(255) NOT NULL,
+      status ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+      provider_message_id VARCHAR(255) NULL,
+      error_message TEXT NULL,
+      sent_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_smartplus_email_delivery (business_id, notification_key),
+      KEY idx_smartplus_email_delivery_status (status, created_at),
+      CONSTRAINT fk_smartplus_email_delivery_business
+        FOREIGN KEY (business_id) REFERENCES businesses(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -417,6 +440,7 @@ async function initDb() {
   await ensureDeveloperAccountsTable();
   await ensureOwnerPinResetTokensTable();
   await ensureExpensesTable();
+  await ensureSmartPlusEmailDeliveriesTable();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);
