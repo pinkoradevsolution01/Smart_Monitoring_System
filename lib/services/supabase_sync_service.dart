@@ -44,6 +44,7 @@ class SupabaseSyncService extends ChangeNotifier {
   DateTime? get lastSyncTime => _lastSyncTime;
   Map<String, int> get syncStats => _syncStats;
   String? get businessId => _businessId;
+
   /// Demonstration sessions must never pull production records or push data.
   bool get isConfigured =>
       !DemoSessionService.instance.isActive &&
@@ -413,6 +414,11 @@ class SupabaseSyncService extends ChangeNotifier {
     try {
       final db = DatabaseService();
       final customers = await db.getCustomers();
+      final sales = await db.getAllSales();
+      final saleNumbersByLocalId = <int, String>{
+        for (final sale in sales)
+          if (sale.id != null) sale.id!: sale.saleNumber,
+      };
       final entries = <Map<String, dynamic>>[];
 
       for (final customer in customers) {
@@ -420,10 +426,14 @@ class SupabaseSyncService extends ChangeNotifier {
         final ledger = await db.getLoyaltyLedger(customer.id!);
         for (final entry in ledger) {
           entries.add({
-            'id': entry.id?.toString(),
             'business_id': _businessId,
-            'customer_id': entry.customerId.toString(),
-            'sale_id': entry.saleId?.toString(),
+            // customerId and saleId are SQLite-only identifiers. The backend
+            // resolves these stable references within the current tenant.
+            'customer_code': customer.customerCode,
+            'sale_number': entry.saleId == null
+                ? null
+                : saleNumbersByLocalId[entry.saleId!],
+            'client_entry_id': entry.syncId,
             'entry_type': entry.entryType.toString().split('.').last,
             'points': entry.points,
             'balance_after': entry.balanceAfter,
@@ -1135,22 +1145,44 @@ class SupabaseSyncService extends ChangeNotifier {
           ? List<Map<String, dynamic>>.from(payload['loyaltyLedger'] as List)
           : <Map<String, dynamic>>[];
 
-      final entries = response
-          .map(
-            (data) => <String, dynamic>{
-              'id': _asInt(data['id']),
-              'customerId': _asInt(data['customer_id']),
-              'saleId': data['sale_id'] == null
-                  ? null
-                  : _asInt(data['sale_id']),
-              'entryType': data['entry_type']?.toString() ?? 'earn',
-              'points': _asInt(data['points']),
-              'balanceAfter': _asInt(data['balance_after']),
-              'notes': data['notes']?.toString(),
-              'createdAt': _asDateTime(data['created_at']).toIso8601String(),
-            },
-          )
-          .toList();
+      final customers = await db.getCustomers();
+      final localCustomerIdsByCode = <String, int>{
+        for (final customer in customers)
+          if (customer.id != null) customer.customerCode: customer.id!,
+      };
+      final sales = await db.getAllSales();
+      final localSaleIdsByNumber = <String, int>{
+        for (final sale in sales)
+          if (sale.id != null) sale.saleNumber: sale.id!,
+      };
+
+      final entries = <Map<String, dynamic>>[];
+      for (final data in response) {
+        final customerCode = data['customer_code']?.toString() ?? '';
+        final localCustomerId = localCustomerIdsByCode[customerCode];
+        if (localCustomerId == null) {
+          debugPrint(
+            'Skipping loyalty entry without a local customer for code $customerCode',
+          );
+          continue;
+        }
+        final saleNumber = data['sale_number']?.toString();
+        entries.add({
+          'id': null,
+          'syncId':
+              data['client_entry_id']?.toString() ??
+              'legacy:$customerCode:${data['id']}',
+          'customerId': localCustomerId,
+          'saleId': saleNumber == null
+              ? null
+              : localSaleIdsByNumber[saleNumber],
+          'entryType': data['entry_type']?.toString() ?? 'earn',
+          'points': _asInt(data['points']),
+          'balanceAfter': _asInt(data['balance_after']),
+          'notes': data['notes']?.toString(),
+          'createdAt': _asDateTime(data['created_at']).toIso8601String(),
+        });
+      }
 
       await db.replaceLoyaltyLedgerEntries(entries);
       _syncStats['loyalty_ledger_pulled'] = entries.length;

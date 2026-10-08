@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
 import '../models/sale_item.dart';
@@ -147,7 +148,7 @@ class DatabaseService {
 
     final db = await openDatabase(
       path,
-      version: 23,
+      version: 24,
       onCreate: (db, version) {
         debugPrint('🆕 Creating new database (version $version)');
         return _createTables(db, version);
@@ -363,6 +364,7 @@ class DatabaseService {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS loyalty_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        syncId TEXT NOT NULL UNIQUE,
         customerId INTEGER NOT NULL,
         saleId INTEGER,
         entryType TEXT NOT NULL,
@@ -939,6 +941,33 @@ class DatabaseService {
         'CREATE INDEX IF NOT EXISTS idx_loyalty_ledger_saleId ON loyalty_ledger(saleId)',
       );
     }
+    if (oldVersion < 24) {
+      // A local row ID is not safe to use as a cloud identity because every
+      // device starts its own SQLite autoincrement sequence.
+      try {
+        await db.execute('ALTER TABLE loyalty_ledger ADD COLUMN syncId TEXT');
+      } catch (_) {
+        // The column may already exist after an interrupted upgrade.
+      }
+      final legacyRows = await db.query(
+        'loyalty_ledger',
+        columns: ['id', 'syncId'],
+      );
+      final batch = db.batch();
+      for (final row in legacyRows) {
+        if (row['syncId']?.toString().isNotEmpty ?? false) continue;
+        batch.update(
+          'loyalty_ledger',
+          {'syncId': const Uuid().v4()},
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
+      await batch.commit(noResult: true);
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_ledger_syncId ON loyalty_ledger(syncId)',
+      );
+    }
   }
 
   /// Ensure return columns exist in damage_reports table (migration helper)
@@ -1311,6 +1340,7 @@ class DatabaseService {
         whereArgs: [customerId],
       );
       await txn.insert('loyalty_ledger', {
+        'syncId': const Uuid().v4(),
         'customerId': customerId,
         'saleId': saleId,
         'entryType': LoyaltyEntryType.earn.toString().split('.').last,
@@ -1353,6 +1383,7 @@ class DatabaseService {
         whereArgs: [customerId],
       );
       await txn.insert('loyalty_ledger', {
+        'syncId': const Uuid().v4(),
         'customerId': customerId,
         'saleId': null,
         'entryType': LoyaltyEntryType.redeem.toString().split('.').last,

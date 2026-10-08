@@ -3,6 +3,24 @@ const { query, getConnection } = require('../db');
 const router = express.Router();
 const SYNC_ROLES = new Set(['owner', 'admin', 'manager']);
 
+// Flutter serializes DateTime values as ISO-8601 (for example
+// 2026-10-04T10:42:35.094Z). MySQL DATETIME in strict mode does not accept
+// that representation, so normalize dates at the API boundary.
+function toMySqlDateTime(value, fallback = null) {
+  const source = value ?? fallback;
+  if (source === null || source === undefined || source === '') return null;
+  const date = source instanceof Date ? source : new Date(source);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid synchronization datetime: ${String(source)}`);
+  }
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function toMySqlDate(value, fallback = null) {
+  const dateTime = toMySqlDateTime(value, fallback);
+  return dateTime === null ? null : dateTime.slice(0, 10);
+}
+
 async function resolveAuthenticatedBusiness(req) {
   const auth = req.auth;
   if (!auth?.userId || !auth?.businessId || !SYNC_ROLES.has(String(auth.role || '').toLowerCase())) {
@@ -136,9 +154,9 @@ router.post('/push', async (req, res) => {
             user.contact_number,
             user.auth_method,
             user.is_active ? 1 : 0,
-            user.last_login_at,
-            user.created_at,
-            user.updated_at,
+            toMySqlDateTime(user.last_login_at),
+            toMySqlDateTime(user.created_at, new Date()),
+            toMySqlDateTime(user.updated_at, new Date()),
           ],
         );
         stats.users += 1;
@@ -171,8 +189,8 @@ router.post('/push', async (req, res) => {
             customer.points_balance,
             customer.lifetime_points,
             customer.barcode_value,
-            customer.created_at,
-            customer.updated_at,
+            toMySqlDateTime(customer.created_at, new Date()),
+            toMySqlDateTime(customer.updated_at, new Date()),
             customer.is_active ? 1 : 0,
           ],
         );
@@ -182,27 +200,55 @@ router.post('/push', async (req, res) => {
 
     if (Array.isArray(loyaltyLedger)) {
       for (const entry of loyaltyLedger) {
+        const customerCode = String(entry.customer_code ?? entry.customerCode ?? '').trim();
+        const clientEntryId = String(entry.client_entry_id ?? entry.clientEntryId ?? '').trim();
+        if (!customerCode || !clientEntryId) {
+          throw new Error('Loyalty ledger entries require customer_code and client_entry_id.');
+        }
+
+        // The phone's SQLite customer ID is device-local and must never be
+        // written to MySQL. Resolve the tenant's actual customer record using
+        // its stable customer code inside this same transaction.
+        const [customerRows] = await connection.execute(
+          'SELECT id FROM customers WHERE business_id = ? AND customer_code = ? LIMIT 1',
+          [resolvedBusinessId, customerCode],
+        );
+        if (!customerRows.length) {
+          throw new Error(`No customer exists for loyalty ledger customer_code ${customerCode}.`);
+        }
+
+        let saleId = null;
+        const saleNumber = String(entry.sale_number ?? entry.saleNumber ?? '').trim();
+        if (saleNumber) {
+          const [saleRows] = await connection.execute(
+            'SELECT id FROM sales WHERE business_id = ? AND id = ? LIMIT 1',
+            [resolvedBusinessId, saleNumber],
+          );
+          saleId = saleRows[0]?.id ?? null;
+        }
+
         await connection.execute(
           `INSERT INTO loyalty_ledger
-            (id, business_id, customer_id, sale_id, entry_type, points, balance_after, notes, created_at)
+            (client_entry_id, business_id, customer_id, sale_id, entry_type, points, balance_after, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               customer_id = VALUES(customer_id),
-              sale_id = VALUES(sale_id),
+              sale_id = COALESCE(VALUES(sale_id), sale_id),
               entry_type = VALUES(entry_type),
               points = VALUES(points),
               balance_after = VALUES(balance_after),
-              notes = VALUES(notes)`,
+              notes = VALUES(notes),
+              created_at = VALUES(created_at)`,
           [
-            entry.id,
+            clientEntryId,
             resolvedBusinessId,
-            entry.customer_id,
-            entry.sale_id,
+            customerRows[0].id,
+            saleId,
             entry.entry_type,
             entry.points,
             entry.balance_after,
             entry.notes,
-            entry.created_at,
+            toMySqlDateTime(entry.created_at, new Date()),
           ],
         );
         stats.loyaltyLedger += 1;
@@ -235,7 +281,7 @@ router.post('/push', async (req, res) => {
             camera.is_active ? 1 : 0,
             camera.username,
             camera.password,
-            camera.created_at,
+            toMySqlDateTime(camera.created_at, new Date()),
           ],
         );
         stats.cameras += 1;
@@ -262,11 +308,11 @@ router.post('/push', async (req, res) => {
             ts.camera_id,
             ts.label,
             ts.description,
-            ts.timestamp,
+            toMySqlDateTime(ts.timestamp, new Date()),
             ts.notes,
             ts.video_path,
             ts.created_by,
-            ts.created_at,
+            toMySqlDateTime(ts.created_at, new Date()),
           ],
         );
         stats.cctvTimestamps += 1;
@@ -287,9 +333,9 @@ router.post('/push', async (req, res) => {
             entry.id,
             resolvedBusinessId,
             entry.user_id,
-            entry.time,
+            toMySqlDateTime(entry.time, new Date()),
             entry.type,
-            entry.created_at,
+            toMySqlDateTime(entry.created_at, new Date()),
           ],
         );
         stats.attendanceEntries += 1;
@@ -313,8 +359,8 @@ router.post('/push', async (req, res) => {
             leave.user_id,
             leave.date_key,
             leave.payload,
-            leave.created_at,
-            leave.updated_at,
+            toMySqlDateTime(leave.created_at, new Date()),
+            toMySqlDateTime(leave.updated_at, new Date()),
           ],
         );
         stats.attendanceLeaves += 1;
@@ -341,8 +387,8 @@ router.post('/push', async (req, res) => {
             archiveRow.user_id,
             archiveRow.date_key,
             archiveRow.entries,
-            archiveRow.created_at,
-            archiveRow.updated_at,
+            toMySqlDateTime(archiveRow.created_at, new Date()),
+            toMySqlDateTime(archiveRow.updated_at, new Date()),
           ],
         );
         stats.attendanceArchive += 1;
@@ -365,7 +411,7 @@ router.post('/push', async (req, res) => {
             resolvedBusinessId,
             schedule.key ?? 'global',
             typeof schedule.value === 'string' ? schedule.value : JSON.stringify(schedule.value),
-            schedule.updated_at,
+            toMySqlDateTime(schedule.updated_at, new Date()),
           ],
         );
         stats.attendanceSchedule += 1;
@@ -389,7 +435,7 @@ router.post('/push', async (req, res) => {
             log.type,
             log.message,
             log.meta,
-            log.created_at,
+            toMySqlDateTime(log.created_at, new Date()),
             log.sent ? 1 : 0,
           ],
         );
@@ -430,8 +476,8 @@ router.post('/push', async (req, res) => {
             product.low_stock_threshold,
             product.shoe_sizes,
             product.size_type,
-            product.created_at,
-            product.updated_at,
+            toMySqlDateTime(product.created_at, new Date()),
+            toMySqlDateTime(product.updated_at, new Date()),
           ],
         );
         stats.products += 1;
@@ -462,7 +508,7 @@ router.post('/push', async (req, res) => {
             supplier.address,
             supplier.notes,
             supplier.is_active ? 1 : 0,
-            supplier.created_at,
+            toMySqlDateTime(supplier.created_at, new Date()),
           ],
         );
         stats.suppliers += 1;
@@ -518,20 +564,20 @@ router.post('/push', async (req, res) => {
             sale.amount_paid,
             sale.change_amount,
             sale.item_count,
-            sale.datetime,
+            toMySqlDateTime(sale.datetime, new Date()),
             sale.notes,
             sale.reference_code ?? sale.referenceCode ?? null,
             sale.image_path ?? sale.imagePath ?? null,
             sale.cancelled_reason ?? sale.cancelledReason ?? null,
             sale.cancelled_by ?? sale.cancelledBy ?? null,
-            sale.cancelled_at ?? sale.cancelledAt ?? null,
+            toMySqlDateTime(sale.cancelled_at ?? sale.cancelledAt ?? null),
             sale.transaction_type ?? sale.transactionType ?? 'pos',
             sale.reservation_fee ?? sale.reservationFee ?? null,
             sale.courier ?? sale.courier ?? null,
             sale.delivery_status ?? sale.deliveryStatus ?? null,
             sale.loyalty_points_earned ?? sale.loyaltyPointsEarned ?? 0,
             sale.loyalty_points_redeemed ?? sale.loyaltyPointsRedeemed ?? 0,
-            sale.updated_at ?? sale.updatedAt ?? sale.created_at,
+            toMySqlDateTime(sale.updated_at ?? sale.updatedAt ?? sale.created_at, new Date()),
           ],
         );
         stats.sales += 1;
@@ -563,7 +609,7 @@ router.post('/push', async (req, res) => {
             item.discount,
             item.subtotal,
             item.shoe_size,
-            item.created_at,
+            toMySqlDateTime(item.created_at, new Date()),
           ],
         );
         stats.saleItems += 1;
@@ -590,13 +636,13 @@ router.post('/push', async (req, res) => {
             resolvedBusinessId,
             order.supplier_id,
             order.order_number,
-            order.order_date,
-            order.expected_delivery,
+            toMySqlDate(order.order_date, new Date()),
+            toMySqlDate(order.expected_delivery),
             order.status,
             order.total_amount,
             order.notes,
             order.created_by,
-            order.created_at,
+            toMySqlDateTime(order.created_at, new Date()),
           ],
         );
         stats.purchaseOrders += 1;
@@ -625,7 +671,7 @@ router.post('/push', async (req, res) => {
             item.quantity,
             item.unit_price,
             item.total_price,
-            item.created_at || new Date().toISOString(),
+            toMySqlDateTime(item.created_at, new Date()),
           ],
         );
         stats.purchaseOrderItems += 1;
@@ -656,8 +702,8 @@ router.post('/push', async (req, res) => {
             movement.reference,
             movement.notes,
             movement.performed_by,
-            movement.timestamp,
-            movement.created_at,
+            toMySqlDateTime(movement.timestamp, new Date()),
+            toMySqlDateTime(movement.created_at, new Date()),
           ],
         );
         stats.inventoryMovements += 1;
@@ -688,10 +734,10 @@ router.post('/push', async (req, res) => {
             report.damage_type,
             report.description,
             report.reported_by,
-            report.reported_at,
+            toMySqlDateTime(report.reported_at, new Date()),
             report.status,
             report.resolution_notes,
-            report.created_at,
+            toMySqlDateTime(report.created_at, new Date()),
           ],
         );
         stats.damageReports += 1;
@@ -742,7 +788,16 @@ router.get('/pull', async (req, res) => {
     ] = await Promise.all([
       query('SELECT * FROM users WHERE business_id = ?', [businessId]),
       query('SELECT * FROM customers WHERE business_id = ?', [businessId]),
-      query('SELECT * FROM loyalty_ledger WHERE business_id = ?', [businessId]),
+      query(
+        `SELECT l.*, c.customer_code, s.id AS sale_number
+           FROM loyalty_ledger l
+           INNER JOIN customers c
+             ON c.id = l.customer_id AND c.business_id = l.business_id
+           LEFT JOIN sales s
+             ON s.id = l.sale_id AND s.business_id = l.business_id
+          WHERE l.business_id = ?`,
+        [businessId],
+      ),
       query('SELECT * FROM cameras WHERE business_id = ?', [businessId]),
       query('SELECT * FROM cctv_timestamps WHERE business_id = ?', [businessId]),
       query('SELECT * FROM attendance_entries WHERE business_id = ?', [businessId]),

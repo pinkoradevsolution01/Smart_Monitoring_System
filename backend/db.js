@@ -333,6 +333,17 @@ async function ensureOwnerPinResetTokensTable() {
   `);
 }
 
+async function ensureLoyaltyLedgerSyncIdentity() {
+  // Device-local autoincrement IDs cannot identify ledger entries across
+  // phones. Keep a client-generated identity scoped to each business instead.
+  await ensureColumn('loyalty_ledger', 'client_entry_id', 'VARCHAR(191) NULL');
+  if (!(await uniqueIndexExists('loyalty_ledger', 'uq_loyalty_ledger_business_client_entry'))) {
+    await pool.execute(
+      'ALTER TABLE loyalty_ledger ADD UNIQUE KEY uq_loyalty_ledger_business_client_entry (business_id, client_entry_id)',
+    );
+  }
+}
+
 async function foreignKeyColumnDefinition(tableName, columnName) {
   const [rows] = await pool.execute(
     `SELECT column_type AS column_type,
@@ -401,6 +412,7 @@ async function initDb() {
   await connection.ping();
   await ensureUsersTableColumns();
   await ensureSalesAndCustomerRelations();
+  await ensureLoyaltyLedgerSyncIdentity();
   await ensureActivationCodeColumns();
   await ensureDeveloperAccountsTable();
   await ensureOwnerPinResetTokensTable();

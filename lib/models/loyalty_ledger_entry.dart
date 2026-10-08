@@ -1,7 +1,13 @@
+import 'package:uuid/uuid.dart';
+
 enum LoyaltyEntryType { earn, redeem, adjust }
 
 class LoyaltyLedgerEntry {
   final int? id;
+
+  /// Stable identity for syncing this entry across devices. Local integer IDs
+  /// are only meaningful inside one SQLite database.
+  final String syncId;
   final int customerId;
   final int? saleId;
   final LoyaltyEntryType entryType;
@@ -12,6 +18,7 @@ class LoyaltyLedgerEntry {
 
   LoyaltyLedgerEntry({
     this.id,
+    String? syncId,
     required this.customerId,
     this.saleId,
     required this.entryType,
@@ -19,11 +26,13 @@ class LoyaltyLedgerEntry {
     required this.balanceAfter,
     this.notes,
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  }) : syncId = syncId ?? const Uuid().v4(),
+       createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'syncId': syncId,
       'customerId': customerId,
       'saleId': saleId,
       'entryType': entryType.toString().split('.').last,
@@ -37,6 +46,7 @@ class LoyaltyLedgerEntry {
   factory LoyaltyLedgerEntry.fromMap(Map<String, dynamic> map) {
     return LoyaltyLedgerEntry(
       id: map['id'] as int?,
+      syncId: map['syncId'] as String?,
       customerId: (map['customerId'] as num?)?.toInt() ?? 0,
       saleId: (map['saleId'] as num?)?.toInt(),
       entryType: LoyaltyEntryType.values.firstWhere(

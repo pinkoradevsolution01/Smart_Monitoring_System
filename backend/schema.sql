@@ -501,6 +501,7 @@ ALTER TABLE sales
 
 CREATE TABLE IF NOT EXISTS loyalty_ledger (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  client_entry_id VARCHAR(191) NULL,
   business_id VARCHAR(64) NOT NULL,
   customer_id BIGINT NOT NULL,
   sale_id VARCHAR(64) NULL,
@@ -513,6 +514,7 @@ CREATE TABLE IF NOT EXISTS loyalty_ledger (
   KEY idx_loyalty_ledger_customer (customer_id),
   KEY idx_loyalty_ledger_sale (sale_id),
   KEY idx_loyalty_ledger_created_at (created_at),
+  UNIQUE KEY uq_loyalty_ledger_business_client_entry (business_id, client_entry_id),
   CONSTRAINT fk_loyalty_ledger_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE
