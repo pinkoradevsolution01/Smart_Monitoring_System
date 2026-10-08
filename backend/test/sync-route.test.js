@@ -121,6 +121,26 @@ test('sync normalizes ISO timestamps and resolves loyalty records using customer
             total_price: 10,
             created_at: '2026-10-04T10:42:35.094Z',
           }],
+          sales: [{
+            business_id: 'business-a',
+            sale_number: 'sale-a',
+            cashier_id: 'owner-a',
+            cashier_name: 'Owner',
+            customer_name: 'Customer A',
+            customer_code: 'customer-a',
+            payment_method: 'Cash',
+            status: 'completed',
+            subtotal: 10,
+            discount: 0,
+            total_amount: 10,
+            amount_paid: 10,
+            change_amount: 0,
+            item_count: 1,
+            datetime: '2026-10-04T10:42:35.094Z',
+            loyalty_points_earned: 0,
+            loyalty_points_redeemed: 0,
+            created_at: '2026-10-04T10:42:35.094Z',
+          }],
         }),
       });
 
@@ -136,6 +156,12 @@ test('sync normalizes ISO timestamps and resolves loyalty records using customer
         call.sql.includes('INSERT INTO purchase_order_items'),
       );
       assert.equal(purchaseItemInsert.params[8], '2026-10-04 10:42:35');
+
+      const saleInsert = executions.find((call) =>
+        call.sql.includes('INSERT INTO sales'),
+      );
+      assert.equal(saleInsert.params[5], 42);
+      assert.equal(saleInsert.params[14], '2026-10-04 10:42:35');
     });
   } finally {
     loaded.restore();

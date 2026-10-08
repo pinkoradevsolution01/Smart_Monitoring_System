@@ -519,6 +519,18 @@ router.post('/push', async (req, res) => {
       for (const sale of sales) {
         // Accept both numeric/string id or sale_number from clients
         const saleId = sale.id || sale.sale_number || sale.saleNumber || null;
+        let customerId = null;
+        const customerCode = String(sale.customer_code ?? sale.customerCode ?? '').trim();
+        if (customerCode) {
+          const [customerRows] = await connection.execute(
+            'SELECT id FROM customers WHERE business_id = ? AND customer_code = ? LIMIT 1',
+            [resolvedBusinessId, customerCode],
+          );
+          if (!customerRows.length) {
+            throw new Error(`No customer exists for sale customer_code ${customerCode}.`);
+          }
+          customerId = customerRows[0].id;
+        }
         await connection.execute(
           `INSERT INTO sales
             (id, business_id, cashier_id, cashier_name, customer_name, customer_id, payment_method, status, subtotal, discount, total_amount, amount_paid, change_amount, item_count, datetime, notes, reference_code, image_path, cancelled_reason, cancelled_by, cancelled_at, transaction_type, reservation_fee, courier, delivery_status, loyalty_points_earned, loyalty_points_redeemed, updated_at)
@@ -555,7 +567,7 @@ router.post('/push', async (req, res) => {
             sale.cashier_id,
             sale.cashier_name,
             sale.customer_name,
-            sale.customer_id ?? sale.customerId ?? null,
+            customerId,
             sale.payment_method,
             sale.status,
             sale.subtotal,
@@ -807,7 +819,14 @@ router.get('/pull', async (req, res) => {
       query('SELECT * FROM activity_logs WHERE business_id = ?', [businessId]),
       query('SELECT * FROM products WHERE business_id = ?', [businessId]),
       query('SELECT * FROM suppliers WHERE business_id = ?', [businessId]),
-      query('SELECT * FROM sales WHERE business_id = ?', [businessId]),
+      query(
+        `SELECT s.*, c.customer_code
+           FROM sales s
+           LEFT JOIN customers c
+             ON c.id = s.customer_id AND c.business_id = s.business_id
+          WHERE s.business_id = ?`,
+        [businessId],
+      ),
       query('SELECT * FROM sale_items WHERE business_id = ?', [businessId]),
       query('SELECT * FROM purchase_orders WHERE business_id = ?', [businessId]),
       query('SELECT * FROM purchase_order_items WHERE business_id = ?', [

@@ -742,6 +742,11 @@ class SupabaseSyncService extends ChangeNotifier {
     try {
       final db = DatabaseService();
       final sales = await db.getAllSales();
+      final customers = await db.getCustomers();
+      final customerCodesByLocalId = <int, String>{
+        for (final customer in customers)
+          if (customer.id != null) customer.id!: customer.customerCode,
+      };
       final userService = UserService();
       await userService.initialize();
       final users = userService.users;
@@ -760,7 +765,11 @@ class SupabaseSyncService extends ChangeNotifier {
               'cashier_id': _resolveCashierId(s.cashierName, users),
               'cashier_name': s.cashierName,
               'customer_name': s.customerName,
-              'customer_id': s.customerId,
+              // SQLite customer IDs are local to this device. The backend
+              // resolves this stable code within the authenticated business.
+              'customer_code': s.customerId == null
+                  ? null
+                  : customerCodesByLocalId[s.customerId!],
               'payment_method': s.paymentMethod,
               'status': s.status.toString().split('.').last,
               'subtotal': s.subtotal,
@@ -1525,6 +1534,12 @@ class SupabaseSyncService extends ChangeNotifier {
         itemsBySale.putIfAbsent(saleId, () => []).add(item);
       }
 
+      final customers = await db.getCustomers();
+      final localCustomerIdsByCode = <String, int>{
+        for (final customer in customers)
+          if (customer.id != null) customer.customerCode: customer.id!,
+      };
+
       final sales = response.map((data) {
         final cloudSaleId = data['id']?.toString() ?? '';
         final saleNumber =
@@ -1581,9 +1596,7 @@ class SupabaseSyncService extends ChangeNotifier {
                       data['delivery_status'].toString(),
                   orElse: () => DeliveryStatus.pending,
                 ),
-          customerId: _asInt(data['customer_id'], fallback: 0) == 0
-              ? null
-              : _asInt(data['customer_id']),
+          customerId: localCustomerIdsByCode[data['customer_code']?.toString()],
           customerName: data['customer_name']?.toString(),
           loyaltyPointsEarned: _asInt(data['loyalty_points_earned']),
           loyaltyPointsRedeemed: _asInt(data['loyalty_points_redeemed']),

@@ -1184,31 +1184,41 @@ class DatabaseService {
   Future<Customer> insertOrUpdateCustomer(Customer customer) async {
     final db = await database;
     final now = DateTime.now();
-    final existing = customer.id == null
-        ? []
-        : await db.query(
-            'customers',
-            where: 'id = ?',
-            whereArgs: [customer.id],
-            limit: 1,
-          );
+    // Customer IDs are generated independently by SQLite and MySQL. Never
+    // use a cloud numeric ID as a local primary key during restore: it may
+    // already identify a different local row. Customer code is the durable
+    // cross-device identity; barcode is a safe legacy fallback.
+    final existing = await db.query(
+      'customers',
+      where: 'customerCode = ? OR barcodeValue = ?',
+      whereArgs: [customer.customerCode, customer.barcodeValue],
+    );
+    Map<String, Object?>? matched;
+    for (final row in existing) {
+      if (row['customerCode'] == customer.customerCode) {
+        matched = row;
+        break;
+      }
+    }
+    matched ??= existing.isEmpty ? null : existing.first;
 
-    if (existing.isNotEmpty) {
-      final updated = customer.copyWith(updatedAt: now);
+    if (matched != null) {
+      final localId = (matched['id'] as num).toInt();
+      final updated = customer.copyWith(id: localId, updatedAt: now);
       await db.update(
         'customers',
         updated.toMap(),
         where: 'id = ?',
-        whereArgs: [updated.id],
+        whereArgs: [localId],
       );
       _queueCloudSync();
       return updated;
     }
 
     final map = customer.copyWith(updatedAt: now).toMap();
-    if (customer.id == null) {
-      map['id'] = null;
-    }
+    // Let this device allocate its own row ID. Future restores merge by the
+    // stable customer code rather than assuming IDs agree across databases.
+    map['id'] = null;
     final id = await db.insert('customers', map);
     _queueCloudSync();
     return customer.copyWith(id: id, updatedAt: now);

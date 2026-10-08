@@ -311,11 +311,19 @@ class DatabaseService {
     await _load();
     final now = DateTime.now();
     final List customers = List.from(_store['customers'] as List<dynamic>);
-    final idx = customer.id == null
-        ? -1
-        : customers.indexWhere((m) => m['id'] == customer.id);
+    // Numeric IDs are storage-local. Merge cloud records by stable customer
+    // code, then by barcode for legacy records.
+    var idx = customers.indexWhere(
+      (m) => (m as Map)['customerCode'] == customer.customerCode,
+    );
+    if (idx < 0) {
+      idx = customers.indexWhere(
+        (m) => (m as Map)['barcodeValue'] == customer.barcodeValue,
+      );
+    }
     if (idx >= 0) {
-      final updated = customer.copyWith(updatedAt: now).toMap();
+      final localId = (customers[idx] as Map)['id'] as int?;
+      final updated = customer.copyWith(id: localId, updatedAt: now).toMap();
       customers[idx] = updated;
       _store['customers'] = customers;
       await _save();
@@ -324,7 +332,7 @@ class DatabaseService {
     }
 
     final map = customer.copyWith(updatedAt: now).toMap();
-    final id = customer.id ?? _nextId('customer');
+    final id = _nextId('customer');
     _bumpCounter('customer', id);
     final stored = {...map, 'id': id};
     customers.add(stored);
