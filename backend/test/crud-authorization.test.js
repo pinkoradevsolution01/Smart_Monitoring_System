@@ -122,3 +122,45 @@ test('expense records are package-gated, tenant-scoped, and date-filtered on the
     loaded.restore();
   }
 });
+
+test('customer deletion resolves the durable customer code inside the verified tenant', async () => {
+  const calls = [];
+  const executed = [];
+  const db = {
+    async query(sql, params = []) {
+      calls.push({ sql, params });
+      if (sql.includes('FROM users u INNER JOIN businesses b')) {
+        return [{ id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1, business_active: 1 }];
+      }
+      if (sql.includes('SELECT id FROM customers')) return [{ id: 42 }];
+      throw new Error(`Unexpected SQL: ${sql}`);
+    },
+    async getConnection() {
+      return {
+        async execute(sql, params = []) {
+          executed.push({ sql, params });
+          return [[], []];
+        },
+        release() {},
+      };
+    },
+  };
+  const loaded = loadCrudRouter(db);
+  const ownerToken = token({ userId: 'owner-a', role: 'owner', businessId: 'business-a' });
+
+  try {
+    await withServer(loaded.router, async (base) => {
+      const response = await fetch(
+        `${base}/api/customers/by-code/customer-code-a?businessId=business-b`,
+        { method: 'DELETE', headers: { Authorization: `Bearer ${ownerToken}` } },
+      );
+      assert.equal(response.status, 200);
+    });
+    const lookup = calls.find((call) => call.sql.includes('SELECT id FROM customers'));
+    assert.deepEqual(lookup.params, ['business-a', 'customer-code-a']);
+    assert.deepEqual(executed[0].params, ['business-a', 'customer-code-a']);
+    for (const call of [...calls, ...executed]) assert.equal(call.params.includes('business-b'), false);
+  } finally {
+    loaded.restore();
+  }
+});

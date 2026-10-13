@@ -76,6 +76,29 @@ class DatabaseService {
     );
   }
 
+  Future<void> _deleteRemoteCustomerByCode(String customerCode) async {
+    if (_suppressCloudSync || !BackendConfig.useRestBackend) {
+      return;
+    }
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty || customerCode.isEmpty) {
+      return;
+    }
+    try {
+      await _api.deleteJson(
+        'customers/by-code/${Uri.encodeComponent(customerCode)}',
+        queryParameters: {'businessId': businessId},
+      );
+    } catch (error) {
+      // A previous device may already have deleted the matching cloud record.
+      // DELETE is idempotent from the app's perspective in that case.
+      if (error.toString().contains('customers record not found')) {
+        return;
+      }
+      rethrow;
+    }
+  }
+
   Future<void> _deleteAllRemoteRecords(String resource) async {
     if (_suppressCloudSync) return;
     if (!BackendConfig.useRestBackend) return;
@@ -1283,6 +1306,12 @@ class DatabaseService {
   }
 
   Future<void> deleteCustomer(int id) async {
+    final customer = await getCustomerById(id);
+    if (customer == null) return;
+    // Do this before deleting local state. A failure other than a remote 404
+    // leaves the local customer intact instead of silently restoring it on
+    // the next pull from the backend.
+    await _deleteRemoteCustomerByCode(customer.customerCode);
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete(
@@ -1292,7 +1321,6 @@ class DatabaseService {
       );
       await txn.delete('customers', where: 'id = ?', whereArgs: [id]);
     });
-    await _deleteRemoteRecord('customers', id);
     _queueCloudSync();
   }
 

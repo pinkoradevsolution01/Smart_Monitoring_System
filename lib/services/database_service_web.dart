@@ -93,6 +93,27 @@ class DatabaseService {
     );
   }
 
+  Future<void> _deleteRemoteCustomerByCode(String customerCode) async {
+    if (_suppressCloudSync || !BackendConfig.useRestBackend) {
+      return;
+    }
+    final businessId = _currentBusinessId();
+    if (businessId == null || businessId.isEmpty || customerCode.isEmpty) {
+      return;
+    }
+    try {
+      await _api.deleteJson(
+        'customers/by-code/${Uri.encodeComponent(customerCode)}',
+        queryParameters: {'businessId': businessId},
+      );
+    } catch (error) {
+      if (error.toString().contains('customers record not found')) {
+        return;
+      }
+      rethrow;
+    }
+  }
+
   Future<T> runWithoutCloudSync<T>(Future<T> Function() action) async {
     final previous = _suppressCloudSync;
     _suppressCloudSync = true;
@@ -409,6 +430,9 @@ class DatabaseService {
 
   Future<void> deleteCustomer(int id) async {
     await _load();
+    final customer = await getCustomerById(id);
+    if (customer == null) return;
+    await _deleteRemoteCustomerByCode(customer.customerCode);
     _store['loyalty_ledger'] = (_store['loyalty_ledger'] as List<dynamic>)
         .where((item) => (item['customerId'] as int?) != id)
         .toList();
@@ -416,7 +440,6 @@ class DatabaseService {
         .where((item) => (item['id'] as int?) != id)
         .toList();
     await _save();
-    await _deleteRemoteRecord('customers', id);
     _queueCloudSync();
   }
 

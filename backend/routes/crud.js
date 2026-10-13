@@ -901,6 +901,43 @@ router.use(requireActiveBusiness, requireManagementRole);
 // additional server-side package entitlement check before any SQL is run.
 router.use('/expenses', requireFinancialReporting);
 
+// Customer IDs are auto-incrementing independently on every offline device
+// and in MySQL. Delete by the stable customer code instead of trusting a
+// client device's SQLite ID. The business scope comes only from the verified
+// session through extractBusinessId.
+router.delete('/customers/by-code/:customerCode', async (req, res) => {
+  const connection = await getConnection();
+  try {
+    const businessId = extractBusinessId(req);
+    if (!businessId) {
+      throw Object.assign(new Error('businessId is required.'), { statusCode: 400 });
+    }
+    const customerCode = String(req.params.customerCode || '').trim();
+    if (!customerCode) {
+      throw Object.assign(new Error('customerCode is required.'), { statusCode: 400 });
+    }
+    const rows = await query(
+      'SELECT id FROM customers WHERE business_id = ? AND customer_code = ? LIMIT 1',
+      [businessId, customerCode],
+    );
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: 'customers record not found.' });
+    }
+    await connection.execute(
+      'DELETE FROM customers WHERE business_id = ? AND customer_code = ?',
+      [businessId, customerCode],
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to delete customers record.',
+    });
+  } finally {
+    connection.release();
+  }
+});
+
 for (const [resourceName, config] of Object.entries(RESOURCE_CONFIG)) {
   registerCrudRoutes(resourceName, config);
 }

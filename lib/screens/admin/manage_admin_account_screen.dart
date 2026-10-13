@@ -469,80 +469,66 @@ class _ManageAdminAccountScreenState extends State<ManageAdminAccountScreen> {
     );
   }
 
-  void _confirmDeleteAccount() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Final Confirmation'),
-        content: const Text('Type "DELETE" to confirm account deletion:'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    // Show text field dialog for confirmation
+  Future<void> _confirmDeleteAccount() async {
     final TextEditingController confirmController = TextEditingController();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Final Confirmation'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Type "DELETE" to confirm account deletion:',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: confirmController,
-              decoration: const InputDecoration(
-                hintText: 'Type DELETE here',
-                border: OutlineInputBorder(),
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Final Confirmation'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Type "DELETE" to confirm account deletion:',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                decoration: const InputDecoration(
+                  hintText: 'Type DELETE here',
+                  border: OutlineInputBorder(),
+                ),
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (confirmController.text.trim() == 'DELETE') {
+                  Navigator.pop(dialogContext, true);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please type DELETE to confirm'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Confirm Delete'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              confirmController.dispose();
-              Navigator.pop(dialogContext);
-            },
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (confirmController.text.trim() == 'DELETE') {
-                Navigator.pop(dialogContext);
-                confirmController.dispose();
-                await _deleteAccount();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please type DELETE to confirm'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Confirm Delete'),
-          ),
-        ],
-      ),
-    );
+      );
+      if (confirmed == true && mounted) await _deleteAccount();
+    } finally {
+      // The dialog must finish its pop animation before the TextField's
+      // controller is disposed.
+      confirmController.dispose();
+    }
   }
 
   Future<void> _deleteAccount() async {

@@ -2682,7 +2682,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
     }
   }
 
-  void _showRestockOrderDialog(PurchaseOrder order) {
+  Future<void> _showRestockOrderDialog(PurchaseOrder order) async {
     final deliveryReceiptController = TextEditingController();
     final Map<int, TextEditingController> quantityControllers = {};
     final Map<int, TextEditingController> damageControllers = {};
@@ -2699,256 +2699,256 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
       serialNumberControllers[item.productId] = TextEditingController();
     }
 
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppLocalizations.t('restock_items')),
-        content: SizedBox(
-          width: 500,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${AppLocalizations.t('order_number')}: ${order.orderNumber}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: deliveryReceiptController,
-                  decoration: InputDecoration(
-                    labelText: AppLocalizations.t('delivery_receipt'),
-                    border: const OutlineInputBorder(),
+    void disposeControllers() {
+      for (final controller in quantityControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in damageControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in damageReasonControllers.values) {
+        controller.dispose();
+      }
+      for (final controller in serialNumberControllers.values) {
+        controller.dispose();
+      }
+      deliveryReceiptController.dispose();
+    }
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(AppLocalizations.t('restock_items')),
+          content: SizedBox(
+            width: 500,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${AppLocalizations.t('order_number')}: ${order.orderNumber}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                ),
-                const Divider(height: 32),
-                Text(
-                  AppLocalizations.t('products'),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ...order.items.map((item) {
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            item.productName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${AppLocalizations.t('ordered')}: ${item.quantity}',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller:
-                                      quantityControllers[item.productId],
-                                  decoration: InputDecoration(
-                                    labelText: AppLocalizations.t('received'),
-                                    isDense: true,
-                                    border: const OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: damageControllers[item.productId],
-                                  decoration: InputDecoration(
-                                    labelText: AppLocalizations.t('damaged'),
-                                    isDense: true,
-                                    border: const OutlineInputBorder(),
-                                  ),
-                                  keyboardType: TextInputType.number,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: damageReasonControllers[item.productId],
-                            decoration: InputDecoration(
-                              labelText:
-                                  '${AppLocalizations.t('damage_reason')} (${AppLocalizations.t('optional')})',
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                            ),
-                            maxLines: 2,
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: serialNumberControllers[item.productId],
-                            decoration: InputDecoration(
-                              labelText:
-                                  '${AppLocalizations.t('serial_number')} (${AppLocalizations.t('optional')})',
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                            ),
-                          ),
-                        ],
-                      ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: deliveryReceiptController,
+                    decoration: InputDecoration(
+                      labelText: AppLocalizations.t('delivery_receipt'),
+                      border: const OutlineInputBorder(),
                     ),
-                  );
-                }),
-              ],
+                  ),
+                  const Divider(height: 32),
+                  Text(
+                    AppLocalizations.t('products'),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...order.items.map((item) {
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.productName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${AppLocalizations.t('ordered')}: ${item.quantity}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller:
+                                        quantityControllers[item.productId],
+                                    decoration: InputDecoration(
+                                      labelText: AppLocalizations.t('received'),
+                                      isDense: true,
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: TextField(
+                                    controller:
+                                        damageControllers[item.productId],
+                                    decoration: InputDecoration(
+                                      labelText: AppLocalizations.t('damaged'),
+                                      isDense: true,
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller:
+                                  damageReasonControllers[item.productId],
+                              decoration: InputDecoration(
+                                labelText:
+                                    '${AppLocalizations.t('damage_reason')} (${AppLocalizations.t('optional')})',
+                                isDense: true,
+                                border: const OutlineInputBorder(),
+                              ),
+                              maxLines: 2,
+                            ),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller:
+                                  serialNumberControllers[item.productId],
+                              decoration: InputDecoration(
+                                labelText:
+                                    '${AppLocalizations.t('serial_number')} (${AppLocalizations.t('optional')})',
+                                isDense: true,
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              for (var controller in quantityControllers.values) {
-                controller.dispose();
-              }
-              for (var controller in damageControllers.values) {
-                controller.dispose();
-              }
-              for (var controller in damageReasonControllers.values) {
-                controller.dispose();
-              }
-              for (var controller in serialNumberControllers.values) {
-                controller.dispose();
-              }
-              deliveryReceiptController.dispose();
-              Navigator.pop(ctx);
-            },
-            child: Text(AppLocalizations.t('cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final deliveryReceipt = deliveryReceiptController.text.trim();
-              if (deliveryReceipt.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      AppLocalizations.t('delivery_receipt_required'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppLocalizations.t('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final deliveryReceipt = deliveryReceiptController.text.trim();
+                if (deliveryReceipt.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        AppLocalizations.t('delivery_receipt_required'),
+                      ),
+                      backgroundColor: Colors.red,
                     ),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-                return;
-              }
-
-              // Restock each product
-              for (var item in order.items) {
-                final receivedQty =
-                    int.tryParse(quantityControllers[item.productId]!.text) ??
-                    0;
-                final damageQty =
-                    int.tryParse(damageControllers[item.productId]!.text) ?? 0;
-                final damageReason = damageReasonControllers[item.productId]!
-                    .text
-                    .trim();
-                final serialNumber = serialNumberControllers[item.productId]!
-                    .text
-                    .trim();
-
-                if (receivedQty > 0) {
-                  // Create restock record with damage info
-                  final damageNote = damageQty > 0
-                      ? 'Restocked from purchase order ($damageQty damaged items excluded${serialNumber.isNotEmpty ? ', SN: $serialNumber' : ''})'
-                      : 'Restocked from purchase order';
-
-                  final record = RestockRecord(
-                    productId: item.productId,
-                    productName: item.productName,
-                    quantity: receivedQty,
-                    damageQuantity: damageQty,
-                    damageReason: damageReason.isNotEmpty
-                        ? '$damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
-                        : serialNumber.isNotEmpty
-                        ? 'SN: $serialNumber'
-                        : '',
-                    deliveryReceiptNo: deliveryReceipt,
-                    supplierId: order.supplierId,
-                    supplierName: order.supplierName,
-                    referencedBy: 'Purchase Order ${order.orderNumber}',
-                    notes: damageNote,
-                    restockDate: DateTime.now(),
                   );
-                  await db.insertRestockRecord(record);
+                  return;
+                }
 
-                  // If there are damaged items, create a damage report
-                  if (damageQty > 0) {
-                    final damageReportReason = damageReason.isNotEmpty
-                        ? '${AppLocalizations.t('purchase_order')}: ${order.orderNumber} - $damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
-                        : '${AppLocalizations.t('purchase_order')}: ${order.orderNumber}${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}';
+                // Restock each product
+                for (var item in order.items) {
+                  final receivedQty =
+                      int.tryParse(quantityControllers[item.productId]!.text) ??
+                      0;
+                  final damageQty =
+                      int.tryParse(damageControllers[item.productId]!.text) ??
+                      0;
+                  final damageReason = damageReasonControllers[item.productId]!
+                      .text
+                      .trim();
+                  final serialNumber = serialNumberControllers[item.productId]!
+                      .text
+                      .trim();
 
-                    final damageReport = DamageReport(
+                  if (receivedQty > 0) {
+                    // Create restock record with damage info
+                    final damageNote = damageQty > 0
+                        ? 'Restocked from purchase order ($damageQty damaged items excluded${serialNumber.isNotEmpty ? ', SN: $serialNumber' : ''})'
+                        : 'Restocked from purchase order';
+
+                    final record = RestockRecord(
                       productId: item.productId,
                       productName: item.productName,
-                      quantity: damageQty,
-                      unitPrice: item.unitPrice,
-                      totalValue: item.unitPrice * damageQty,
-                      reason: damageReportReason,
-                      reportedBy: 'Owner',
-                      reportDate: DateTime.now(),
+                      quantity: receivedQty,
+                      damageQuantity: damageQty,
+                      damageReason: damageReason.isNotEmpty
+                          ? '$damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
+                          : serialNumber.isNotEmpty
+                          ? 'SN: $serialNumber'
+                          : '',
+                      deliveryReceiptNo: deliveryReceipt,
+                      supplierId: order.supplierId,
+                      supplierName: order.supplierName,
+                      referencedBy: 'Purchase Order ${order.orderNumber}',
+                      notes: damageNote,
+                      restockDate: DateTime.now(),
                     );
-                    await db.insertDamageReport(damageReport);
-                  }
+                    await db.insertRestockRecord(record);
 
-                  // Update product stock: add only good items (received - damaged)
-                  final goodItems = receivedQty - damageQty;
-                  if (goodItems > 0) {
-                    final product = await db.getProductById(item.productId);
-                    if (product != null) {
-                      final updatedProduct = product.copyWith(
-                        quantity: product.quantity + goodItems,
-                        buyingPrice: item.unitPrice,
+                    // If there are damaged items, create a damage report
+                    if (damageQty > 0) {
+                      final damageReportReason = damageReason.isNotEmpty
+                          ? '${AppLocalizations.t('purchase_order')}: ${order.orderNumber} - $damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
+                          : '${AppLocalizations.t('purchase_order')}: ${order.orderNumber}${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}';
+
+                      final damageReport = DamageReport(
+                        productId: item.productId,
+                        productName: item.productName,
+                        quantity: damageQty,
+                        unitPrice: item.unitPrice,
+                        totalValue: item.unitPrice * damageQty,
+                        reason: damageReportReason,
+                        reportedBy: 'Owner',
+                        reportDate: DateTime.now(),
                       );
-                      await db.updateProduct(updatedProduct);
+                      await db.insertDamageReport(damageReport);
+                    }
+
+                    // Update product stock: add only good items (received - damaged)
+                    final goodItems = receivedQty - damageQty;
+                    if (goodItems > 0) {
+                      final product = await db.getProductById(item.productId);
+                      if (product != null) {
+                        final updatedProduct = product.copyWith(
+                          quantity: product.quantity + goodItems,
+                          buyingPrice: item.unitPrice,
+                        );
+                        await db.updateProduct(updatedProduct);
+                      }
                     }
                   }
                 }
-              }
 
-              // Mark order as received
-              await db.updatePurchaseOrderStatus(order.id!, 'received');
-              await _loadData();
+                // Mark order as received
+                await db.updatePurchaseOrderStatus(order.id!, 'received');
+                await _loadData();
 
-              // Cleanup
-              for (var controller in quantityControllers.values) {
-                controller.dispose();
-              }
-              for (var controller in damageControllers.values) {
-                controller.dispose();
-              }
-              for (var controller in damageReasonControllers.values) {
-                controller.dispose();
-              }
-              deliveryReceiptController.dispose();
-
-              if (mounted) {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(AppLocalizations.t('restock_success')),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            child: Text(AppLocalizations.t('restock')),
-          ),
-        ],
-      ),
-    );
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(AppLocalizations.t('restock_success')),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              child: Text(AppLocalizations.t('restock')),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      // `showDialog` completes only after the route and its TextFields have
+      // been removed. Disposing earlier causes "used after being disposed"
+      // while the keyboard/dialog dismissal animation is still running.
+      disposeControllers();
+    }
   }
 
   Future<void> _markOrderCompleted(int orderId) async {

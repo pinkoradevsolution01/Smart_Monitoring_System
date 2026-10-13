@@ -1007,6 +1007,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'customer-management-add-customer',
         onPressed: () => _openCustomerDialog(),
         icon: const Icon(Icons.person_add),
         label: Text(AppLocalizations.t('add_customer')),
@@ -1039,7 +1040,19 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         false;
 
     if (confirm && mounted) {
-      await _customerService.deleteCustomer(customer.id!);
+      try {
+        await _customerService.deleteCustomer(customer.id!);
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not delete ${customer.fullName}: $error'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+        return;
+      }
+      if (!mounted) return;
       await _reload();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
