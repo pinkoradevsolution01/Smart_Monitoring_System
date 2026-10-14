@@ -36,91 +36,17 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   }
 
   Future<void> _openCustomerDialog({Customer? customer}) async {
-    final fullNameController = TextEditingController(
-      text: customer?.fullName ?? '',
-    );
-    final emailController = TextEditingController(text: customer?.email ?? '');
-
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          customer == null
-              ? AppLocalizations.t('add_customer')
-              : AppLocalizations.t('edit_customer'),
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: fullNameController,
-                decoration: InputDecoration(
-                  labelText: '${AppLocalizations.t('customer_name')} *',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailController,
-                decoration: InputDecoration(
-                  labelText: AppLocalizations.t('email_address'),
-                  border: const OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.t('cancel')),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (fullNameController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(AppLocalizations.t('customer_name_required')),
-                  ),
-                );
-                return;
-              }
-              final updated = customer == null
-                  ? Customer(
-                      fullName: fullNameController.text.trim(),
-                      email: emailController.text.trim().isEmpty
-                          ? null
-                          : emailController.text.trim(),
-                    )
-                  : customer.copyWith(
-                      fullName: fullNameController.text.trim(),
-                      email: emailController.text.trim().isEmpty
-                          ? null
-                          : emailController.text.trim(),
-                    );
-              await _customerService.saveCustomer(updated);
-              if (mounted) {
-                Navigator.pop(context, true);
-              }
-            },
-            child: Text(
-              customer == null
-                  ? AppLocalizations.t('add')
-                  : AppLocalizations.t('save'),
-            ),
-          ),
-        ],
+      builder: (_) => _CustomerFormDialog(
+        customer: customer,
+        customerService: _customerService,
       ),
     );
 
     if (saved == true && mounted) {
       await _reload();
     }
-
-    fullNameController.dispose();
-    emailController.dispose();
   }
 
   Future<void> _openStatusDialog(Customer customer) async {
@@ -1063,5 +989,142 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         ),
       );
     }
+  }
+}
+
+/// Owns its controllers for the complete lifetime of the dialog route.
+/// A dialog can still animate after [Navigator.pop], so controllers must not
+/// be disposed by the caller when its Future completes.
+class _CustomerFormDialog extends StatefulWidget {
+  const _CustomerFormDialog({
+    required this.customer,
+    required this.customerService,
+  });
+
+  final Customer? customer;
+  final CustomerService customerService;
+
+  @override
+  State<_CustomerFormDialog> createState() => _CustomerFormDialogState();
+}
+
+class _CustomerFormDialogState extends State<_CustomerFormDialog> {
+  late final TextEditingController _fullNameController;
+  late final TextEditingController _emailController;
+  var _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fullNameController = TextEditingController(
+      text: widget.customer?.fullName ?? '',
+    );
+    _emailController = TextEditingController(
+      text: widget.customer?.email ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _fullNameController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+    if (_fullNameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.t('customer_name_required'))),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final customer = widget.customer;
+    final updated = customer == null
+        ? Customer(
+            fullName: _fullNameController.text.trim(),
+            email: _emailController.text.trim().isEmpty
+                ? null
+                : _emailController.text.trim(),
+          )
+        : customer.copyWith(
+            fullName: _fullNameController.text.trim(),
+            email: _emailController.text.trim().isEmpty
+                ? null
+                : _emailController.text.trim(),
+          );
+
+    try {
+      await widget.customerService.saveCustomer(updated);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save customer: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final customer = widget.customer;
+    return AlertDialog(
+      title: Text(
+        customer == null
+            ? AppLocalizations.t('add_customer')
+            : AppLocalizations.t('edit_customer'),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _fullNameController,
+              enabled: !_isSaving,
+              decoration: InputDecoration(
+                labelText: '${AppLocalizations.t('customer_name')} *',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _emailController,
+              enabled: !_isSaving,
+              decoration: InputDecoration(
+                labelText: AppLocalizations.t('email_address'),
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(false),
+          child: Text(AppLocalizations.t('cancel')),
+        ),
+        ElevatedButton(
+          onPressed: _isSaving ? null : _save,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(
+                  customer == null
+                      ? AppLocalizations.t('add')
+                      : AppLocalizations.t('save'),
+                ),
+        ),
+      ],
+    );
   }
 }

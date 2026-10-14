@@ -65,8 +65,29 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
 
   String _friendlyError(Object error) {
     final message = error.toString().replaceFirst('Exception: ', '');
+    debugPrint('Financial & BIR data request failed: $message');
     if (message.contains('Standard, Premium, or Enterprise')) return message;
-    return 'Could not load financial data. Check your secure backend connection and try again.';
+    if (message.contains('valid business session')) {
+      return 'Your secure session has expired. Sign out, sign in again, then retry.';
+    }
+    if (message.contains('Management access')) {
+      return 'Only an Owner, Admin, or Manager can access financial reports.';
+    }
+    if (message.contains('inactive')) return message;
+    return 'Could not load financial data. $message';
+  }
+
+  String _friendlyPdfError(Object error) {
+    final message = error.toString().replaceFirst('Exception: ', '');
+    debugPrint('Financial & BIR PDF export failed: $message');
+    if (message.contains('Unable to load asset') ||
+        message.contains('assets/fonts/Inter-Variable.ttf')) {
+      return 'The report font is unavailable. Fully rebuild and reinstall the app, then try again.';
+    }
+    if (message.contains('MissingPluginException')) {
+      return 'PDF save/share is unavailable in this running build. Fully restart the app and try again.';
+    }
+    return 'Could not create the PDF report. $message';
   }
 
   Future<void> _pickRange() async {
@@ -163,7 +184,7 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_friendlyError(error)),
+          content: Text(_friendlyPdfError(error)),
           backgroundColor: Theme.of(context).colorScheme.error,
         ),
       );

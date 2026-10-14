@@ -1,0 +1,11 @@
+adb is installed but its folder is not in your Windows PATH.
+Run this in PowerShell:
+
+& "C:\Users\Acer\AppData\Local\Android\Sdk\platform-tools\adb.exe" devices -l
+
+To make adb work for this PowerShell session:
+
+$env:Path += ";C:\Users\Acer\AppData\Local\Android\Sdk\platform-tools"
+adb kill-server
+adb start-server
+adb devices -l
