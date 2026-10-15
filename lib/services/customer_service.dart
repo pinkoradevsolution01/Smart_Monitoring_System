@@ -3,7 +3,62 @@ import 'package:uuid/uuid.dart';
 import '../models/customer.dart';
 import '../models/loyalty_ledger_entry.dart';
 import '../models/cart_item.dart';
+import '../models/sale.dart';
 import 'database_service.dart';
+
+/// A safe, user-facing error raised before a duplicate customer is saved.
+///
+/// Email and phone values are intentionally checked in the service layer as
+/// well as by the UI.  This keeps quick-customer creation and future screens
+/// from silently creating duplicate loyalty accounts.
+class DuplicateCustomerException implements Exception {
+  final String field;
+  final String existingCustomerName;
+
+  const DuplicateCustomerException({
+    required this.field,
+    required this.existingCustomerName,
+  });
+
+  @override
+  String toString() =>
+      'A customer with this $field already exists: $existingCustomerName.';
+}
+
+enum CustomerSegment { newCustomer, regular, vip, atRisk }
+
+class CustomerInsights {
+  final CustomerSegment segment;
+  final List<Sale> purchaseHistory;
+  final double completedSalesTotal;
+  final DateTime? lastPurchaseAt;
+
+  const CustomerInsights({
+    required this.segment,
+    required this.purchaseHistory,
+    required this.completedSalesTotal,
+    required this.lastPurchaseAt,
+  });
+
+  String get segmentLabel => switch (segment) {
+    CustomerSegment.newCustomer => 'New customer',
+    CustomerSegment.regular => 'Regular customer',
+    CustomerSegment.vip => 'VIP customer',
+    CustomerSegment.atRisk => 'At-risk customer',
+  };
+}
+
+class LoyaltyExpirySummary {
+  final DateTime policyStartDate;
+  final DateTime? nextExpiryDate;
+  final int pointsExpiringSoon;
+
+  const LoyaltyExpirySummary({
+    required this.policyStartDate,
+    required this.nextExpiryDate,
+    required this.pointsExpiringSoon,
+  });
+}
 
 class CustomerService {
   final DatabaseService _databaseService = DatabaseService();
@@ -62,10 +117,145 @@ class CustomerService {
   }
 
   Future<Customer> saveCustomer(Customer customer) async {
+    await _ensureNoDuplicateContact(customer);
     if (customer.id == null) {
       return _databaseService.insertCustomer(customer);
     }
     return _databaseService.updateCustomer(customer);
+  }
+
+  /// Matches contacts after removing harmless formatting differences.  An
+  /// empty email or phone is not treated as a unique value.
+  Future<void> _ensureNoDuplicateContact(Customer candidate) async {
+    final email = _normaliseEmail(candidate.email);
+    final phone = _normalisePhone(candidate.phoneNumber);
+    if (email == null && phone == null) return;
+
+    final customers = await getCustomers();
+    for (final existing in customers) {
+      if (existing.id == candidate.id || !existing.isActive) continue;
+      if (email != null && _normaliseEmail(existing.email) == email) {
+        throw DuplicateCustomerException(
+          field: 'email address',
+          existingCustomerName: existing.fullName,
+        );
+      }
+      if (phone != null && _normalisePhone(existing.phoneNumber) == phone) {
+        throw DuplicateCustomerException(
+          field: 'phone number',
+          existingCustomerName: existing.fullName,
+        );
+      }
+    }
+  }
+
+  String? _normaliseEmail(String? value) {
+    final normalised = value?.trim().toLowerCase() ?? '';
+    return normalised.isEmpty ? null : normalised;
+  }
+
+  String? _normalisePhone(String? value) {
+    final normalised = (value ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    return normalised.isEmpty ? null : normalised;
+  }
+
+  Future<CustomerInsights> getInsights(Customer customer) async {
+    final sales =
+        (await _databaseService.getAllSales())
+            .where(
+              (sale) =>
+                  sale.customerId == customer.id &&
+                  sale.status == SaleStatus.completed,
+            )
+            .toList()
+          ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
+
+    final total = sales.fold<double>(0, (sum, sale) => sum + sale.totalAmount);
+    final lastPurchaseAt = sales.isEmpty ? null : sales.first.saleDate;
+    final now = DateTime.now();
+    final segment = _segmentFor(
+      customer: customer,
+      completedSales: sales,
+      completedSalesTotal: total,
+      lastPurchaseAt: lastPurchaseAt,
+      now: now,
+    );
+
+    return CustomerInsights(
+      segment: segment,
+      purchaseHistory: sales,
+      completedSalesTotal: total,
+      lastPurchaseAt: lastPurchaseAt,
+    );
+  }
+
+  CustomerSegment _segmentFor({
+    required Customer customer,
+    required List<Sale> completedSales,
+    required double completedSalesTotal,
+    required DateTime? lastPurchaseAt,
+    required DateTime now,
+  }) {
+    // Segments are transparent, local labels rather than hidden scoring:
+    // VIP = 10 completed purchases or PHP 10,000 completed spend; at-risk =
+    // a prior purchase but no purchase in 90 days.
+    if (completedSales.length >= 10 || completedSalesTotal >= 10000) {
+      return CustomerSegment.vip;
+    }
+    if (lastPurchaseAt != null && now.difference(lastPurchaseAt).inDays > 90) {
+      return CustomerSegment.atRisk;
+    }
+    if (completedSales.isEmpty &&
+        now.difference(customer.createdAt).inDays <= 30) {
+      return CustomerSegment.newCustomer;
+    }
+    return CustomerSegment.regular;
+  }
+
+  /// Calculates a visible, FIFO loyalty-expiry forecast.  It does not deduct
+  /// points automatically: an owner must review the policy and take any
+  /// action deliberately.  The current policy is 365 days from earning.
+  Future<LoyaltyExpirySummary> getLoyaltyExpirySummary(
+    int customerId, {
+    Duration validity = const Duration(days: 365),
+    Duration warningWindow = const Duration(days: 30),
+  }) async {
+    final entries = await getLedger(customerId);
+    final earns =
+        entries
+            .where((entry) => entry.entryType == LoyaltyEntryType.earn)
+            .map((entry) => _ExpiringPoints(entry.createdAt, entry.points))
+            .toList()
+          ..sort((a, b) => a.earnedAt.compareTo(b.earnedAt));
+
+    // Redemptions consume the oldest earned points first.
+    var pointsRedeemed = entries
+        .where((entry) => entry.entryType == LoyaltyEntryType.redeem)
+        .fold<int>(0, (sum, entry) => sum + entry.points.abs());
+    for (final earn in earns) {
+      final used = pointsRedeemed.clamp(0, earn.remainingPoints);
+      earn.remainingPoints -= used;
+      pointsRedeemed -= used;
+    }
+
+    final now = DateTime.now();
+    final warningEnd = now.add(warningWindow);
+    DateTime? nextExpiry;
+    var expiringSoon = 0;
+    for (final earn in earns.where((entry) => entry.remainingPoints > 0)) {
+      final expiry = earn.earnedAt.add(validity);
+      if (nextExpiry == null || expiry.isBefore(nextExpiry)) {
+        nextExpiry = expiry;
+      }
+      if (!expiry.isBefore(now) && !expiry.isAfter(warningEnd)) {
+        expiringSoon += earn.remainingPoints;
+      }
+    }
+    return LoyaltyExpirySummary(
+      policyStartDate: now.subtract(validity),
+      nextExpiryDate: nextExpiry,
+      pointsExpiringSoon: expiringSoon,
+    );
   }
 
   Future<void> deactivateCustomer(int id) {
@@ -124,4 +314,11 @@ class CustomerService {
       ),
     );
   }
+}
+
+class _ExpiringPoints {
+  final DateTime earnedAt;
+  int remainingPoints;
+
+  _ExpiringPoints(this.earnedAt, this.remainingPoints);
 }

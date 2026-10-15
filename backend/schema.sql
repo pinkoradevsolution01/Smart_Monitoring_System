@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS products (
   low_stock_threshold INT NOT NULL DEFAULT 5,
   shoe_sizes JSON NULL,
   size_type VARCHAR(32) NULL,
+  expiration_date DATE NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_products_business (business_id),

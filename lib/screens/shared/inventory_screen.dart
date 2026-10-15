@@ -827,6 +827,32 @@ class _InventoryScreenState extends State<InventoryScreen>
                     ],
                   ),
                   const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _showStockAdjustmentDialog(product);
+                          },
+                          icon: const Icon(Icons.tune),
+                          label: const Text('Adjust stock'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _showMovementHistory(product);
+                          },
+                          icon: const Icon(Icons.history),
+                          label: const Text('Stock history'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -1371,6 +1397,269 @@ class _InventoryScreenState extends State<InventoryScreen>
     );
   }
 
+  void _showStockAdjustmentDialog(Product product) {
+    final quantityController = TextEditingController();
+    final reasonController = TextEditingController();
+    var direction = 1;
+    ShoeSize? selectedSize = product.hasShoeVariants
+        ? product.shoeSizes!.first
+        : null;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.tune),
+              SizedBox(width: 8),
+              Expanded(child: Text('Stock adjustment')),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                if (product.hasShoeVariants)
+                  DropdownButtonFormField<ShoeSize>(
+                    initialValue: selectedSize,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Product size',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: product.shoeSizes!
+                        .map(
+                          (size) => DropdownMenuItem(
+                            value: size,
+                            child: Text(
+                              'US ${size.usSize} • ${size.quantity} in stock',
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) =>
+                        setDialogState(() => selectedSize = value),
+                  )
+                else
+                  Text('Current stock: ${product.quantity}'),
+                if (product.hasShoeVariants) const SizedBox(height: 8),
+                if (product.hasShoeVariants)
+                  Text('Current stock: ${selectedSize?.quantity ?? 0}'),
+                const SizedBox(height: 12),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 1,
+                      label: Text('Increase'),
+                      icon: Icon(Icons.add),
+                    ),
+                    ButtonSegment(
+                      value: -1,
+                      label: Text('Decrease'),
+                      icon: Icon(Icons.remove),
+                    ),
+                  ],
+                  selected: {direction},
+                  onSelectionChanged: (value) =>
+                      setDialogState(() => direction = value.first),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: quantityController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason *',
+                    hintText: 'Example: physical count correction',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Every adjustment is recorded in stock history for review.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppLocalizations.t('cancel')),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final quantity = int.tryParse(quantityController.text.trim());
+                final reason = reasonController.text.trim();
+                if (quantity == null || quantity <= 0 || reason.isEmpty) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Enter a positive quantity and adjustment reason.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final current = product.hasShoeVariants
+                    ? selectedSize?.quantity ?? 0
+                    : product.quantity;
+                if (direction < 0 && quantity > current) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Only $current unit(s) are available to decrease.',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+
+                final productBefore = product.hasShoeVariants
+                    ? product.totalQuantity
+                    : product.quantity;
+                late Product updated;
+                if (product.hasShoeVariants) {
+                  final selected = selectedSize!;
+                  final updatedSizes = product.shoeSizes!.map((size) {
+                    if (size.usSize == selected.usSize &&
+                        size.ukSize == selected.ukSize &&
+                        size.euSize == selected.euSize) {
+                      return size.copyWith(
+                        quantity: size.quantity + (direction * quantity),
+                      );
+                    }
+                    return size;
+                  }).toList();
+                  updated = product.copyWith(shoeSizes: updatedSizes);
+                } else {
+                  updated = product.copyWith(
+                    quantity: product.quantity + (direction * quantity),
+                  );
+                }
+                await pos.updateProduct(updated);
+                final productAfter = updated.hasShoeVariants
+                    ? updated.totalQuantity
+                    : updated.quantity;
+                await db.recordInventoryMovement(
+                  InventoryMovement(
+                    productId: product.id!,
+                    quantityBefore: productBefore,
+                    quantityAfter: productAfter,
+                    quantityChanged: direction * quantity,
+                    movementType: 'adjustment',
+                    reference: 'ADJ-${DateTime.now().millisecondsSinceEpoch}',
+                    reason: product.hasShoeVariants
+                        ? '$reason (US ${selectedSize!.usSize})'
+                        : reason,
+                    movementDate: DateTime.now(),
+                  ),
+                );
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                await _loadProducts();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Stock adjusted: ${direction > 0 ? '+' : '-'}$quantity for ${product.name}.',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              child: const Text('Save adjustment'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMovementHistory(Product product) async {
+    final movements = await db.getProductMovements(product.id!);
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .70,
+          minChildSize: .40,
+          maxChildSize: .95,
+          builder: (ctx, controller) => Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: Text('${product.name} stock history'),
+                subtitle: Text('${movements.length} recorded movement(s)'),
+                trailing: IconButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: movements.isEmpty
+                    ? const Center(
+                        child: Text('No stock movements recorded yet.'),
+                      )
+                    : ListView.separated(
+                        controller: controller,
+                        itemCount: movements.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (ctx, index) {
+                          final movement = movements[index];
+                          final positive = movement.quantityChanged >= 0;
+                          return ListTile(
+                            leading: Icon(
+                              positive
+                                  ? Icons.add_circle_outline
+                                  : Icons.remove_circle_outline,
+                              color: positive ? Colors.green : Colors.red,
+                            ),
+                            title: Text(movement.reason),
+                            subtitle: Text(
+                              '${movement.movementType} • ${movement.movementDate.toLocal().toString().split('.').first}\n${movement.reference}',
+                            ),
+                            isThreeLine: true,
+                            trailing: Text(
+                              '${positive ? '+' : ''}${movement.quantityChanged}\n${movement.quantityBefore} → ${movement.quantityAfter}',
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                color: positive ? Colors.green : Colors.red,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showDamageDialog(Product product) {
     final quantityController = TextEditingController();
     final reasonController = TextEditingController();
@@ -1493,6 +1782,18 @@ class _InventoryScreenState extends State<InventoryScreen>
                   quantity: product.quantity - qty,
                 );
                 await pos.updateProduct(updated);
+                await db.recordInventoryMovement(
+                  InventoryMovement(
+                    productId: product.id!,
+                    quantityBefore: product.quantity,
+                    quantityAfter: product.quantity - qty,
+                    quantityChanged: -qty,
+                    movementType: 'damage',
+                    reference: 'DMG-${DateTime.now().millisecondsSinceEpoch}',
+                    reason: reason.isEmpty ? 'Damaged item' : reason,
+                    movementDate: DateTime.now(),
+                  ),
+                );
 
                 // Reload damage reports
                 await _loadDamageReports();

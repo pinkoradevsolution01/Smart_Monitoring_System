@@ -13,6 +13,10 @@ class Product {
   final String category;
   final String? imagePath;
   final DateTime createdAt;
+
+  /// Optional best-before/expiry date. It is informational for stock review;
+  /// selling an expired item still requires an explicit staff decision.
+  final DateTime? expirationDate;
   final List<ShoeSize>? shoeSizes; // For shoe store products
   final String? sizeType; // 'men', 'women', 'unisex' for shoe products
 
@@ -28,6 +32,7 @@ class Product {
     required this.category,
     this.imagePath,
     required this.createdAt,
+    this.expirationDate,
     this.shoeSizes,
     this.sizeType,
   });
@@ -58,6 +63,7 @@ class Product {
       'category': category,
       'imagePath': imagePath,
       'createdAt': createdAt.toIso8601String(),
+      'expirationDate': expirationDate?.toIso8601String(),
       'shoeSizes': shoeSizes != null
           ? jsonEncode(shoeSizes!.map((s) => s.toMap()).toList())
           : null,
@@ -88,6 +94,9 @@ class Product {
       category: map['category'] as String,
       imagePath: map['imagePath'] as String?,
       createdAt: DateTime.parse(map['createdAt'] as String),
+      expirationDate: map['expirationDate'] == null
+          ? null
+          : DateTime.tryParse(map['expirationDate'].toString()),
       shoeSizes: shoeSizes,
       sizeType: map['sizeType'] as String?,
     );
@@ -106,6 +115,8 @@ class Product {
     String? imagePath,
     bool clearImagePath = false,
     DateTime? createdAt,
+    DateTime? expirationDate,
+    bool clearExpirationDate = false,
     List<ShoeSize>? shoeSizes,
     String? sizeType,
   }) {
@@ -121,6 +132,9 @@ class Product {
       category: category ?? this.category,
       imagePath: clearImagePath ? null : (imagePath ?? this.imagePath),
       createdAt: createdAt ?? this.createdAt,
+      expirationDate: clearExpirationDate
+          ? null
+          : (expirationDate ?? this.expirationDate),
       shoeSizes: shoeSizes ?? this.shoeSizes,
       sizeType: sizeType ?? this.sizeType,
     );

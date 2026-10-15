@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import '../../utils/currency_formatter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -146,6 +147,208 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
     }
   }
 
+  Future<void> _previewProductImport() async {
+    final selected = await FilePicker.pickFile(
+      type: FileType.custom,
+      allowedExtensions: ['csv'],
+    );
+    if (selected == null || !mounted) return;
+
+    try {
+      final filePath = selected.path;
+      if (filePath == null) {
+        throw const FormatException('The selected CSV could not be read.');
+      }
+      final bytes = await File(filePath).readAsBytes();
+      if (bytes.isEmpty) {
+        throw const FormatException('The selected CSV could not be read.');
+      }
+      final rows = _parseCsv(utf8.decode(bytes, allowMalformed: true));
+      if (rows.length < 2) {
+        throw const FormatException(
+          'The CSV must include a header and at least one product row.',
+        );
+      }
+      final headers = rows.first
+          .map((value) => value.trim().toLowerCase())
+          .toList(growable: false);
+      const required = [
+        'barcode',
+        'name',
+        'buyingprice',
+        'sellingprice',
+        'quantity',
+        'reorderlevel',
+        'category',
+      ];
+      final missing = required
+          .where((name) => !headers.contains(name))
+          .toList();
+      if (missing.isNotEmpty) {
+        throw FormatException(
+          'Missing required column(s): ${missing.join(', ')}.',
+        );
+      }
+
+      final existingBarcodes = _posService.products
+          .map((product) => product.barcode.trim().toLowerCase())
+          .toSet();
+      final seenBarcodes = <String>{};
+      final previewRows = <_ProductImportRow>[];
+      for (var index = 1; index < rows.length; index++) {
+        if (rows[index].every((value) => value.trim().isEmpty)) continue;
+        final row = _ProductImportRow.fromCsv(
+          rowNumber: index + 1,
+          headers: headers,
+          values: rows[index],
+        );
+        final barcode = row.barcode.trim().toLowerCase();
+        if (barcode.isNotEmpty && existingBarcodes.contains(barcode)) {
+          row.errors.add('Barcode already exists in this business.');
+        }
+        if (barcode.isNotEmpty && !seenBarcodes.add(barcode)) {
+          row.errors.add('Duplicate barcode within this import file.');
+        }
+        previewRows.add(row);
+      }
+      final remainingSlots =
+          _packageService.maxProducts - _posService.products.length;
+      final validRows = previewRows.where((row) => row.isValid).toList();
+      if (validRows.length > remainingSlots) {
+        final allowed = remainingSlots.clamp(0, validRows.length);
+        for (final row in validRows.skip(allowed)) {
+          row.errors.add(
+            'Package product limit reached; ${remainingSlots < 0 ? 0 : remainingSlots} slot(s) remain.',
+          );
+        }
+      }
+      if (!mounted) return;
+      await _showImportPreview(previewRows);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not preview product import: $error')),
+      );
+    }
+  }
+
+  Future<void> _showImportPreview(List<_ProductImportRow> rows) async {
+    final valid = rows.where((row) => row.isValid).toList();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Product import preview'),
+        content: SizedBox(
+          width: 620,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${valid.length} valid • ${rows.length - valid.length} need correction',
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Nothing has been imported yet. Review invalid rows before confirming.',
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: rows.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final row = rows[index];
+                    return ListTile(
+                      dense: true,
+                      leading: Icon(
+                        row.isValid
+                            ? Icons.check_circle_outline
+                            : Icons.error_outline,
+                        color: row.isValid ? Colors.green : Colors.red,
+                      ),
+                      title: Text(
+                        'Row ${row.rowNumber}: ${row.name.isEmpty ? '(unnamed product)' : row.name}',
+                      ),
+                      subtitle: Text(
+                        row.isValid
+                            ? '${row.barcode} • ${row.quantity} unit(s)'
+                            : row.errors.join(' '),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: valid.isEmpty
+                ? null
+                : () => Navigator.pop(context, true),
+            icon: const Icon(Icons.upload),
+            label: Text('Import ${valid.length} valid row(s)'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var imported = 0;
+    for (final row in valid) {
+      await _posService.addProduct(row.toProduct());
+      imported++;
+    }
+    await _loadProducts();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Imported $imported product(s).')));
+  }
+
+  List<List<String>> _parseCsv(String source) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    var field = StringBuffer();
+    var quoted = false;
+    for (var index = 0; index < source.length; index++) {
+      final char = source[index];
+      if (char == '"') {
+        if (quoted && index + 1 < source.length && source[index + 1] == '"') {
+          field.write('"');
+          index++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (char == ',' && !quoted) {
+        row.add(field.toString());
+        field = StringBuffer();
+      } else if ((char == '\n' || char == '\r') && !quoted) {
+        if (char == '\r' &&
+            index + 1 < source.length &&
+            source[index + 1] == '\n') {
+          index++;
+        }
+        row.add(field.toString());
+        rows.add(row);
+        row = <String>[];
+        field = StringBuffer();
+      } else {
+        field.write(char);
+      }
+    }
+    if (field.length > 0 || row.isNotEmpty) {
+      row.add(field.toString());
+      rows.add(row);
+    }
+    return rows;
+  }
+
   @override
   Widget build(BuildContext context) {
     final lowStockCount = _posService.products.where((p) => p.lowStock).length;
@@ -154,6 +357,11 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
       appBar: AppBar(
         title: Text(AppLocalizations.t('manage_products_title')),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.upload_file),
+            tooltip: 'Preview product CSV import',
+            onPressed: _previewProductImport,
+          ),
           if (lowStockCount > 0)
             IconButton(
               icon: Badge(
@@ -265,6 +473,101 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
   }
 }
 
+class _ProductImportRow {
+  _ProductImportRow({
+    required this.rowNumber,
+    required this.barcode,
+    required this.name,
+    required this.description,
+    required this.buyingPrice,
+    required this.sellingPrice,
+    required this.quantity,
+    required this.reorderLevel,
+    required this.category,
+    required this.expirationDate,
+  });
+
+  final int rowNumber;
+  final String barcode;
+  final String name;
+  final String? description;
+  final double buyingPrice;
+  final double sellingPrice;
+  final int quantity;
+  final int reorderLevel;
+  final String category;
+  final DateTime? expirationDate;
+  final List<String> errors = <String>[];
+
+  bool get isValid => errors.isEmpty;
+
+  factory _ProductImportRow.fromCsv({
+    required int rowNumber,
+    required List<String> headers,
+    required List<String> values,
+  }) {
+    String value(String key) {
+      final index = headers.indexOf(key);
+      return index >= 0 && index < values.length ? values[index].trim() : '';
+    }
+
+    final row = _ProductImportRow(
+      rowNumber: rowNumber,
+      barcode: value('barcode'),
+      name: value('name'),
+      description: value('description').isEmpty ? null : value('description'),
+      buyingPrice: double.tryParse(value('buyingprice')) ?? -1,
+      sellingPrice: double.tryParse(value('sellingprice')) ?? -1,
+      quantity: int.tryParse(value('quantity')) ?? -1,
+      reorderLevel: int.tryParse(value('reorderlevel')) ?? -1,
+      category: value('category'),
+      expirationDate: value('expirationdate').isEmpty
+          ? null
+          : DateTime.tryParse(value('expirationdate')),
+    );
+    if (row.barcode.isEmpty) {
+      row.errors.add('Barcode is required.');
+    }
+    if (row.name.isEmpty) {
+      row.errors.add('Name is required.');
+    }
+    if (row.category.isEmpty) {
+      row.errors.add('Category is required.');
+    }
+    if (row.buyingPrice < 0) {
+      row.errors.add('Buying price must be zero or greater.');
+    }
+    if (row.sellingPrice < 0) {
+      row.errors.add('Selling price must be zero or greater.');
+    }
+    if (row.quantity < 0) {
+      row.errors.add('Quantity must be a whole number of zero or greater.');
+    }
+    if (row.reorderLevel < 0) {
+      row.errors.add(
+        'Reorder level must be a whole number of zero or greater.',
+      );
+    }
+    if (value('expirationdate').isNotEmpty && row.expirationDate == null) {
+      row.errors.add('Expiration date must use YYYY-MM-DD.');
+    }
+    return row;
+  }
+
+  Product toProduct() => Product(
+    barcode: barcode,
+    name: name,
+    description: description,
+    buyingPrice: buyingPrice,
+    sellingPrice: sellingPrice,
+    quantity: quantity,
+    reorderLevel: reorderLevel,
+    category: category,
+    createdAt: DateTime.now(),
+    expirationDate: expirationDate,
+  );
+}
+
 class ProductListTile extends StatelessWidget {
   final Product product;
   final VoidCallback onEdit;
@@ -343,6 +646,19 @@ class ProductListTile extends StatelessWidget {
               '${AppLocalizations.t('reorder_level')}: ${product.reorderLevel} | ${AppLocalizations.t('profit')}: ${AppCurrency.peso(product.profit)}',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
+            if (product.expirationDate != null)
+              Text(
+                'Expiry: ${product.expirationDate!.toLocal().toString().split(' ').first}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: product.expirationDate!.isBefore(DateTime.now())
+                      ? Colors.red
+                      : Colors.grey.shade600,
+                  fontWeight: product.expirationDate!.isBefore(DateTime.now())
+                      ? FontWeight.bold
+                      : null,
+                ),
+              ),
           ],
         ),
         trailing: PopupMenuButton(
@@ -408,6 +724,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late TextEditingController _quantityController;
   late TextEditingController _reorderLevelController;
   String? _imagePath;
+  DateTime? _expirationDate;
   bool _isSubmitting = false;
 
   // Shoe size related fields
@@ -436,6 +753,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       text: p?.reorderLevel.toString() ?? '5',
     );
     _imagePath = p?.imagePath;
+    _expirationDate = p?.expirationDate;
 
     // Initialize shoe size data if editing existing product
     if (p?.shoeSizes != null && p!.shoeSizes!.isNotEmpty) {
@@ -472,6 +790,20 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       setState(() {
         _imagePath = file!.path;
       });
+    }
+  }
+
+  Future<void> _pickExpirationDate() async {
+    final initial = _expirationDate ?? DateTime.now();
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(DateTime(2000)) ? DateTime.now() : initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Select expiry / best-before date',
+    );
+    if (selected != null && mounted) {
+      setState(() => _expirationDate = selected);
     }
   }
 
@@ -670,6 +1002,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         reorderLevel: reorderLevel,
         imagePath: _imagePath,
         createdAt: widget.product?.createdAt ?? DateTime.now(),
+        expirationDate: _expirationDate,
         shoeSizes: finalShoeSizes,
         sizeType: _selectedSizeType,
       );
@@ -865,6 +1198,44 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       ),
                     ),
                   ],
+                ),
+
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Expiry / best-before date (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event_outlined),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _expirationDate == null
+                              ? 'Not set'
+                              : _expirationDate!
+                                    .toLocal()
+                                    .toString()
+                                    .split(' ')
+                                    .first,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _pickExpirationDate,
+                        child: Text(
+                          _expirationDate == null ? 'Set date' : 'Change',
+                        ),
+                      ),
+                      if (_expirationDate != null)
+                        IconButton(
+                          tooltip: 'Clear expiry date',
+                          onPressed: () =>
+                              setState(() => _expirationDate = null),
+                          icon: const Icon(Icons.clear),
+                        ),
+                    ],
+                  ),
                 ),
 
                 // Shoe Size Selection (Only for Shoe Store business type)

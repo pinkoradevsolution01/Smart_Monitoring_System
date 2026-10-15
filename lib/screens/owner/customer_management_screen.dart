@@ -51,6 +51,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 
   Future<void> _openStatusDialog(Customer customer) async {
     final ledger = await _customerService.getLedger(customer.id!);
+    final insights = await _customerService.getInsights(customer);
+    final expiry = await _customerService.getLoyaltyExpirySummary(customer.id!);
     final totalPointsEarned = ledger
         .where((e) => e.entryType == LoyaltyEntryType.earn)
         .fold(0, (sum, e) => sum + e.points);
@@ -89,6 +91,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                   totalPointsRedeemed,
                 ),
                 const SizedBox(height: 16),
+                _buildInsightsCard(customer, insights, expiry),
+                const SizedBox(height: 16),
                 Text(
                   'Recent Activity',
                   style: Theme.of(
@@ -109,6 +113,14 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
             icon: const Icon(Icons.download),
             label: const Text('Export PDF'),
           ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _openPurchaseHistory(customer, insights);
+            },
+            icon: const Icon(Icons.receipt_long_outlined),
+            label: const Text('Purchase history'),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
@@ -116,6 +128,186 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildInsightsCard(
+    Customer customer,
+    CustomerInsights insights,
+    LoyaltyExpirySummary expiry,
+  ) {
+    final color = switch (insights.segment) {
+      CustomerSegment.vip => Colors.purple,
+      CustomerSegment.atRisk => Colors.orange,
+      CustomerSegment.regular => Colors.blue,
+      CustomerSegment.newCustomer => Colors.teal,
+    };
+    final nextExpiry = expiry.nextExpiryDate;
+    return Card(
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.insights_outlined, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  'Customer insights',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Chip(
+                  label: Text(insights.segmentLabel),
+                  side: BorderSide(color: color.withValues(alpha: .4)),
+                  backgroundColor: color.withValues(alpha: .10),
+                  labelStyle: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${insights.purchaseHistory.length} completed purchase(s) • '
+              '₱ ${insights.completedSalesTotal.toStringAsFixed(2)} total spend',
+            ),
+            Text(
+              insights.lastPurchaseAt == null
+                  ? 'No completed purchase yet'
+                  : 'Last purchase: ${insights.lastPurchaseAt!.toLocal().toString().split(' ').first}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              expiry.pointsExpiringSoon > 0
+                  ? '${expiry.pointsExpiringSoon} loyalty point(s) may expire within 30 days.'
+                  : nextExpiry == null
+                  ? 'No earned loyalty points are awaiting expiry.'
+                  : 'Next loyalty-point expiry: ${nextExpiry.toLocal().toString().split(' ').first}.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Segments are based on completed purchases. Loyalty expiry is a 365-day forecast and never deducts points automatically.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPurchaseHistory(
+    Customer customer,
+    CustomerInsights insights,
+  ) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: .65,
+          minChildSize: .40,
+          maxChildSize: .95,
+          builder: (context, controller) => Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.receipt_long_outlined),
+                title: Text('${customer.fullName} purchase history'),
+                subtitle: Text(
+                  '${insights.purchaseHistory.length} completed purchase(s)',
+                ),
+                trailing: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: insights.purchaseHistory.isEmpty
+                    ? const Center(child: Text('No completed purchases yet.'))
+                    : ListView.separated(
+                        controller: controller,
+                        itemCount: insights.purchaseHistory.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final sale = insights.purchaseHistory[index];
+                          return ListTile(
+                            title: Text(sale.saleNumber),
+                            subtitle: Text(
+                              '${sale.saleDate.toLocal().toString().split('.').first} • ${sale.itemCount} item(s)',
+                            ),
+                            trailing: Text(
+                              '₱ ${sale.totalAmount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _scanCustomerCode() async {
+    final controller = TextEditingController();
+    Customer? matched;
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Scan or enter customer code'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            labelText: 'Customer barcode / QR value',
+            hintText: 'Scan using a connected scanner or type the code',
+            prefixIcon: Icon(Icons.qr_code_scanner),
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => Navigator.pop(context, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Find customer'),
+          ),
+        ],
+      ),
+    );
+    final code = controller.text.trim();
+    controller.dispose();
+    if (submitted != true || code.isEmpty || !mounted) return;
+    matched = await _customerService.getCustomerByBarcode(code);
+    if (!mounted) return;
+    if (matched == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No customer matches that barcode or QR value.'),
+        ),
+      );
+      return;
+    }
+    await _openStatusDialog(matched);
   }
 
   Widget _buildSummaryCard(Customer customer) {
@@ -769,6 +961,11 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
         title: Text(AppLocalizations.t('customer_management')),
         elevation: 2,
         actions: [
+          IconButton(
+            onPressed: _scanCustomerCode,
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Scan customer barcode or QR',
+          ),
           IconButton(onPressed: _reload, icon: const Icon(Icons.refresh)),
           IconButton(
             onPressed: () => _openCustomerDialog(),
@@ -901,12 +1098,17 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
                                 ),
                                 ListTile(
                                   leading: const Icon(Icons.history),
-                                  title: Text(
-                                    AppLocalizations.t('points_history'),
-                                  ),
+                                  title: const Text('Purchase history'),
                                   onTap: () {
                                     Navigator.pop(context);
-                                    _openLedger(customer);
+                                    _customerService
+                                        .getInsights(customer)
+                                        .then(
+                                          (insights) => _openPurchaseHistory(
+                                            customer,
+                                            insights,
+                                          ),
+                                        );
                                   },
                                 ),
                                 ListTile(
@@ -1011,6 +1213,8 @@ class _CustomerFormDialog extends StatefulWidget {
 class _CustomerFormDialogState extends State<_CustomerFormDialog> {
   late final TextEditingController _fullNameController;
   late final TextEditingController _emailController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _addressController;
   var _isSaving = false;
 
   @override
@@ -1022,12 +1226,20 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
     _emailController = TextEditingController(
       text: widget.customer?.email ?? '',
     );
+    _phoneController = TextEditingController(
+      text: widget.customer?.phoneNumber ?? '',
+    );
+    _addressController = TextEditingController(
+      text: widget.customer?.address ?? '',
+    );
   }
 
   @override
   void dispose() {
     _fullNameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
     super.dispose();
   }
 
@@ -1048,12 +1260,24 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
             email: _emailController.text.trim().isEmpty
                 ? null
                 : _emailController.text.trim(),
+            phoneNumber: _phoneController.text.trim().isEmpty
+                ? null
+                : _phoneController.text.trim(),
+            address: _addressController.text.trim().isEmpty
+                ? null
+                : _addressController.text.trim(),
           )
         : customer.copyWith(
             fullName: _fullNameController.text.trim(),
             email: _emailController.text.trim().isEmpty
                 ? null
                 : _emailController.text.trim(),
+            phoneNumber: _phoneController.text.trim().isEmpty
+                ? null
+                : _phoneController.text.trim(),
+            address: _addressController.text.trim().isEmpty
+                ? null
+                : _addressController.text.trim(),
           );
 
     try {
@@ -1101,6 +1325,27 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
                 border: const OutlineInputBorder(),
               ),
               keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _phoneController,
+              enabled: !_isSaving,
+              decoration: const InputDecoration(
+                labelText: 'Phone number',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _addressController,
+              enabled: !_isSaving,
+              decoration: const InputDecoration(
+                labelText: 'Address',
+                border: OutlineInputBorder(),
+              ),
+              textCapitalization: TextCapitalization.words,
+              maxLines: 2,
             ),
           ],
         ),

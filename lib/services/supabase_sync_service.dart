@@ -774,6 +774,7 @@ class SupabaseSyncService extends ChangeNotifier {
                   ? jsonEncode(p.shoeSizes!.map((s) => s.toMap()).toList())
                   : null,
               'size_type': p.sizeType,
+              'expiration_date': p.expirationDate?.toIso8601String(),
               'created_at': p.createdAt.toIso8601String(),
               'updated_at': DateTime.now().toIso8601String(),
             },
@@ -1552,6 +1553,9 @@ class SupabaseSyncService extends ChangeNotifier {
           category: data['category'] ?? 'General',
           imagePath: data['image_path'],
           createdAt: _asDateTime(data['created_at']),
+          expirationDate: data['expiration_date'] == null
+              ? null
+              : DateTime.tryParse(data['expiration_date'].toString()),
           shoeSizes: _parseShoeSizes(data['shoe_sizes']),
           sizeType: data['size_type']?.toString(),
         );

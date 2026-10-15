@@ -449,8 +449,8 @@ router.post('/push', async (req, res) => {
       for (const product of products) {
         await connection.execute(
           `INSERT INTO products
-            (id, business_id, barcode, name, description, buying_price, category, selling_price, quantity, image_path, low_stock_threshold, shoe_sizes, size_type, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, business_id, barcode, name, description, buying_price, category, selling_price, quantity, image_path, low_stock_threshold, shoe_sizes, size_type, expiration_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               barcode = VALUES(barcode),
               name = VALUES(name),
@@ -463,6 +463,7 @@ router.post('/push', async (req, res) => {
               low_stock_threshold = VALUES(low_stock_threshold),
               shoe_sizes = VALUES(shoe_sizes),
               size_type = VALUES(size_type),
+              expiration_date = VALUES(expiration_date),
               updated_at = VALUES(updated_at)`,
           [
             product.id,
@@ -478,6 +479,7 @@ router.post('/push', async (req, res) => {
             product.low_stock_threshold,
             product.shoe_sizes,
             product.size_type,
+            toMySqlDate(product.expiration_date),
             toMySqlDateTime(product.created_at, new Date()),
             toMySqlDateTime(product.updated_at, new Date()),
           ],

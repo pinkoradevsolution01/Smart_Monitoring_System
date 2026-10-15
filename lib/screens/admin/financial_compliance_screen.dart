@@ -193,6 +193,26 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
     }
   }
 
+  Future<void> _previewPdfReport() async {
+    final report = _report;
+    if (report == null) return;
+    setState(() => _exporting = true);
+    try {
+      final bytes = await _buildPdfReport(report);
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_friendlyPdfError(error)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<Uint8List> _buildPdfReport(Map<String, dynamic> report) async {
     final zReading = _map(report['zReading']);
     final vat = _map(report['vatSummary']);
@@ -201,6 +221,7 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
     final expenseCategories = _maps(profit['expensesByCategory']);
     final sales = _maps(report['eSales']);
     final generatedAt = _displayDateTime(zReading['generatedAt']);
+    final reportNumber = 'FBR-${_fileDate(_from)}-${_fileDate(_to)}';
     // The default PDF Helvetica fonts cannot draw Philippine currency, Filipino
     // names, en dashes, or other Unicode characters. Embed the application's
     // offline Inter font in every report instead.
@@ -312,6 +333,11 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
                 pw.Text(
                   'Reporting period: ${_displayDate(_from)} to ${_displayDate(_to)}',
                   style: pw.TextStyle(fontSize: 10, color: PdfColors.white),
+                ),
+                pw.SizedBox(height: 3),
+                pw.Text(
+                  'Report no. $reportNumber',
+                  style: pw.TextStyle(fontSize: 9, color: PdfColors.white),
                 ),
               ],
             ),
@@ -523,6 +549,11 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
         title: const Text('Financial & BIR-ready reports'),
         actions: [
           IconButton(
+            tooltip: 'Print preview',
+            onPressed: _loading || _exporting ? null : _previewPdfReport,
+            icon: const Icon(Icons.print_outlined),
+          ),
+          IconButton(
             tooltip: 'Choose date range',
             onPressed: _loading ? null : _pickRange,
             icon: const Icon(Icons.date_range_outlined),
@@ -632,7 +663,6 @@ pw.Widget _pdfMetric(
   decoration: pw.BoxDecoration(
     color: background,
     border: pw.Border(left: pw.BorderSide(color: accent, width: 3)),
-    borderRadius: pw.BorderRadius.circular(5),
   ),
   child: pw.Column(
     crossAxisAlignment: pw.CrossAxisAlignment.start,

@@ -199,6 +199,7 @@ async function ensureSalesAndCustomerRelations() {
   await ensureColumn('customers', 'business_id', 'VARCHAR(64) NULL');
   await ensureColumn('products', 'description', 'TEXT NULL');
   await ensureColumn('products', 'buying_price', 'DECIMAL(12, 2) NOT NULL DEFAULT 0.00');
+  await ensureColumn('products', 'expiration_date', 'DATE NULL');
   await ensureColumn('sales', 'reference_code', 'VARCHAR(255) NULL');
   await ensureColumn('sales', 'image_path', 'TEXT NULL');
   await ensureColumn('sales', 'cancelled_reason', 'TEXT NULL');

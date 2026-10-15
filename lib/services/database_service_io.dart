@@ -171,7 +171,7 @@ class DatabaseService {
 
     final db = await openDatabase(
       path,
-      version: 24,
+      version: 25,
       onCreate: (db, version) {
         debugPrint('🆕 Creating new database (version $version)');
         return _createTables(db, version);
@@ -217,6 +217,7 @@ class DatabaseService {
         category TEXT NOT NULL,
         imagePath TEXT,
         createdAt TEXT NOT NULL,
+        expirationDate TEXT,
         shoeSizes TEXT,
         sizeType TEXT
       )
@@ -990,6 +991,13 @@ class DatabaseService {
       await db.execute(
         'CREATE UNIQUE INDEX IF NOT EXISTS idx_loyalty_ledger_syncId ON loyalty_ledger(syncId)',
       );
+    }
+    if (oldVersion < 25) {
+      try {
+        await db.execute('ALTER TABLE products ADD COLUMN expirationDate TEXT');
+      } catch (_) {
+        // The column may already exist after an interrupted upgrade.
+      }
     }
   }
 
