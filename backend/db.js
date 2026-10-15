@@ -418,6 +418,26 @@ async function ensureSmartPlusEmailDeliveriesTable() {
   `);
 }
 
+// Operational events are intentionally server-authored. They provide the
+// developer portal with safe, aggregate observability without storing client
+// secrets or relying on a device to report its own health.
+async function ensureOperationalEventsTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS operational_events (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      business_id VARCHAR(64) NULL,
+      event_type VARCHAR(64) NOT NULL,
+      severity ENUM('info', 'warning', 'error') NOT NULL DEFAULT 'info',
+      message VARCHAR(500) NOT NULL,
+      metadata_json JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_operational_events_type_created (event_type, created_at),
+      KEY idx_operational_events_severity_created (severity, created_at),
+      KEY idx_operational_events_business_created (business_id, created_at)
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -441,6 +461,7 @@ async function initDb() {
   await ensureOwnerPinResetTokensTable();
   await ensureExpensesTable();
   await ensureSmartPlusEmailDeliveriesTable();
+  await ensureOperationalEventsTable();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);

@@ -164,6 +164,40 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
       }
       await Future.delayed(const Duration(milliseconds: 300));
 
+      // Test 3: Developer-only operational status. This endpoint exposes
+      // aggregate platform telemetry only; it never returns tenant records.
+      setState(() => _status = 'Loading system health and sync status...');
+      final operational = await _api.get('developer/system-health');
+      final data = operational['data'];
+      if (data is! Map) {
+        throw Exception('System health response was incomplete');
+      }
+      final backend = data['backend'] is Map
+          ? data['backend'] as Map
+          : const {};
+      final sync = data['sync'] is Map ? data['sync'] as Map : const {};
+      final email = data['email'] is Map ? data['email'] as Map : const {};
+      final recentErrors = data['recentErrors'] is List
+          ? data['recentErrors'] as List
+          : const [];
+      _addResult(true, 'API latency: ${backend['latencyMs'] ?? 'unknown'} ms');
+      _addResult(
+        true,
+        'Last successful sync: ${sync['lastSyncAt'] ?? 'No sync recorded'}',
+      );
+      _addResult(
+        (sync['failedLast24Hours'] as num? ?? 0) == 0,
+        'Failed syncs (24h): ${sync['failedLast24Hours'] ?? 0}',
+      );
+      _addResult(
+        email['configured'] == true,
+        'Owner email delivery: ${email['configured'] == true ? 'configured' : 'not configured'} · sent ${email['sentLast24Hours'] ?? 0} · failed ${email['failedLast24Hours'] ?? 0}',
+      );
+      _addResult(
+        recentErrors.isEmpty,
+        'Recent operational errors: ${recentErrors.length}',
+      );
+
       // Final result
       final failedTests = _testResults.where((r) => r.startsWith('❌')).length;
       if (failedTests == 0) {

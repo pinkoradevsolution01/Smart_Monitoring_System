@@ -1,6 +1,7 @@
 const express = require('express');
 const { query, getConnection } = require('../db');
 const { dispatchOwnerDigest } = require('../services/smartplus_owner_notifications');
+const { recordOperationalEvent } = require('../services/operational_events');
 const router = express.Router();
 const SYNC_ROLES = new Set(['owner', 'admin', 'manager']);
 
@@ -764,10 +765,23 @@ router.post('/push', async (req, res) => {
     void dispatchOwnerDigest(resolvedBusinessId).catch((error) => {
       console.error('SmartPlus owner email notification error:', error.message);
     });
+    void recordOperationalEvent({
+      businessId: resolvedBusinessId,
+      eventType: 'sync_success',
+      message: 'Business synchronization completed.',
+      metadata: { collections: Object.keys(stats).filter((key) => stats[key] > 0) },
+    });
     return res.json({ success: true, stats });
   } catch (error) {
     await connection.rollback();
     console.error('Sync /push error:', error);
+    void recordOperationalEvent({
+      businessId: resolvedBusinessId,
+      eventType: 'sync_failed',
+      severity: 'error',
+      message: 'Business synchronization failed.',
+      metadata: { error: String(error.message || 'Unknown synchronization error').slice(0, 200) },
+    });
     return res.status(500).json({ success: false, message: 'Failed to push sync payload to backend.' });
   } finally {
     connection.release();

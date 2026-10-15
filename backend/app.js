@@ -23,6 +23,11 @@ app.use(cors({
   origin(origin, callback) {
     // Non-browser clients (Flutter/server-to-server) do not send Origin.
     if (!origin || allowedOrigins.includes(origin) || (allowedOrigins.length === 0 && process.env.NODE_ENV !== 'production')) return callback(null, true);
+    console.warn(JSON.stringify({
+      event: 'cors_origin_rejected',
+      origin: String(origin).slice(0, 300),
+      timestamp: new Date().toISOString(),
+    }));
     return callback(new Error('Origin is not permitted by CORS policy.'));
   },
   credentials: true,

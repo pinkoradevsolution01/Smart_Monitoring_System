@@ -2140,6 +2140,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
             children: [
               DropdownButtonFormField<Product>(
                 initialValue: selectedProduct,
+                isExpanded: true,
                 decoration: InputDecoration(
                   labelText: AppLocalizations.t('select_product'),
                   border: const OutlineInputBorder(),
@@ -2158,32 +2159,41 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
 
                   return DropdownMenuItem(
                     value: p,
-                    child: Text.rich(
-                      TextSpan(
+                    child: SizedBox(
+                      width: (MediaQuery.sizeOf(context).width - 152)
+                          .clamp(140.0, 300.0)
+                          .toDouble(),
+                      child: Row(
                         children: [
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.middle,
-                            child: Icon(
-                              isOutOfStock
-                                  ? Icons.remove_circle
-                                  : isLowStock
-                                  ? Icons.warning_amber
-                                  : Icons.check_circle,
-                              color: isOutOfStock
-                                  ? Colors.red
-                                  : isLowStock
-                                  ? Colors.orange
-                                  : Colors.green,
-                              size: 18,
+                          Icon(
+                            isOutOfStock
+                                ? Icons.remove_circle
+                                : isLowStock
+                                ? Icons.warning_amber
+                                : Icons.check_circle,
+                            color: isOutOfStock
+                                ? Colors.red
+                                : isLowStock
+                                ? Colors.orange
+                                : Colors.green,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              p.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                          const TextSpan(text: '  '),
-                          TextSpan(
-                            text: p.name,
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          TextSpan(
-                            text: ' ($stockText)',
+                          const SizedBox(width: 6),
+                          Text(
+                            stockText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
                               color: stockColor,
@@ -2194,7 +2204,6 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                           ),
                         ],
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
                   );
                 }).toList(),

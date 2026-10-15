@@ -320,4 +320,50 @@ router.post('/google/register', requireVerifiedIdentity, async (req, res) => {
   }
 });
 
+// Platform-only operational overview. Normal business sessions are rejected by
+// requireDeveloperSession and no tenant data, access tokens, or email keys are
+// returned to the client.
+router.get('/system-health', requireDeveloperSession, async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const [databaseProbe] = await query('SELECT 1 AS ok');
+    const [syncRows, failedSyncRows, emailRows, errorRows] = await Promise.all([
+      query(`SELECT MAX(created_at) AS last_sync_at FROM operational_events WHERE event_type = 'sync_success'`),
+      query(`SELECT COUNT(*) AS count FROM operational_events WHERE event_type = 'sync_failed' AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`),
+      query(`SELECT status, COUNT(*) AS count FROM smartplus_email_deliveries WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) GROUP BY status`),
+      query(`SELECT event_type, severity, message, created_at FROM operational_events WHERE severity = 'error' ORDER BY created_at DESC LIMIT 10`),
+    ]);
+    const emailDelivery = Object.fromEntries(emailRows.map((row) => [row.status, Number(row.count)]));
+    return res.json({
+      success: true,
+      data: {
+        backend: {
+          status: 'ok',
+          uptimeSeconds: Math.floor(process.uptime()),
+          latencyMs: Date.now() - startedAt,
+        },
+        database: { status: databaseProbe?.ok === 1 ? 'ok' : 'degraded' },
+        sync: {
+          lastSyncAt: syncRows[0]?.last_sync_at || null,
+          failedLast24Hours: Number(failedSyncRows[0]?.count || 0),
+        },
+        email: {
+          configured: Boolean(process.env.RESEND_API_KEY && process.env.FROM_EMAIL),
+          sentLast24Hours: emailDelivery.sent || 0,
+          failedLast24Hours: emailDelivery.failed || 0,
+        },
+        recentErrors: errorRows.map((row) => ({
+          eventType: row.event_type,
+          severity: row.severity,
+          message: row.message,
+          createdAt: row.created_at,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'developer_health_failed', message: error.message }));
+    return res.status(500).json({ success: false, message: 'Failed to load system health.' });
+  }
+});
+
 module.exports = router;
