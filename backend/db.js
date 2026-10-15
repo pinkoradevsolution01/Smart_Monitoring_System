@@ -419,6 +419,27 @@ async function ensureSmartPlusEmailDeliveriesTable() {
   `);
 }
 
+// Preferences belong to the tenant, never to a client-supplied business ID.
+// The owner-only SmartPlus route resolves this business from the verified JWT.
+async function ensureSmartPlusNotificationPreferencesTable() {
+  const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS smartplus_notification_preferences (
+      business_id ${businessIdDefinition} NOT NULL PRIMARY KEY,
+      in_app_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      email_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      low_stock_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      sales_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      discount_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      forecast_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT fk_smartplus_preferences_business
+        FOREIGN KEY (business_id) REFERENCES businesses(id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 // Operational events are intentionally server-authored. They provide the
 // developer portal with safe, aggregate observability without storing client
 // secrets or relying on a device to report its own health.
@@ -462,6 +483,7 @@ async function initDb() {
   await ensureOwnerPinResetTokensTable();
   await ensureExpensesTable();
   await ensureSmartPlusEmailDeliveriesTable();
+  await ensureSmartPlusNotificationPreferencesTable();
   await ensureOperationalEventsTable();
   connection.release();
 

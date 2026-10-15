@@ -684,25 +684,37 @@ On the login screen:
         .where((sale) => sale.status == SaleStatus.completed)
         .toList();
 
-    if (query.contains('voice') || query.contains('checkout') || query.contains('add 2')) {
+    if (query.contains('voice') ||
+        query.contains('checkout') ||
+        query.contains('add 2')) {
       return 'Voice-enabled checkout is not enabled in this system yet. SmartPlus can explain a checkout instruction, but it cannot add items, apply discounts, or complete a sale automatically.';
     }
 
-    if (query.contains('reorder') || query.contains('low stock') || query.contains('stock')) {
+    if (query.contains('reorder') ||
+        query.contains('low stock') ||
+        query.contains('stock')) {
       final lowStock = products.where((product) => product.lowStock).toList()
         ..sort((a, b) => a.quantity.compareTo(b.quantity));
       if (lowStock.isEmpty) {
         return 'No products are currently at or below their reorder level. Keep reviewing stock after each delivery and sale.';
       }
-      final suggestions = lowStock.take(5).map((product) {
-        final suggestedQuantity = (product.reorderLevel * 2 - product.quantity)
-            .clamp(product.reorderLevel, 999999);
-        return '• ${product.name}: ${product.quantity} in stock (reorder level ${product.reorderLevel}) — suggest ordering $suggestedQuantity';
-      }).join('\n');
-      return 'Smart reordering suggestion (recommended target: roughly twice the reorder level):\n$suggestions\n\nReview the quantities and supplier availability before creating an order. SmartPlus does not place supplier orders automatically.';
+      final suggestions = lowStock
+          .take(5)
+          .map((product) {
+            final suggestedQuantity =
+                (product.reorderLevel * 2 - product.quantity).clamp(
+                  product.reorderLevel,
+                  999999,
+                );
+            return '• ${product.name}: ${product.quantity} in stock (reorder level ${product.reorderLevel}) — suggest ordering $suggestedQuantity';
+          })
+          .join('\n');
+      return 'Rule-based reorder suggestion\nSource: current product quantity and reorder level\nRange: current inventory\n\nRecommended target: roughly twice the reorder level:\n$suggestions\n\nOwner review is required. Review quantities and supplier availability before creating an order; SmartPlus does not place orders automatically.';
     }
 
-    if (query.contains('discount') || query.contains('fraud') || query.contains('suspicious')) {
+    if (query.contains('discount') ||
+        query.contains('fraud') ||
+        query.contains('suspicious')) {
       final cutoff = DateTime.now().subtract(const Duration(days: 30));
       final flagged = completedSales.where((sale) {
         return sale.saleDate.isAfter(cutoff) &&
@@ -712,17 +724,23 @@ On the login screen:
       if (flagged.isEmpty) {
         return 'No completed sale in the last 30 days has a discount of 20% or more. This is a review rule, not a fraud determination.';
       }
-      final samples = flagged.take(5).map(
-        (sale) => '• ${sale.saleNumber}: ${AppCurrency.peso(sale.discountAmount)} discount on ${AppCurrency.peso(sale.subtotal)}',
-      ).join('\n');
-      return '${flagged.length} completed sale(s) in the last 30 days meet the 20% discount review threshold:\n$samples\n\nAsk the cashier or manager for the approved discount reason before taking action.';
+      final samples = flagged
+          .take(5)
+          .map(
+            (sale) =>
+                '• ${sale.saleNumber}: ${AppCurrency.peso(sale.discountAmount)} discount on ${AppCurrency.peso(sale.subtotal)}',
+          )
+          .join('\n');
+      return 'Rule-based discount review\nSource: completed sales subtotal and discount amount\nRange: last 30 days\n\n${flagged.length} completed sale(s) meet the 20% discount review threshold:\n$samples\n\nThis is not a fraud finding. Owner review is required before any follow-up action.';
     }
 
-    if (query.contains('upsell') || query.contains('pair') || query.contains('often buy')) {
+    if (query.contains('upsell') ||
+        query.contains('pair') ||
+        query.contains('often buy')) {
       final pairCounts = <String, int>{};
       for (final sale in completedSales) {
-        final names = sale.items.map((item) => item.productName).toSet().toList()
-          ..sort();
+        final names =
+            sale.items.map((item) => item.productName).toSet().toList()..sort();
         for (var first = 0; first < names.length; first++) {
           for (var second = first + 1; second < names.length; second++) {
             final key = '${names[first]}|${names[second]}';
@@ -735,20 +753,24 @@ On the login screen:
       if (pairs.isEmpty) {
         return 'There are not enough completed sales with multiple items to identify product pairs yet. Complete more multi-item transactions, then ask again.';
       }
-      return 'Best current cross-sell pair(s), based on completed transactions:\n${pairs.take(3).map((pair) => '• ${pair.key.replaceFirst('|', ' + ')} — bought together ${pair.value} time(s)').join('\n')}\n\nUse these as cashier suggestions, not automatic cart changes.';
+      return 'Data insight, not an automatic action\nSource: completed multi-item sales\nRange: all available completed sales\n\nBest current cross-sell pair(s):\n${pairs.take(3).map((pair) => '• ${pair.key.replaceFirst('|', ' + ')} — bought together ${pair.value} time(s)').join('\n')}\n\nUse these only as cashier suggestions; SmartPlus never changes a cart automatically.';
     }
 
-    if (query.contains('forecast') || query.contains('christmas') || query.contains('season')) {
+    if (query.contains('forecast') ||
+        query.contains('christmas') ||
+        query.contains('season')) {
       final quantities = _salesQuantities(completedSales, days: 90);
       final ranked = quantities.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       if (ranked.isEmpty) {
         return 'There is not enough completed-sale history to create a forecast. Add at least several weeks of sales data and try again.';
       }
-      return 'Demand signal from the last 90 days (not a true seasonal forecast):\n${ranked.take(5).map((entry) => '• ${entry.key}: ${entry.value} unit(s) sold').join('\n')}\n\nFor a Christmas forecast, retain data from prior Christmas periods. SmartPlus will not claim seasonal demand without that history.';
+      return 'Forecast estimate — not a guarantee\nSource: completed sale quantities\nRange: last 90 days\n\nDemand signal:\n${ranked.take(5).map((entry) => '• ${entry.key}: ${entry.value} unit(s) sold').join('\n')}\n\nFor a Christmas forecast, retain data from prior Christmas periods. Owner review is required before changing purchase plans.';
     }
 
-    if (query.contains('top') || query.contains('selling') || query.contains('last month')) {
+    if (query.contains('top') ||
+        query.contains('selling') ||
+        query.contains('last month')) {
       final quantities = _salesQuantities(completedSales, days: 31);
       final ranked = quantities.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
@@ -758,21 +780,35 @@ On the login screen:
       return 'Top selling products from the last 31 days:\n${ranked.take(5).toList().asMap().entries.map((entry) => '${entry.key + 1}. ${entry.value.key} — ${entry.value.value} unit(s)').join('\n')}';
     }
 
-    if (query.contains('sales') || query.contains('insight') || query.contains('week')) {
+    if (query.contains('sales') ||
+        query.contains('insight') ||
+        query.contains('week')) {
       final now = DateTime.now();
       final recentStart = now.subtract(const Duration(days: 7));
       final previousStart = now.subtract(const Duration(days: 14));
-      final recent = completedSales.where((sale) => sale.saleDate.isAfter(recentStart));
-      final previous = completedSales.where(
-        (sale) => sale.saleDate.isAfter(previousStart) && !sale.saleDate.isAfter(recentStart),
+      final recent = completedSales.where(
+        (sale) => sale.saleDate.isAfter(recentStart),
       );
-      final recentTotal = recent.fold<double>(0, (sum, sale) => sum + sale.totalAmount);
-      final previousTotal = previous.fold<double>(0, (sum, sale) => sum + sale.totalAmount);
-      final change = previousTotal == 0 ? null : ((recentTotal - previousTotal) / previousTotal) * 100;
+      final previous = completedSales.where(
+        (sale) =>
+            sale.saleDate.isAfter(previousStart) &&
+            !sale.saleDate.isAfter(recentStart),
+      );
+      final recentTotal = recent.fold<double>(
+        0,
+        (sum, sale) => sum + sale.totalAmount,
+      );
+      final previousTotal = previous.fold<double>(
+        0,
+        (sum, sale) => sum + sale.totalAmount,
+      );
+      final change = previousTotal == 0
+          ? null
+          : ((recentTotal - previousTotal) / previousTotal) * 100;
       final comparison = change == null
           ? 'There is no previous-week baseline yet.'
           : '${change >= 0 ? 'up' : 'down'} ${change.abs().toStringAsFixed(1)}% from the prior 7 days.';
-      return 'Sales insight: ${AppCurrency.peso(recentTotal)} from ${recent.length} completed transaction(s) in the last 7 days — $comparison\n\nSmartPlus can identify the change in sales records, but it cannot determine the cause (such as foot traffic) without that data.';
+      return 'Rule-based sales comparison\nSource: completed sale totals\nRange: most recent 7 days versus preceding 7 days\n\nSales insight: ${AppCurrency.peso(recentTotal)} from ${recent.length} completed transaction(s) in the last 7 days — $comparison\n\nSmartPlus can identify the change in sales records but cannot determine its cause. Review the records before making a business decision.';
     }
 
     // SmartPlus also carries the previous system-help knowledge, so owners can
@@ -785,7 +821,8 @@ On the login screen:
     final quantities = <String, int>{};
     for (final sale in sales.where((sale) => sale.saleDate.isAfter(cutoff))) {
       for (final item in sale.items) {
-        quantities[item.productName] = (quantities[item.productName] ?? 0) + item.quantity;
+        quantities[item.productName] =
+            (quantities[item.productName] ?? 0) + item.quantity;
       }
     }
     return quantities;

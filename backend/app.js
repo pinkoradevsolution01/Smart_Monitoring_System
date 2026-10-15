@@ -13,6 +13,7 @@ const syncRouter = require('./routes/sync');
 const crudRouter = require('./routes/crud');
 const analyticsRouter = require('./routes/analytics');
 const financialReportsRouter = require('./routes/financial_reports');
+const smartPlusRouter = require('./routes/smartplus');
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGINS || '')
@@ -43,6 +44,7 @@ app.use('/api/license', licenseRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/financial-reports', financialReportsRouter);
+app.use('/api/smartplus', smartPlusRouter);
 
 // Keep liveness endpoints ahead of the generic /api router.  The generic
 // router is intentionally authenticated and must not turn health probes into

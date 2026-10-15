@@ -23,23 +23,23 @@ function asNumber(value) {
   return Number(value || 0);
 }
 
-function normalizeSuggestions({ outOfStock, lowStock, discountReview }) {
+function normalizeSuggestions({ outOfStock, lowStock, discountReview, preferences = {} }) {
   const suggestions = [];
-  if (outOfStock.length) {
+  if (preferences.low_stock_enabled !== false && outOfStock.length) {
     suggestions.push({
       level: 'critical',
       title: 'Products are out of stock',
       message: `${outOfStock.length} product(s) cannot be sold: ${outOfStock.map((item) => item.name).join(', ')}.`,
     });
   }
-  if (lowStock.length) {
+  if (preferences.low_stock_enabled !== false && lowStock.length) {
     suggestions.push({
       level: 'warning',
       title: 'Low-stock reorder suggested',
       message: `${lowStock.length} product(s) are at their reorder level, including ${lowStock.map((item) => item.name).join(', ')}.`,
     });
   }
-  if (asNumber(discountReview?.count) > 0) {
+  if (preferences.discount_enabled !== false && asNumber(discountReview?.count) > 0) {
     suggestions.push({
       level: 'info',
       title: 'Large discounts need review',
@@ -96,6 +96,17 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   const business = businesses[0];
   if (!business?.owner_email) return { skipped: 'business_not_found' };
 
+  const preferenceRows = await dbQuery(
+    `SELECT email_enabled, low_stock_enabled, discount_enabled
+       FROM smartplus_notification_preferences
+      WHERE business_id = ? LIMIT 1`,
+    [businessId],
+  ).catch(() => []);
+  const preferences = preferenceRows[0] || {};
+  if (Number(preferences.email_enabled ?? 1) !== 1) {
+    return { skipped: 'email_disabled_by_owner' };
+  }
+
   const [outOfStock, lowStock, discountRows] = await Promise.all([
     dbQuery(
       `SELECT name, quantity
@@ -128,6 +139,10 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
     outOfStock,
     lowStock,
     discountReview: discountRows[0],
+    preferences: {
+      low_stock_enabled: Number(preferences.low_stock_enabled ?? 1) === 1,
+      discount_enabled: Number(preferences.discount_enabled ?? 1) === 1,
+    },
   });
   if (!suggestions.length) return { skipped: 'no_actionable_suggestions' };
 

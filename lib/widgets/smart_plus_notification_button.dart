@@ -28,7 +28,10 @@ class SmartPlusNotificationButton extends StatelessWidget {
                   top: -5,
                   right: -7,
                   child: Container(
-                    constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+                    constraints: const BoxConstraints(
+                      minWidth: 17,
+                      minHeight: 17,
+                    ),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
@@ -42,10 +45,10 @@ class SmartPlusNotificationButton extends StatelessWidget {
                     child: Text(
                       count > 9 ? '9+' : '$count',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onError,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 10,
-                          ),
+                        color: Theme.of(context).colorScheme.onError,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10,
+                      ),
                     ),
                   ),
                 ),
@@ -61,7 +64,6 @@ class SmartPlusNotificationButton extends StatelessWidget {
     SmartPlusNotificationService service,
   ) {
     service.refresh();
-    service.markAllRead();
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -118,6 +120,11 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                         onPressed: service.refresh,
                         icon: const Icon(Icons.refresh_rounded),
                       ),
+                      IconButton(
+                        tooltip: 'Notification preferences',
+                        onPressed: () => _openPreferences(context, service),
+                        icon: const Icon(Icons.tune_rounded),
+                      ),
                     ],
                   ),
                 ),
@@ -145,7 +152,9 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                   'SmartPlus will add suggestions when there is something worth reviewing.',
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(color: colors.onSurfaceVariant),
+                                      ?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      ),
                                 ),
                               ],
                             ),
@@ -161,21 +170,107 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                               notification.level,
                               colors,
                             );
+                            final reviewed = service.isReviewed(
+                              notification.id,
+                            );
                             return Card(
                               color: color.withValues(alpha: 0.08),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: color.withValues(alpha: 0.16),
-                                  foregroundColor: color,
-                                  child: Icon(_levelIcon(notification.level)),
-                                ),
-                                title: Text(
-                                  notification.title,
-                                  style: const TextStyle(fontWeight: FontWeight.w800),
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 5),
-                                  child: Text(notification.message),
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        CircleAvatar(
+                                          backgroundColor: color.withValues(
+                                            alpha: 0.16,
+                                          ),
+                                          foregroundColor: color,
+                                          child: Icon(
+                                            _levelIcon(notification.level),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            notification.title,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        Chip(
+                                          visualDensity: VisualDensity.compact,
+                                          label: Text(
+                                            notification.insightKind ==
+                                                    SmartPlusInsightKind
+                                                        .forecast
+                                                ? 'Forecast'
+                                                : 'Rule',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(notification.message),
+                                    const SizedBox(height: 10),
+                                    _evidenceRow(
+                                      context,
+                                      Icons.storage_outlined,
+                                      'Source: ${notification.sourceData}',
+                                    ),
+                                    _evidenceRow(
+                                      context,
+                                      Icons.date_range_outlined,
+                                      'Range: ${notification.dataRange}',
+                                    ),
+                                    _evidenceRow(
+                                      context,
+                                      Icons.task_alt_outlined,
+                                      'Suggested next step: ${notification.proposedAction}',
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      notification.insightKind ==
+                                              SmartPlusInsightKind.forecast
+                                          ? 'This is an estimate from the stated data range, not a guarantee.'
+                                          : 'This is a review rule, not an automatic decision.',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: reviewed
+                                          ? const Chip(
+                                              avatar: Icon(
+                                                Icons.verified_outlined,
+                                                size: 18,
+                                              ),
+                                              label: Text('Reviewed by owner'),
+                                            )
+                                          : OutlinedButton.icon(
+                                              onPressed: () => _confirmReview(
+                                                context,
+                                                service,
+                                                notification,
+                                              ),
+                                              icon: const Icon(
+                                                Icons.verified_user_outlined,
+                                              ),
+                                              label: const Text(
+                                                'Confirm review',
+                                              ),
+                                            ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );
@@ -199,8 +294,162 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
   }
 
   IconData _levelIcon(SmartPlusNotificationLevel level) => switch (level) {
-        SmartPlusNotificationLevel.info => Icons.lightbulb_outline_rounded,
-        SmartPlusNotificationLevel.warning => Icons.warning_amber_rounded,
-        SmartPlusNotificationLevel.critical => Icons.error_outline_rounded,
-      };
+    SmartPlusNotificationLevel.info => Icons.lightbulb_outline_rounded,
+    SmartPlusNotificationLevel.warning => Icons.warning_amber_rounded,
+    SmartPlusNotificationLevel.critical => Icons.error_outline_rounded,
+  };
+
+  Widget _evidenceRow(BuildContext context, IconData icon, String text) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ],
+        ),
+      );
+
+  Future<void> _confirmReview(
+    BuildContext context,
+    SmartPlusNotificationService service,
+    SmartPlusNotification notification,
+  ) async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Confirm owner review'),
+            content: Text(
+              'Confirm that you reviewed “${notification.title}”. SmartPlus will not change stock, orders, prices, discounts, or sales automatically.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Confirm review'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (confirmed) await service.confirmOwnerReview(notification.id);
+  }
+
+  Future<void> _openPreferences(
+    BuildContext context,
+    SmartPlusNotificationService service,
+  ) async {
+    await service.refreshPreferencesFromServer();
+    if (!context.mounted) return;
+    var draft = service.preferences;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('SmartPlus notification preferences'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile.adaptive(
+                  value: draft.inAppEnabled,
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(inAppEnabled: value),
+                  ),
+                  title: const Text('In-app suggestions'),
+                  subtitle: const Text(
+                    'Show SmartPlus suggestions in this app.',
+                  ),
+                ),
+                SwitchListTile.adaptive(
+                  value: draft.emailEnabled,
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(emailEnabled: value),
+                  ),
+                  title: const Text('Owner email digest'),
+                  subtitle: const Text(
+                    'Allow at most one operational email digest per day.',
+                  ),
+                ),
+                const Divider(),
+                _preferenceSwitch(
+                  value: draft.lowStockEnabled,
+                  title: 'Stock alerts',
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(lowStockEnabled: value),
+                  ),
+                ),
+                _preferenceSwitch(
+                  value: draft.salesEnabled,
+                  title: 'Sales comparisons',
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(salesEnabled: value),
+                  ),
+                ),
+                _preferenceSwitch(
+                  value: draft.discountEnabled,
+                  title: 'Discount review reminders',
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(discountEnabled: value),
+                  ),
+                ),
+                _preferenceSwitch(
+                  value: draft.forecastEnabled,
+                  title: 'Forecast-readiness reminders',
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(forecastEnabled: value),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final problem = await service.updatePreferences(draft);
+                if (!dialogContext.mounted) return;
+                Navigator.pop(dialogContext);
+                if (problem != null && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Preferences saved on this device. $problem',
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save preferences'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _preferenceSwitch({
+    required bool value,
+    required String title,
+    required ValueChanged<bool> onChanged,
+  }) => SwitchListTile.adaptive(
+    value: value,
+    onChanged: onChanged,
+    title: Text(title),
+  );
 }

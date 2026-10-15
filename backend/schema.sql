@@ -241,6 +241,21 @@ CREATE TABLE IF NOT EXISTS products (
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS smartplus_notification_preferences (
+  business_id VARCHAR(64) NOT NULL,
+  in_app_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  email_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  low_stock_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  sales_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  discount_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  forecast_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (business_id),
+  CONSTRAINT fk_smartplus_preferences_business
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS suppliers (
   id VARCHAR(64) PRIMARY KEY,
   business_id VARCHAR(64) NOT NULL,

@@ -109,6 +109,7 @@ Future<void> main() async {
   // suggestions. The server may separately email a rate-limited summary to
   // the registered business owner after a successful cloud sync.
   final smartPlusNotificationService = SmartPlusNotificationService(posService);
+  await smartPlusNotificationService.initialize();
   GetIt.I.registerSingleton<SmartPlusNotificationService>(
     smartPlusNotificationService,
   );
