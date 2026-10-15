@@ -3,6 +3,35 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'backend_config.dart';
 
+class ApiException implements Exception {
+  const ApiException(this.statusCode, this.message);
+  final int statusCode;
+  final String message;
+  @override
+  String toString() => message;
+}
+
+String safeApiError(Object error) {
+  if (error is ApiException) {
+    if (error.statusCode == 401) {
+      return 'Your secure session has expired. Please sign in again.';
+    }
+    if (error.statusCode == 403) {
+      return 'You do not have permission for this action, or your subscription does not include it.';
+    }
+    if (error.statusCode >= 500) {
+      return 'The server is temporarily unavailable. Your local changes are safe and will retry.';
+    }
+  }
+  final text = error.toString().toLowerCase();
+  if (text.contains('socket') ||
+      text.contains('connection') ||
+      text.contains('network')) {
+    return 'You appear to be offline. Your local changes are safe and will retry when connected.';
+  }
+  return 'The request could not be completed. Please retry.';
+}
+
 class ApiClient {
   static const String _sessionTokenKey = 'backend_access_token';
   final http.Client _client;
@@ -154,6 +183,6 @@ class ApiClient {
       }
     }
 
-    throw Exception(message);
+    throw ApiException(statusCode, message);
   }
 }

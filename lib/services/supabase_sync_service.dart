@@ -37,6 +37,8 @@ class SupabaseSyncService extends ChangeNotifier {
   bool _autoSyncEnabled = true;
   Duration _autoSyncInterval = const Duration(seconds: 30);
   Duration _queuedPushDelay = const Duration(seconds: 2);
+  int _retryAttempts = 0;
+  DateTime? _nextRetryAt;
 
   // Getters
   bool get isSyncing => _isSyncing;
@@ -53,6 +55,56 @@ class SupabaseSyncService extends ChangeNotifier {
   bool get isAutoSyncEnabled => _autoSyncEnabled;
   Duration get autoSyncInterval => _autoSyncInterval;
   Duration get queuedPushDelay => _queuedPushDelay;
+  int get retryAttempts => _retryAttempts;
+  DateTime? get nextRetryAt => _nextRetryAt;
+
+  String get _syncStateKey => 'sync_state_${_businessId ?? 'unassigned'}';
+
+  Future<void> _restoreSyncState() async {
+    final raw = (await SharedPreferences.getInstance()).getString(
+      _syncStateKey,
+    );
+    if (raw == null) return;
+    try {
+      final state = jsonDecode(raw) as Map<String, dynamic>;
+      _lastSyncTime = DateTime.tryParse(
+        state['lastSyncTime']?.toString() ?? '',
+      );
+      _retryAttempts = (state['retryAttempts'] as num?)?.toInt() ?? 0;
+      _nextRetryAt = DateTime.tryParse(state['nextRetryAt']?.toString() ?? '');
+    } catch (_) {}
+  }
+
+  Future<void> _saveSyncState() async {
+    await (await SharedPreferences.getInstance()).setString(
+      _syncStateKey,
+      jsonEncode({
+        'lastSyncTime': _lastSyncTime?.toIso8601String(),
+        'retryAttempts': _retryAttempts,
+        'nextRetryAt': _nextRetryAt?.toIso8601String(),
+      }),
+    );
+  }
+
+  Future<void> _scheduleRetry() async {
+    _retryAttempts = (_retryAttempts + 1).clamp(1, 8);
+    final seconds = (5 * (1 << (_retryAttempts - 1))).clamp(5, 300);
+    _nextRetryAt = DateTime.now().add(Duration(seconds: seconds));
+    await _saveSyncState();
+    _queuedPushTimer?.cancel();
+    _queuedPushTimer = Timer(
+      Duration(seconds: seconds),
+      () => queuePushAllData(delay: Duration.zero),
+    );
+    notifyListeners();
+  }
+
+  Future<void> _recordSyncSuccess() async {
+    _lastSyncTime = DateTime.now();
+    _retryAttempts = 0;
+    _nextRetryAt = null;
+    await _saveSyncState();
+  }
 
   /// Initialize business context (call this after license activation)
   Future<void> initializeBusiness({
@@ -90,6 +142,7 @@ class SupabaseSyncService extends ChangeNotifier {
           );
         }
         _businessId = resolvedBusinessId;
+        await _restoreSyncState();
         final token = response['token']?.toString();
         if (token != null && token.isNotEmpty) {
           final prefs = await SharedPreferences.getInstance();
@@ -141,7 +194,7 @@ class SupabaseSyncService extends ChangeNotifier {
       await _pushPurchaseOrders();
       await _pushDamageReports();
 
-      _lastSyncTime = DateTime.now();
+      await _recordSyncSuccess();
       _isSyncing = false;
       notifyListeners();
 
@@ -150,8 +203,9 @@ class SupabaseSyncService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('❌ Backup failed: $e');
-      _lastError = e.toString();
+      _lastError = safeApiError(e);
       _isSyncing = false;
+      await _scheduleRetry();
       notifyListeners();
       return false;
     }
@@ -196,7 +250,7 @@ class SupabaseSyncService extends ChangeNotifier {
         await _pullDamageReports(db, payload);
       });
 
-      _lastSyncTime = DateTime.now();
+      await _recordSyncSuccess();
       _isSyncing = false;
       notifyListeners();
 
@@ -205,7 +259,7 @@ class SupabaseSyncService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('❌ Restore failed: $e');
-      _lastError = e.toString();
+      _lastError = safeApiError(e);
       _isSyncing = false;
       notifyListeners();
       return false;
