@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 
 import '../services/smart_plus_notification_service.dart';
+import '../screens/owner/customer_management_screen.dart';
+import '../screens/owner/sales_report_screen.dart';
+import '../screens/owner/supplier_management_screen.dart';
+import '../screens/shared/inventory_screen.dart';
 
 /// Owner-facing entry point for SmartPlus suggestions.
 class SmartPlusNotificationButton extends StatelessWidget {
@@ -230,6 +234,16 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                     ),
                                     _evidenceRow(
                                       context,
+                                      Icons.verified_outlined,
+                                      'Data quality: ${notification.dataQuality.name} — ${notification.confidence}',
+                                    ),
+                                    _evidenceRow(
+                                      context,
+                                      Icons.psychology_alt_outlined,
+                                      'Why: ${notification.why}',
+                                    ),
+                                    _evidenceRow(
+                                      context,
                                       Icons.task_alt_outlined,
                                       'Suggested next step: ${notification.proposedAction}',
                                     ),
@@ -247,6 +261,23 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                           ),
                                     ),
                                     const SizedBox(height: 8),
+                                    if (notification.recordTarget != null)
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton.icon(
+                                          onPressed: () => _openRecords(
+                                            context,
+                                            notification.recordTarget!,
+                                          ),
+                                          icon: const Icon(
+                                            Icons.open_in_new_rounded,
+                                            size: 17,
+                                          ),
+                                          label: const Text(
+                                            'Open supporting records',
+                                          ),
+                                        ),
+                                      ),
                                     Align(
                                       alignment: Alignment.centerRight,
                                       child: reviewed
@@ -318,6 +349,16 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
           ],
         ),
       );
+
+  void _openRecords(BuildContext context, SmartPlusRecordTarget target) {
+    final screen = switch (target) {
+      SmartPlusRecordTarget.inventory => const InventoryScreen(),
+      SmartPlusRecordTarget.sales => const SalesReportScreen(),
+      SmartPlusRecordTarget.customers => const CustomerManagementScreen(),
+      SmartPlusRecordTarget.suppliers => const SupplierManagementScreen(),
+    };
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+  }
 
   Future<void> _confirmReview(
     BuildContext context,

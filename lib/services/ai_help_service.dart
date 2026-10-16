@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import '../models/chat_message.dart';
 import '../models/sale.dart';
 import '../services/pos_service.dart';
+import '../services/smart_plus_notification_service.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/locale_controller.dart';
 
@@ -597,7 +598,13 @@ On the login screen:
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
       final response = _generateSmartPlusResponse(query);
-      _messages.add(ChatMessage(text: response, isUser: false));
+      _messages.add(
+        ChatMessage(
+          text: _explainSmartPlusAnswer(query, response),
+          isUser: false,
+          recordTarget: _recordTargetFor(query),
+        ),
+      );
     } finally {
       _isThinking = false;
       notifyListeners();
@@ -759,6 +766,15 @@ On the login screen:
     if (query.contains('forecast') ||
         query.contains('christmas') ||
         query.contains('season')) {
+      final trust = _dataTrust;
+      if (!trust.allowsForecast) {
+        return 'SmartPlus did not generate a forecast because the source data is not reliable enough yet. ${trust.issues.isEmpty ? 'Refresh SmartPlus after the current validation finishes.' : trust.issues.join(' ')} Resolve these records and sync again before using a demand forecast.';
+      }
+      final seasonalQuestion =
+          query.contains('christmas') || query.contains('season');
+      if (seasonalQuestion && !_hasSeasonalHistory(completedSales)) {
+        return 'SmartPlus did not generate a seasonal forecast. Seasonal demand needs at least one full year of completed-sale history so the comparison includes the same business period. Continue recording completed sales and try again when that history is available.';
+      }
       final quantities = _salesQuantities(completedSales, days: 90);
       final ranked = quantities.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
@@ -826,6 +842,95 @@ On the login screen:
       }
     }
     return quantities;
+  }
+
+  bool _hasSeasonalHistory(List<Sale> sales) {
+    if (sales.isEmpty) return false;
+    final first = sales
+        .map((sale) => sale.saleDate)
+        .reduce(
+          (earliest, value) => value.isBefore(earliest) ? value : earliest,
+        );
+    return DateTime.now().difference(first).inDays >= 365;
+  }
+
+  SmartPlusDataTrust get _dataTrust =>
+      GetIt.I.isRegistered<SmartPlusNotificationService>()
+      ? GetIt.I<SmartPlusNotificationService>().dataTrust
+      : const SmartPlusDataTrust();
+
+  String _explainSmartPlusAnswer(String query, String answer) {
+    final trust = _dataTrust;
+    final target = _recordTargetFor(query);
+    final isForecast =
+        query.contains('forecast') ||
+        query.contains('christmas') ||
+        query.contains('season');
+    final isRule =
+        query.contains('stock') ||
+        query.contains('reorder') ||
+        query.contains('discount') ||
+        query.contains('fraud') ||
+        query.contains('supplier') ||
+        query.contains('delivery');
+    final seasonalQuestion =
+        query.contains('christmas') || query.contains('season');
+    final hasSeasonalHistory = seasonalQuestion
+        ? _hasSeasonalHistory(
+            GetIt.I<POSService>().recentSales
+                .where((sale) => sale.status == SaleStatus.completed)
+                .toList(),
+          )
+        : true;
+    final label = isForecast && trust.allowsForecast && hasSeasonalHistory
+        ? 'Forecast'
+        : isRule
+        ? 'Rule'
+        : 'Insight';
+    final source = switch (target) {
+      'inventory' => 'Product quantities, reorder levels, and product records',
+      'customers' => 'Customer and loyalty records',
+      'suppliers' => 'Purchase orders, receipt status, and supplier records',
+      _ => 'Completed sales and transaction records',
+    };
+    final range = isForecast
+        ? 'Last 90 days'
+        : query.contains('week')
+        ? 'Most recent 7 days compared with the preceding 7 days'
+        : query.contains('month')
+        ? 'Last 31 days'
+        : 'Current available records';
+    final why = isForecast
+        ? 'SmartPlus found enough valid, recent sales records to calculate a demand signal.'
+        : isRule
+        ? 'SmartPlus matched the current records against a review rule; it has not taken any action.'
+        : 'SmartPlus summarized the available records for the question you asked.';
+    return '$label\n'
+        'Data source: $source\n'
+        'Date range: $range\n'
+        'Data quality: ${trust.qualityLabel} — ${trust.confidenceLabel}\n'
+        'Why SmartPlus made this suggestion: $why\n\n'
+        '$answer';
+  }
+
+  String _recordTargetFor(String query) {
+    if (query.contains('supplier') ||
+        query.contains('delivery') ||
+        query.contains('purchase order')) {
+      return 'suppliers';
+    }
+    if (query.contains('customer') ||
+        query.contains('loyalty') ||
+        query.contains('points')) {
+      return 'customers';
+    }
+    if (query.contains('stock') ||
+        query.contains('reorder') ||
+        query.contains('inventory') ||
+        query.contains('product')) {
+      return 'inventory';
+    }
+    return 'sales';
   }
 
   /// Clear conversation history

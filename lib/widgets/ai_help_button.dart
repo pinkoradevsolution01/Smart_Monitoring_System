@@ -4,6 +4,10 @@ import 'package:get_it/get_it.dart';
 import '../services/ai_help_service.dart';
 import '../services/setup_progress_service.dart';
 import '../models/chat_message.dart';
+import '../screens/owner/customer_management_screen.dart';
+import '../screens/owner/sales_report_screen.dart';
+import '../screens/owner/supplier_management_screen.dart';
+import '../screens/shared/inventory_screen.dart';
 import '../utils/locale_controller.dart';
 
 /// Opens SmartPlus, the Owner Dashboard's business assistant.
@@ -18,10 +22,7 @@ void showSmartPlusDialog(BuildContext context) {
     return;
   }
   GetIt.I<AIHelpService>().startSmartPlus();
-  showDialog(
-    context: context,
-    builder: (context) => const _AIHelpDialog(),
-  );
+  showDialog(context: context, builder: (context) => const _AIHelpDialog());
 }
 
 /// The only assistant entry point. It is rendered on the completed Owner
@@ -211,8 +212,8 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                   return ListView.builder(
                     controller: _scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: messages.length +
-                        (_aiService.isThinking ? 1 : 0),
+                    itemCount:
+                        messages.length + (_aiService.isThinking ? 1 : 0),
                     itemBuilder: (context, index) {
                       if (index == messages.length) {
                         return const _SmartPlusThinkingBubble();
@@ -401,10 +402,8 @@ class _SmartPlusThinkingBubbleState extends State<_SmartPlusThinkingBubble>
     );
     return AnimatedBuilder(
       animation: animation,
-      builder: (context, child) => Transform.translate(
-        offset: Offset(0, animation.value),
-        child: child,
-      ),
+      builder: (context, child) =>
+          Transform.translate(offset: Offset(0, animation.value), child: child),
       child: Container(
         width: 6,
         height: 6,
@@ -447,9 +446,9 @@ class _SmartPlusThinkingBubbleState extends State<_SmartPlusThinkingBubble>
                 Text(
                   'SmartPlus is thinking',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(width: 9),
                 _dot(0, color),
@@ -521,13 +520,32 @@ class _MessageBubble extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: isUser ? Colors.white : Colors.black87,
-                  fontSize: 14,
-                  height: 1.4,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.text,
+                    style: TextStyle(
+                      color: isUser ? Colors.white : Colors.black87,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (!isUser && message.recordTarget != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () => _openSupportingRecords(
+                        context,
+                        message.recordTarget!,
+                      ),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                      label: Text(
+                        'Open ${_recordTargetLabel(message.recordTarget!)} records',
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -545,5 +563,22 @@ class _MessageBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _recordTargetLabel(String target) => switch (target) {
+    'inventory' => 'inventory',
+    'customers' => 'customer',
+    'suppliers' => 'supplier',
+    _ => 'sales',
+  };
+
+  void _openSupportingRecords(BuildContext context, String target) {
+    final screen = switch (target) {
+      'inventory' => const InventoryScreen(),
+      'customers' => const CustomerManagementScreen(),
+      'suppliers' => const SupplierManagementScreen(),
+      _ => const SalesReportScreen(),
+    };
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 }

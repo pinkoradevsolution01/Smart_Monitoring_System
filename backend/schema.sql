@@ -684,6 +684,48 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS smartplus_action_drafts (
+  id CHAR(36) NOT NULL PRIMARY KEY,
+  business_id VARCHAR(64) NOT NULL,
+  action_type VARCHAR(48) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  proposal_json JSON NOT NULL,
+  evidence_json JSON NOT NULL,
+  status ENUM('draft', 'approved', 'executed', 'rejected', 'failed') NOT NULL DEFAULT 'draft',
+  created_by VARCHAR(64) NOT NULL,
+  approved_by VARCHAR(64) NULL,
+  approved_at DATETIME NULL,
+  executed_at DATETIME NULL,
+  result_message VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_smartplus_action_business_status (business_id, status, created_at),
+  CONSTRAINT fk_smartplus_action_business FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_smartplus_action_creator FOREIGN KEY (created_by) REFERENCES users(id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_smartplus_action_approver FOREIGN KEY (approved_by) REFERENCES users(id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS smartplus_action_audit (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  action_id CHAR(36) NOT NULL,
+  business_id VARCHAR(64) NOT NULL,
+  actor_id VARCHAR(64) NOT NULL,
+  event_type VARCHAR(48) NOT NULL,
+  details_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_smartplus_action_audit_action (action_id, created_at),
+  KEY idx_smartplus_action_audit_business (business_id, created_at),
+  CONSTRAINT fk_smartplus_action_audit_action FOREIGN KEY (action_id) REFERENCES smartplus_action_drafts(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_smartplus_action_audit_business FOREIGN KEY (business_id) REFERENCES businesses(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_smartplus_action_audit_actor FOREIGN KEY (actor_id) REFERENCES users(id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS activity_logs (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   business_id VARCHAR(64) NOT NULL,

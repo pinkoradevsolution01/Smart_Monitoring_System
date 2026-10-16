@@ -182,6 +182,34 @@ class POSService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Read-only product-pairing hints for the current basket. Suggestions are
+  /// based only on completed transactions and never add an item to the cart.
+  List<String> getUpsellSuggestionsForCart({int limit = 3}) {
+    if (_cart.isEmpty) return const [];
+    final cartProductIds = _cart
+        .map((item) => item.product.id)
+        .whereType<int>()
+        .toSet();
+    final pairCounts = <String, int>{};
+    for (final sale in _recentSales.where(
+      (sale) => sale.status == SaleStatus.completed,
+    )) {
+      final hasCartProduct = sale.items.any(
+        (item) => cartProductIds.contains(item.productId),
+      );
+      if (!hasCartProduct) continue;
+      for (final item in sale.items) {
+        if (!cartProductIds.contains(item.productId)) {
+          pairCounts[item.productName] =
+              (pairCounts[item.productName] ?? 0) + item.quantity;
+        }
+      }
+    }
+    final ranked = pairCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return ranked.take(limit).map((entry) => entry.key).toList(growable: false);
+  }
+
   // Sale operations
   Future<bool> processSale({
     required String paymentMethod,
@@ -218,6 +246,12 @@ class POSService extends ChangeNotifier {
     final taxableAmount = subtotal - discountAmount;
     final taxAmount = taxableAmount * taxRate;
     final totalAmount = taxableAmount + taxAmount;
+
+    await _guardAgainstDuplicatePayment(
+      paymentMethod: paymentMethod,
+      referenceCode: referenceCode,
+      totalAmount: totalAmount,
+    );
 
     // Generate sale number
     final saleNumber = 'SAL${DateTime.now().millisecondsSinceEpoch}';
@@ -513,6 +547,48 @@ class POSService extends ChangeNotifier {
 
   Future<double> getDailySales(DateTime date) async {
     return _databaseService.getDailySales(date);
+  }
+
+  Future<void> _guardAgainstDuplicatePayment({
+    required String paymentMethod,
+    required String? referenceCode,
+    required double totalAmount,
+  }) async {
+    final reference = referenceCode?.trim();
+    if (reference != null && reference.isNotEmpty) {
+      final sameReference = _recentSales.any(
+        (sale) =>
+            sale.status == SaleStatus.completed &&
+            sale.referenceCode?.trim().toLowerCase() == reference.toLowerCase(),
+      );
+      if (sameReference) {
+        throw StateError(
+          'Possible duplicate payment: this payment reference was already used by a completed sale. Verify the transaction before retrying.',
+        );
+      }
+      return;
+    }
+    final onlinePayment = {
+      'gcash',
+      'online bank',
+      'onlinebank',
+      'bank transfer',
+    }.contains(paymentMethod.trim().toLowerCase());
+    if (!onlinePayment) return;
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
+    final sameRecentPayment = _recentSales.any(
+      (sale) =>
+          sale.status == SaleStatus.completed &&
+          sale.paymentMethod.trim().toLowerCase() ==
+              paymentMethod.trim().toLowerCase() &&
+          (sale.totalAmount - totalAmount).abs() < 0.01 &&
+          sale.saleDate.isAfter(cutoff),
+    );
+    if (sameRecentPayment) {
+      throw StateError(
+        'Possible duplicate payment: an identical online payment was completed in the last two minutes. Verify it before retrying.',
+      );
+    }
   }
 
   Future<int> getTotalTransactions(DateTime date) async {

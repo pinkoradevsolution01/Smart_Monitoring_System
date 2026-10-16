@@ -101,6 +101,12 @@ Future<void> main() async {
   final developerService = DeveloperService();
   GetIt.I.registerSingleton<DeveloperService>(developerService);
 
+  // SmartPlus reads this status only to show data freshness and suppress
+  // unsafe forecasts. It never triggers or controls cloud synchronization.
+  final supabaseSyncService = SupabaseSyncService();
+  GetIt.I.registerSingleton<SupabaseSyncService>(supabaseSyncService);
+  debugPrint('SupabaseSyncService registered');
+
   // Initialize AI Help Service
   final aiHelpService = AIHelpService();
   GetIt.I.registerSingleton<AIHelpService>(aiHelpService);
@@ -118,11 +124,6 @@ Future<void> main() async {
   final licenseService = LicenseService();
   await licenseService.initialize();
   GetIt.I.registerSingleton<LicenseService>(licenseService);
-
-  // Initialize Supabase Sync Service for cloud data sync
-  final supabaseSyncService = SupabaseSyncService();
-  GetIt.I.registerSingleton<SupabaseSyncService>(supabaseSyncService);
-  debugPrint('✅ SupabaseSyncService registered');
 
   // Initialize Package Service
   final packageService = PackageService();

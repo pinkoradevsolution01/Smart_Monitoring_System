@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path/path.dart' as path;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -33,6 +34,18 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
 
   Future<void> _reload() async {
     setState(() {});
+  }
+
+  /// A dialog route completes its future at the start of its reverse
+  /// transition. Its TextFields can still rebuild briefly, so their external
+  /// controllers must outlive that transition.
+  Future<void> _disposeDialogControllers(
+    Iterable<TextEditingController> controllers,
+  ) async {
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    for (final controller in controllers) {
+      controller.dispose();
+    }
   }
 
   Future<void> _openCustomerDialog({Customer? customer}) async {
@@ -264,20 +277,74 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
   }
 
   Future<void> _scanCustomerCode() async {
+    const manualEntry = '__manual_customer_code__';
+    final scannerController = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+      formats: const [BarcodeFormat.code128, BarcodeFormat.qrCode],
+    );
+    final scannedCode = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Scan customer barcode or QR'),
+        content: SizedBox(
+          width: 320,
+          height: 320,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: MobileScanner(
+              controller: scannerController,
+              onDetect: (capture) {
+                for (final barcode in capture.barcodes) {
+                  final value = barcode.rawValue?.trim();
+                  if (value == null || value.isEmpty) continue;
+                  Navigator.of(dialogContext).pop(value);
+                  break;
+                }
+              },
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(manualEntry),
+            icon: const Icon(Icons.keyboard_outlined),
+            label: const Text('Enter manually'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    // Keep the native camera view alive until its route has completed the
+    // close animation before releasing the controller.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await scannerController.dispose();
+    if (!mounted) return;
+    if (scannedCode == manualEntry) {
+      await _enterCustomerCodeManually();
+      return;
+    }
+    if (scannedCode == null || scannedCode.trim().isEmpty) return;
+    await _findCustomerByCode(scannedCode);
+  }
+
+  Future<void> _enterCustomerCodeManually() async {
     final controller = TextEditingController();
-    Customer? matched;
     final submitted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Scan or enter customer code'),
+        title: const Text('Enter customer code'),
         content: TextField(
           controller: controller,
           autofocus: true,
           textInputAction: TextInputAction.done,
           decoration: const InputDecoration(
             labelText: 'Customer barcode / QR value',
-            hintText: 'Scan using a connected scanner or type the code',
-            prefixIcon: Icon(Icons.qr_code_scanner),
+            hintText: 'Type or use a connected barcode scanner',
+            prefixIcon: Icon(Icons.keyboard_outlined),
             border: OutlineInputBorder(),
           ),
           onSubmitted: (_) => Navigator.pop(context, true),
@@ -295,9 +362,13 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       ),
     );
     final code = controller.text.trim();
-    controller.dispose();
+    await _disposeDialogControllers([controller]);
     if (submitted != true || code.isEmpty || !mounted) return;
-    matched = await _customerService.getCustomerByBarcode(code);
+    await _findCustomerByCode(code);
+  }
+
+  Future<void> _findCustomerByCode(String code) async {
+    final matched = await _customerService.getCustomerByBarcode(code.trim());
     if (!mounted) return;
     if (matched == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -880,8 +951,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       await _reload();
     }
 
-    pointsController.dispose();
-    notesController.dispose();
+    await _disposeDialogControllers([pointsController, notesController]);
   }
 
   Future<void> _openLedger(Customer customer) async {

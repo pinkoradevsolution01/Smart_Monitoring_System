@@ -2921,7 +2921,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                         productName: item.productName,
                         quantity: acceptedDamageQty,
                         unitPrice: item.unitPrice,
-                        totalValue: item.unitPrice * damageQty,
+                        totalValue: item.unitPrice * acceptedDamageQty,
                         reason: damageReportReason,
                         reportedBy: 'Owner',
                         reportDate: DateTime.now(),
@@ -2981,9 +2981,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
         ),
       );
     } finally {
-      // `showDialog` completes only after the route and its TextFields have
-      // been removed. Disposing earlier causes "used after being disposed"
-      // while the keyboard/dialog dismissal animation is still running.
+      // The future resolves when the route starts its reverse transition, not
+      // when the dialog's TextFields have been unmounted. Keep controllers
+      // alive through that transition; disposing them immediately lets a
+      // closing TextField subscribe to an already-disposed controller.
+      await Future<void>.delayed(const Duration(milliseconds: 350));
       disposeControllers();
     }
   }

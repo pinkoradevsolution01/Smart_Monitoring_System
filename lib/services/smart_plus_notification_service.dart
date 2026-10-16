@@ -2,18 +2,102 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/product.dart';
 import '../models/purchase_order.dart';
 import '../models/sale.dart';
+import '../models/expense_record.dart';
 import 'backend_api_service.dart';
 import 'database_service.dart';
+import 'financial_reporting_service.dart';
 import 'pos_service.dart';
+import 'supabase_sync_service.dart';
 
 enum SmartPlusNotificationLevel { info, warning, critical }
 
 enum SmartPlusInsightKind { rule, forecast }
+
+enum SmartPlusDataQuality { checking, weak, limited, strong }
+
+enum SmartPlusRecordTarget { inventory, sales, customers, suppliers }
+
+/// A transparent summary of whether the local business records are suitable
+/// for a SmartPlus insight. Forecasts are deliberately blocked when this is
+/// weak or still being checked.
+class SmartPlusDataTrust {
+  const SmartPlusDataTrust({
+    this.quality = SmartPlusDataQuality.checking,
+    this.lastSyncedAt,
+    this.syncConfigured = false,
+    this.issues = const [],
+    this.completedSales = 0,
+  });
+
+  final SmartPlusDataQuality quality;
+  final DateTime? lastSyncedAt;
+  final bool syncConfigured;
+  final List<String> issues;
+  final int completedSales;
+
+  bool get allowsForecast {
+    if (quality != SmartPlusDataQuality.strong &&
+        quality != SmartPlusDataQuality.limited) {
+      return false;
+    }
+    if (!syncConfigured || lastSyncedAt == null) return true;
+    return DateTime.now().difference(lastSyncedAt!) <=
+        const Duration(hours: 24);
+  }
+
+  String get qualityLabel => switch (quality) {
+    SmartPlusDataQuality.checking => 'Checking data quality',
+    SmartPlusDataQuality.weak => 'Weak data quality',
+    SmartPlusDataQuality.limited => 'Limited data quality',
+    SmartPlusDataQuality.strong => 'Strong data quality',
+  };
+
+  String get confidenceLabel => switch (quality) {
+    SmartPlusDataQuality.strong => 'High confidence',
+    SmartPlusDataQuality.limited => 'Moderate confidence',
+    SmartPlusDataQuality.weak => 'Low confidence',
+    SmartPlusDataQuality.checking => 'Confidence pending',
+  };
+
+  String get freshnessLabel {
+    if (!syncConfigured) return 'Local device data; cloud sync is not active.';
+    if (lastSyncedAt == null) return 'Not synced yet.';
+    final age = DateTime.now().difference(lastSyncedAt!);
+    if (age.inMinutes < 1) return 'Last synced just now.';
+    if (age.inMinutes < 60) {
+      return 'Last synced ${age.inMinutes} minute(s) ago.';
+    }
+    if (age.inHours < 24) return 'Last synced ${age.inHours} hour(s) ago.';
+    return 'Last synced ${age.inDays} day(s) ago.';
+  }
+}
+
+/// Read-only owner summary for the current business day. An unavailable
+/// expense total is represented by null rather than pretending it is zero.
+class SmartPlusDailyBrief {
+  const SmartPlusDailyBrief({
+    this.sales = 0,
+    this.grossProfit = 0,
+    this.expenses,
+    this.lowStockCount = 0,
+    this.topProducts = const [],
+    this.unusualDiscountCount = 0,
+  });
+
+  final double sales;
+  final double grossProfit;
+  final double? expenses;
+  final int lowStockCount;
+  final List<String> topProducts;
+  final int unusualDiscountCount;
+  double? get netProfit => expenses == null ? null : grossProfit - expenses!;
+}
 
 class SmartPlusNotificationPreferences {
   const SmartPlusNotificationPreferences({
@@ -84,6 +168,10 @@ class SmartPlusNotification {
   final String sourceData;
   final String dataRange;
   final String proposedAction;
+  final SmartPlusDataQuality dataQuality;
+  final String confidence;
+  final String why;
+  final SmartPlusRecordTarget? recordTarget;
   final bool requiresOwnerConfirmation;
   final bool isRead;
 
@@ -96,11 +184,21 @@ class SmartPlusNotification {
     this.sourceData = 'Current local business records',
     this.dataRange = 'Current data',
     this.proposedAction = 'Review the related records.',
+    this.dataQuality = SmartPlusDataQuality.limited,
+    this.confidence = 'Moderate confidence',
+    this.why = 'SmartPlus evaluated the stated source data and rule.',
+    this.recordTarget,
     this.requiresOwnerConfirmation = true,
     this.isRead = false,
   });
 
-  SmartPlusNotification copyWith({bool? isRead}) => SmartPlusNotification(
+  SmartPlusNotification copyWith({
+    bool? isRead,
+    SmartPlusDataQuality? dataQuality,
+    String? confidence,
+    String? why,
+    SmartPlusRecordTarget? recordTarget,
+  }) => SmartPlusNotification(
     id: id,
     title: title,
     message: message,
@@ -109,6 +207,10 @@ class SmartPlusNotification {
     sourceData: sourceData,
     dataRange: dataRange,
     proposedAction: proposedAction,
+    dataQuality: dataQuality ?? this.dataQuality,
+    confidence: confidence ?? this.confidence,
+    why: why ?? this.why,
+    recordTarget: recordTarget ?? this.recordTarget,
     requiresOwnerConfirmation: requiresOwnerConfirmation,
     isRead: isRead ?? this.isRead,
   );
@@ -126,14 +228,22 @@ class SmartPlusNotificationService extends ChangeNotifier {
   final Map<String, SmartPlusNotification> _milestones =
       <String, SmartPlusNotification>{};
   List<SmartPlusNotification> _supplierDeliveryNotifications = const [];
+  List<PurchaseOrder> _purchaseOrders = const [];
   bool _supplierRefreshInFlight = false;
   DateTime? _lastSupplierRefresh;
+  SmartPlusDataTrust _dataTrust = const SmartPlusDataTrust();
+  SmartPlusDailyBrief _dailyBrief = const SmartPlusDailyBrief();
   List<SmartPlusNotification> _notifications = const [];
   SmartPlusNotificationPreferences _preferences =
       const SmartPlusNotificationPreferences();
+  final SupabaseSyncService? _syncService;
 
-  SmartPlusNotificationService(this._pos) {
+  SmartPlusNotificationService(this._pos)
+    : _syncService = GetIt.I.isRegistered<SupabaseSyncService>()
+          ? GetIt.I<SupabaseSyncService>()
+          : null {
     _pos.addListener(_onBusinessDataChanged);
+    _syncService?.addListener(_onBusinessDataChanged);
     refresh();
   }
 
@@ -141,6 +251,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
       List.unmodifiable(_notifications);
   int get unreadCount => _notifications.where((item) => !item.isRead).length;
   SmartPlusNotificationPreferences get preferences => _preferences;
+  SmartPlusDataTrust get dataTrust => _dataTrust;
+  SmartPlusDailyBrief get dailyBrief => _dailyBrief;
   bool isReviewed(String id) => _reviewedIds.contains(id);
 
   Future<void> initialize() async {
@@ -213,7 +325,13 @@ class SmartPlusNotificationService extends ChangeNotifier {
           ]
         : const <SmartPlusNotification>[];
     _notifications = visible
-        .map((item) => item.copyWith(isRead: _readIds.contains(item.id)))
+        .map(
+          (item) => item.copyWith(
+            isRead: _readIds.contains(item.id),
+            dataQuality: _dataTrust.quality,
+            confidence: _dataTrust.confidenceLabel,
+          ),
+        )
         .toList(growable: false);
     notifyListeners();
   }
@@ -221,13 +339,6 @@ class SmartPlusNotificationService extends ChangeNotifier {
   Future<void> _refreshSupplierDeliveryNotifications({
     bool force = false,
   }) async {
-    if (!_preferences.supplierDeliveryEnabled) {
-      if (_supplierDeliveryNotifications.isNotEmpty) {
-        _supplierDeliveryNotifications = const [];
-        _applyVisibleNotifications();
-      }
-      return;
-    }
     final now = DateTime.now();
     if (_supplierRefreshInFlight ||
         (!force &&
@@ -239,7 +350,14 @@ class SmartPlusNotificationService extends ChangeNotifier {
     _supplierRefreshInFlight = true;
     _lastSupplierRefresh = now;
     try {
-      _supplierDeliveryNotifications = await _evaluateSupplierDeliveryRules();
+      final database = DatabaseService();
+      final orders = await database.getAllPurchaseOrders();
+      _purchaseOrders = List.unmodifiable(orders);
+      _dataTrust = _assessDataTrust(orders);
+      _dailyBrief = await _buildDailyBrief();
+      _supplierDeliveryNotifications = _preferences.supplierDeliveryEnabled
+          ? await _evaluateSupplierDeliveryRules()
+          : const [];
       _applyVisibleNotifications();
     } catch (error) {
       // SmartPlus must never interrupt a normal POS/inventory workflow if a
@@ -287,6 +405,46 @@ class SmartPlusNotificationService extends ChangeNotifier {
         .toList();
     final suggestions = <SmartPlusNotification>[];
 
+    suggestions.add(_dailyBriefNotification());
+
+    suggestions.add(
+      SmartPlusNotification(
+        id: 'smartplus-data-freshness',
+        title: 'Data freshness',
+        message: _dataTrust.freshnessLabel,
+        level: _dataTrust.allowsForecast
+            ? SmartPlusNotificationLevel.info
+            : SmartPlusNotificationLevel.warning,
+        sourceData: 'Sync state and local business records',
+        dataRange: 'Current device state',
+        proposedAction: _dataTrust.allowsForecast
+            ? 'Keep syncing regularly so SmartPlus can use current records.'
+            : 'Sync and resolve the listed data-quality issues before relying on forecasts.',
+        why:
+            'SmartPlus checks freshness before presenting data-dependent guidance.',
+      ),
+    );
+
+    if (!_dataTrust.allowsForecast) {
+      final issues = _dataTrust.issues.isEmpty
+          ? 'SmartPlus is still checking the available records.'
+          : _dataTrust.issues.join(' ');
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'smartplus-forecast-paused',
+          title: 'Forecasts are paused until data improves',
+          message:
+              'Rule: SmartPlus will not generate a forecast while data quality is insufficient. $issues',
+          level: SmartPlusNotificationLevel.warning,
+          sourceData: 'Sales, inventory, supplier, and sync validation',
+          dataRange: 'Current business records',
+          proposedAction: 'Resolve the data issues, then refresh SmartPlus.',
+          why:
+              'Forecasts can mislead decisions when source records are missing, duplicated, conflicting, or stale.',
+        ),
+      );
+    }
+
     final outOfStock = products
         .where((product) => product.quantity <= 0)
         .toList();
@@ -302,6 +460,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
           dataRange: 'Current inventory',
           proposedAction:
               'Review stock and create a restock order if appropriate.',
+          why:
+              'One or more product quantities are zero or below zero in current inventory.',
+          recordTarget: SmartPlusRecordTarget.inventory,
         ),
       );
     }
@@ -324,9 +485,13 @@ class SmartPlusNotificationService extends ChangeNotifier {
           dataRange: 'Current inventory',
           proposedAction:
               'Review stock and supplier availability before creating an order.',
+          why: 'Current quantity is at or below the saved reorder level.',
+          recordTarget: SmartPlusRecordTarget.inventory,
         ),
       );
     }
+
+    suggestions.addAll(_smartInventoryRules(products, completedSales));
 
     final topSellerAtRisk = _topSellerAtRisk(products, completedSales);
     if (_preferences.lowStockEnabled && topSellerAtRisk != null) {
@@ -341,6 +506,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
           dataRange:
               'Completed sales from the last 30 days plus current inventory',
           proposedAction: 'Review this product before ordering more stock.',
+          why:
+              'Recent completed sales and current inventory both identify this product as at risk.',
+          recordTarget: SmartPlusRecordTarget.inventory,
         ),
       );
     }
@@ -360,6 +528,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
           dataRange: 'Most recent 7 days compared with the preceding 7 days',
           proposedAction:
               'Review sales records and operational context before making a decision.',
+          why:
+              'The most recent completed-sale total is compared with the preceding seven days.',
+          recordTarget: SmartPlusRecordTarget.sales,
         ),
       );
     }
@@ -377,36 +548,301 @@ class SmartPlusNotificationService extends ChangeNotifier {
           dataRange: 'Last 30 days',
           proposedAction:
               'Review the approved discount reason with the responsible staff member.',
+          why:
+              'A completed sale meets the configured 20% discount review threshold.',
+          recordTarget: SmartPlusRecordTarget.sales,
         ),
       );
     }
 
-    final recentSaleCount = completedSales
-        .where(
-          (sale) => sale.saleDate.isAfter(
-            DateTime.now().subtract(const Duration(days: 90)),
-          ),
-        )
+    final unusualRefunds = _pos.recentSales
+        .where((sale) => sale.status == SaleStatus.returned)
         .length;
-    if (_preferences.forecastEnabled &&
-        recentSaleCount > 0 &&
-        recentSaleCount < 30) {
+    if (unusualRefunds > 0) {
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'refund-review',
+          title: 'Refund activity needs review',
+          message:
+              '$unusualRefunds returned sale(s) are recorded in the current data. This is a review reminder, not an accusation of fraud.',
+          level: SmartPlusNotificationLevel.warning,
+          sourceData: 'Recorded returned-sale status',
+          dataRange: 'Available completed and returned sales',
+          proposedAction:
+              'Review the receipt, return reason, and approval record.',
+          why:
+              'Returned transactions require owner visibility because they can affect revenue and inventory.',
+          recordTarget: SmartPlusRecordTarget.sales,
+        ),
+      );
+    }
+
+    if (_preferences.forecastEnabled && !_dataTrust.allowsForecast) {
       suggestions.add(
         SmartPlusNotification(
           id: 'forecast-data-readiness',
-          title: 'More history improves demand signals',
+          title: 'Forecast requires stronger records',
           message:
-              'Only $recentSaleCount completed sale(s) exist in the last 90 days. Keep recording sales, including seasonal periods, before relying on demand forecasts.',
+              'SmartPlus did not generate a forecast. ${_dataTrust.issues.isEmpty ? 'Current validation is still in progress.' : _dataTrust.issues.join(' ')}',
           level: SmartPlusNotificationLevel.info,
-          insightKind: SmartPlusInsightKind.forecast,
-          sourceData: 'Completed sales count',
+          sourceData:
+              'Completed sales count, inventory, supplier records, and sync state',
           dataRange: 'Last 90 days',
           proposedAction:
-              'Keep recording sales, including seasonal periods, before relying on forecasts.',
+              'Resolve the quality issues and keep recording completed sales before relying on forecasts.',
+          why:
+              'SmartPlus suppresses forecasts when source data is weak, incomplete, duplicated, conflicting, or stale.',
+          recordTarget: SmartPlusRecordTarget.sales,
         ),
       );
     }
 
+    return suggestions;
+  }
+
+  SmartPlusNotification _dailyBriefNotification() {
+    final expense = _dailyBrief.expenses == null
+        ? 'Expenses: unavailable until the secure financial report is available.'
+        : 'Expenses: ${_dailyBrief.expenses!.toStringAsFixed(2)}.';
+    final top = _dailyBrief.topProducts.isEmpty
+        ? 'No completed products sold yet today.'
+        : 'Top products: ${_dailyBrief.topProducts.join(', ')}.';
+    return SmartPlusNotification(
+      id: 'smartplus-daily-brief',
+      title: 'Today’s decision brief',
+      message:
+          'Sales: ${_dailyBrief.sales.toStringAsFixed(2)}. Gross profit: ${_dailyBrief.grossProfit.toStringAsFixed(2)}. $expense Low stock: ${_dailyBrief.lowStockCount}. Unusual discounts: ${_dailyBrief.unusualDiscountCount}. $top',
+      level: _dailyBrief.lowStockCount > 0
+          ? SmartPlusNotificationLevel.warning
+          : SmartPlusNotificationLevel.info,
+      sourceData:
+          'Today’s completed sales, current inventory, and financial expenses',
+      dataRange: 'Today',
+      proposedAction:
+          'Open What needs attention today for prioritized records.',
+      why:
+          'SmartPlus summarizes the current business day so the owner can review the most urgent work first.',
+      recordTarget: SmartPlusRecordTarget.sales,
+    );
+  }
+
+  List<SmartPlusNotification> _smartInventoryRules(
+    List<Product> products,
+    List<Sale> completedSales,
+  ) {
+    final now = DateTime.now();
+    final suggestions = <SmartPlusNotification>[];
+    final soldLast30 = <int, int>{};
+    final soldLast90 = <int, int>{};
+    for (final sale in completedSales) {
+      for (final item in sale.items) {
+        if (sale.saleDate.isAfter(now.subtract(const Duration(days: 30)))) {
+          soldLast30[item.productId] =
+              (soldLast30[item.productId] ?? 0) + item.quantity;
+        }
+        if (sale.saleDate.isAfter(now.subtract(const Duration(days: 90)))) {
+          soldLast90[item.productId] =
+              (soldLast90[item.productId] ?? 0) + item.quantity;
+        }
+      }
+    }
+
+    final expired = products
+        .where(
+          (item) =>
+              item.expirationDate != null &&
+              item.expirationDate!.isBefore(
+                DateTime(now.year, now.month, now.day),
+              ),
+        )
+        .toList();
+    if (expired.isNotEmpty) {
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'expired-stock',
+          title: 'Expired stock needs immediate review',
+          message:
+              '${expired.length} product(s), including ${expired.take(3).map((item) => item.name).join(', ')}, have passed their recorded expiry date.',
+          level: SmartPlusNotificationLevel.critical,
+          sourceData: 'Product expiry dates and current inventory',
+          dataRange: 'Current inventory',
+          proposedAction:
+              'Remove these items from sale and record the stock adjustment reason.',
+          why: 'The recorded expiry date is before today.',
+          recordTarget: SmartPlusRecordTarget.inventory,
+        ),
+      );
+    }
+    final nearExpiry = products.where((item) {
+      final expiry = item.expirationDate;
+      return expiry != null &&
+          !expiry.isBefore(now) &&
+          expiry.difference(now).inDays <= 30;
+    }).toList();
+    if (nearExpiry.isNotEmpty) {
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'near-expiry-stock',
+          title: 'Near-expiry stock needs review',
+          message:
+              '${nearExpiry.length} product(s) expire within 30 days, including ${nearExpiry.take(3).map((item) => item.name).join(', ')}.',
+          level: SmartPlusNotificationLevel.warning,
+          sourceData: 'Product expiry dates and current inventory',
+          dataRange: 'Next 30 days',
+          proposedAction:
+              'Review pricing, promotion, transfer, or removal according to your stock policy.',
+          why: 'The recorded expiry date falls within the next 30 days.',
+          recordTarget: SmartPlusRecordTarget.inventory,
+        ),
+      );
+    }
+
+    final deadStock = products
+        .where(
+          (item) =>
+              item.id != null &&
+              item.quantity > 0 &&
+              item.createdAt.isBefore(now.subtract(const Duration(days: 90))) &&
+              (soldLast90[item.id] ?? 0) == 0,
+        )
+        .toList();
+    if (deadStock.isNotEmpty) {
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'dead-stock',
+          title: 'Potential dead stock detected',
+          message:
+              '${deadStock.length} stocked product(s) have no completed sale in the last 90 days, including ${deadStock.take(3).map((item) => item.name).join(', ')}.',
+          level: SmartPlusNotificationLevel.warning,
+          sourceData: 'Product age, current quantity, and completed sale items',
+          dataRange: 'Last 90 days',
+          proposedAction:
+              'Review product demand, display, price, or markdown strategy before ordering more.',
+          why:
+              'The products remain in stock but have no recorded completed sale for 90 days.',
+          recordTarget: SmartPlusRecordTarget.inventory,
+        ),
+      );
+    }
+
+    for (final product
+        in products.where((item) => item.id != null && item.lowStock).take(3)) {
+      final productId = product.id!;
+      final units30 = soldLast30[productId] ?? 0;
+      final velocity = units30 / 30;
+      final history =
+          _purchaseOrders
+              .where(
+                (order) =>
+                    order.items.any((item) => item.productId == productId),
+              )
+              .toList()
+            ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+      final leadTimes = history
+          .where((order) => order.expectedDeliveryDate != null)
+          .map(
+            (order) =>
+                order.expectedDeliveryDate!.difference(order.orderDate).inDays,
+          )
+          .where((days) => days > 0)
+          .toList();
+      final leadDays = leadTimes.isEmpty
+          ? 7
+          : (leadTimes.reduce((a, b) => a + b) / leadTimes.length).round();
+      final safetyStock = product.reorderLevel;
+      final target = (velocity * (leadDays + 7)).ceil() + safetyStock;
+      final recommended = (target - product.quantity).clamp(
+        safetyStock,
+        999999,
+      );
+      final lastOrder = history.isEmpty ? null : history.first;
+      PurchaseOrderItem? lastItem;
+      if (lastOrder != null) {
+        for (final item in lastOrder.items) {
+          if (item.productId == productId) {
+            lastItem = item;
+            break;
+          }
+        }
+      }
+      final supplierDetail = lastOrder == null
+          ? 'No supplier purchase history is recorded.'
+          : 'Last supplier: ${lastOrder.supplierName}; last price: ${lastItem?.unitPrice.toStringAsFixed(2) ?? 'not recorded'}; planned lead time: $leadDays day(s).';
+      final supplierComparison = <String>[];
+      final bySupplier = <int, List<PurchaseOrder>>{};
+      for (final order in history) {
+        bySupplier.putIfAbsent(order.supplierId, () => []).add(order);
+      }
+      for (final supplierOrders in bySupplier.values.take(3)) {
+        final latest = supplierOrders.first;
+        PurchaseOrderItem? latestProductItem;
+        for (final item in latest.items) {
+          if (item.productId == productId) {
+            latestProductItem = item;
+            break;
+          }
+        }
+        final overdue = supplierOrders.where((order) {
+          final expected = order.expectedDeliveryDate;
+          return expected != null &&
+              !['received', 'cancelled'].contains(order.status.toLowerCase()) &&
+              expected.isBefore(now);
+        }).length;
+        supplierComparison.add(
+          '${latest.supplierName}: ${supplierOrders.length} order(s), last ${latestProductItem?.unitPrice.toStringAsFixed(2) ?? 'price unavailable'}, $overdue overdue',
+        );
+      }
+      final comparisonDetail = supplierComparison.isEmpty
+          ? ''
+          : ' Supplier comparison: ${supplierComparison.join(' • ')}.';
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'smart-reorder-$productId',
+          title: 'Reorder recommendation: ${product.name}',
+          message:
+              'Rule: current stock ${product.quantity}; sales velocity ${velocity.toStringAsFixed(2)} unit(s)/day; reorder level $safetyStock. Suggested order: $recommended unit(s). $supplierDetail$comparisonDetail',
+          level: product.quantity <= 0
+              ? SmartPlusNotificationLevel.critical
+              : SmartPlusNotificationLevel.warning,
+          sourceData:
+              'Last 30 days of completed sales, current stock, reorder level, and purchase-order history',
+          dataRange: 'Last 30 days plus current supplier history',
+          proposedAction:
+              'Review the quantity, supplier price, and delivery date before creating a purchase order.',
+          why:
+              'The suggested quantity covers expected sales during the recorded/default lead time plus safety stock.',
+          recordTarget: SmartPlusRecordTarget.suppliers,
+        ),
+      );
+    }
+
+    final firstSale = completedSales.isEmpty
+        ? null
+        : completedSales
+              .map((sale) => sale.saleDate)
+              .reduce((a, b) => a.isBefore(b) ? a : b);
+    if (_preferences.forecastEnabled &&
+        _dataTrust.allowsForecast &&
+        firstSale != null &&
+        now.difference(firstSale).inDays >= 365) {
+      suggestions.add(
+        SmartPlusNotification(
+          id: 'seasonal-forecast-ready',
+          title: 'Seasonal demand forecast is ready to review',
+          message:
+              'Forecast: SmartPlus has at least one year of completed-sale history and can provide a seasonal demand signal. This is an estimate, not a guarantee.',
+          level: SmartPlusNotificationLevel.info,
+          insightKind: SmartPlusInsightKind.forecast,
+          sourceData: 'Completed item-level sales',
+          dataRange: 'At least 12 months of recorded sales',
+          proposedAction:
+              'Ask SmartPlus about the next seasonal period, then review the supporting sales records.',
+          why:
+              'A full year of completed sales is available and current data quality permits a forecast.',
+          recordTarget: SmartPlusRecordTarget.sales,
+        ),
+      );
+    }
     return suggestions;
   }
 
@@ -455,6 +891,163 @@ class SmartPlusNotificationService extends ChangeNotifier {
           sale.subtotal > 0 &&
           sale.discountAmount / sale.subtotal >= 0.20;
     }).length;
+  }
+
+  Future<SmartPlusDailyBrief> _buildDailyBrief() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final completed = _pos.recentSales
+        .where(
+          (sale) =>
+              sale.status == SaleStatus.completed &&
+              !sale.saleDate.isBefore(today),
+        )
+        .toList();
+    final productsById = {
+      for (final product in _pos.products)
+        if (product.id != null) product.id!: product,
+    };
+    final sales = completed.fold<double>(
+      0,
+      (sum, sale) => sum + sale.totalAmount,
+    );
+    final grossProfit = completed.fold<double>(
+      0,
+      (sum, sale) =>
+          sum +
+          sale.items.fold<double>(
+            0,
+            (itemTotal, item) =>
+                itemTotal +
+                ((item.unitPrice -
+                        (productsById[item.productId]?.buyingPrice ??
+                            item.unitPrice)) *
+                    item.quantity),
+          ),
+    );
+    final quantities = <String, int>{};
+    for (final sale in completed) {
+      for (final item in sale.items) {
+        quantities[item.productName] =
+            (quantities[item.productName] ?? 0) + item.quantity;
+      }
+    }
+    final topProducts = quantities.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    double? expenses;
+    try {
+      final records = await FinancialReportingService().getExpenses(
+        from: today,
+        to: today,
+      );
+      expenses = records.fold<double>(
+        0,
+        (sum, ExpenseRecord item) => sum + item.amount,
+      );
+    } catch (_) {
+      // Some subscriptions do not have expense tracking. Do not turn an
+      // unavailable secure report into a misleading zero value.
+    }
+    return SmartPlusDailyBrief(
+      sales: sales,
+      grossProfit: grossProfit,
+      expenses: expenses,
+      lowStockCount: _pos.products
+          .where((item) => item.lowStock || item.quantity <= 0)
+          .length,
+      topProducts: topProducts
+          .take(3)
+          .map((item) => '${item.key} (${item.value})')
+          .toList(growable: false),
+      unusualDiscountCount: _largeDiscountCount(completed),
+    );
+  }
+
+  SmartPlusDataTrust _assessDataTrust(List<PurchaseOrder> orders) {
+    final products = _pos.products;
+    final completedSales = _pos.recentSales
+        .where((sale) => sale.status == SaleStatus.completed)
+        .toList();
+    final issues = <String>[];
+    final saleNumbers = <String>{};
+    var duplicateSales = 0;
+    for (final sale in completedSales) {
+      if (sale.saleNumber.trim().isNotEmpty &&
+          !saleNumbers.add(sale.saleNumber)) {
+        duplicateSales += 1;
+      }
+      if (sale.items.isEmpty || sale.totalAmount < 0) {
+        issues.add(
+          'Some completed sales are missing line items or have an invalid total.',
+        );
+        break;
+      }
+    }
+    if (duplicateSales > 0) {
+      issues.add(
+        '$duplicateSales duplicate completed sale number(s) were detected.',
+      );
+    }
+    final barcodes = <String>{};
+    final hasInventoryConflict = products.any((product) {
+      final barcode = product.barcode.trim().toLowerCase();
+      return product.quantity < 0 ||
+          (barcode.isNotEmpty && !barcodes.add(barcode));
+    });
+    if (hasInventoryConflict) {
+      issues.add('Inventory has a negative quantity or duplicate barcode.');
+    }
+    final incompleteOrders = orders.where((order) {
+      final open = ![
+        'received',
+        'cancelled',
+      ].contains(order.status.toLowerCase());
+      return open &&
+          (order.supplierName.trim().isEmpty ||
+              order.items.isEmpty ||
+              order.expectedDeliveryDate == null);
+    }).length;
+    if (incompleteOrders > 0) {
+      issues.add(
+        '$incompleteOrders open supplier order(s) are missing supplier, items, or an expected delivery date.',
+      );
+    }
+
+    final sync = _syncService;
+    final syncConfigured = sync?.isConfigured ?? false;
+    final lastSyncedAt = sync?.lastSyncTime;
+    if (syncConfigured && lastSyncedAt == null) {
+      issues.add('Cloud sync has not completed yet.');
+    } else if (syncConfigured &&
+        DateTime.now().difference(lastSyncedAt ?? DateTime.now()) >
+            const Duration(hours: 24)) {
+      issues.add('Cloud data is more than 24 hours old.');
+    }
+
+    final recentSales = completedSales
+        .where(
+          (sale) => sale.saleDate.isAfter(
+            DateTime.now().subtract(const Duration(days: 90)),
+          ),
+        )
+        .length;
+    if (recentSales < 30) {
+      issues.add(
+        'Only $recentSales completed sale(s) exist in the last 90 days.',
+      );
+    }
+    final quality = products.isEmpty || recentSales < 30 || issues.length >= 3
+        ? SmartPlusDataQuality.weak
+        : issues.isNotEmpty || recentSales < 60
+        ? SmartPlusDataQuality.limited
+        : SmartPlusDataQuality.strong;
+    return SmartPlusDataTrust(
+      quality: quality,
+      lastSyncedAt: lastSyncedAt,
+      syncConfigured: syncConfigured,
+      issues: List.unmodifiable(issues),
+      completedSales: completedSales.length,
+    );
   }
 
   Future<List<SmartPlusNotification>> _evaluateSupplierDeliveryRules() async {
@@ -626,6 +1219,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
     sourceData: source,
     dataRange: range,
     proposedAction: action,
+    why:
+        'The purchase-order status, expected delivery date, and recorded receipt data meet this delivery review rule.',
+    recordTarget: SmartPlusRecordTarget.suppliers,
     requiresOwnerConfirmation: true,
   );
 
@@ -760,6 +1356,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
   @override
   void dispose() {
     _pos.removeListener(_onBusinessDataChanged);
+    _syncService?.removeListener(_onBusinessDataChanged);
     super.dispose();
   }
 }

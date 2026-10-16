@@ -452,6 +452,7 @@ class _CartSheetState extends State<CartSheet> {
   @override
   Widget build(BuildContext context) {
     final cart = widget.pos.cart;
+    final upsellSuggestions = widget.pos.getUpsellSuggestionsForCart();
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     _recomputeCashChange();
 
@@ -514,6 +515,36 @@ class _CartSheetState extends State<CartSheet> {
               ),
             ),
             const Divider(height: 1),
+            if (cart.isNotEmpty && upsellSuggestions.isNotEmpty)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline_rounded,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Optional pairing suggestion: ${upsellSuggestions.join(', ')}. Review with the customer; nothing is added automatically.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // Cart Items
             Flexible(
               flex: 3,

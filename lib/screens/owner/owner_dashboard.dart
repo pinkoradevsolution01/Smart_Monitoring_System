@@ -13,6 +13,7 @@ import 'package:smart_monitoring_system/screens/owner/backup_restore_screen.dart
 import 'package:smart_monitoring_system/screens/owner/supplier_management_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/for_delivery_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/customer_management_screen.dart';
+import 'package:smart_monitoring_system/screens/owner/smart_plus_decision_center_screen.dart';
 import 'package:smart_monitoring_system/screens/owner/loyalty_rewards_screen.dart';
 import 'package:smart_monitoring_system/screens/shared/inventory_screen.dart';
 import 'package:smart_monitoring_system/screens/cashier/cashier_pos.dart';
@@ -140,10 +141,10 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
           pageBuilder: (_, animation, _) => FadeTransition(
             opacity: animation,
             child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.025, 0),
-                end: Offset.zero,
-              ).chain(CurveTween(curve: Curves.easeOutCubic)).animate(animation),
+              position:
+                  Tween<Offset>(begin: const Offset(0.025, 0), end: Offset.zero)
+                      .chain(CurveTween(curve: Curves.easeOutCubic))
+                      .animate(animation),
               child: destination,
             ),
           ),
@@ -231,9 +232,11 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               sale.saleDate.day == now.day,
         )
         .fold<int>(0, (sum, sale) => sum + sale.loyaltyPointsEarned);
-    final weekStart = DateTime(now.year, now.month, now.day).subtract(
-      Duration(days: now.weekday - DateTime.monday),
-    );
+    final weekStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).subtract(Duration(days: now.weekday - DateTime.monday));
     final weekPoints = _dashboardSales
         .where(
           (sale) =>
@@ -270,8 +273,7 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
               ),
               child: const HeaderClock(),
             ),
-            if (setupProgress.isComplete)
-              const SmartPlusNotificationButton(),
+            if (setupProgress.isComplete) const SmartPlusNotificationButton(),
             IconButton(
               tooltip: AppLocalizations.t('settings'),
               icon: const Icon(Icons.settings),
@@ -336,7 +338,9 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                     case 4:
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
                       );
                   }
                 },
@@ -585,7 +589,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                                 onTap: () => Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const FinancialComplianceScreen(),
+                                    builder: (_) =>
+                                        const FinancialComplianceScreen(),
                                   ),
                                 ),
                               )
@@ -682,7 +687,8 @@ class _OwnerDashboardState extends State<OwnerDashboard> {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => ForDeliveryScreen(user: widget.user),
+                                builder: (_) =>
+                                    ForDeliveryScreen(user: widget.user),
                               ),
                             ),
                           ),
@@ -891,6 +897,14 @@ class _OwnerNavigationDrawer extends StatelessWidget {
                     selected: true,
                     onTap: () => Navigator.of(context).pop(),
                   ),
+                  if (setupComplete)
+                    _DrawerNavItem(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'What needs attention today?',
+                      subtitle: 'SmartPlus decision center',
+                      onTap: () =>
+                          onOpen(const SmartPlusDecisionCenterScreen()),
+                    ),
                   const _DrawerSectionLabel('Operations'),
                   _DrawerNavItem(
                     icon: Icons.point_of_sale_rounded,
@@ -982,16 +996,16 @@ class _DrawerSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
-        child: Text(
-          label.toUpperCase(),
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-              ),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+    child: Text(
+      label.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+      ),
+    ),
+  );
 }
 
 class _DrawerNavItem extends StatefulWidget {
@@ -1019,7 +1033,9 @@ class _DrawerNavItemState extends State<_DrawerNavItem> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final foreground = widget.selected ? colors.onPrimaryContainer : colors.onSurface;
+    final foreground = widget.selected
+        ? colors.onPrimaryContainer
+        : colors.onSurface;
     return Semantics(
       button: true,
       label: 'Open ${widget.label}',
@@ -1038,7 +1054,10 @@ class _DrawerNavItemState extends State<_DrawerNavItem> {
               onHighlightChanged: (value) => setState(() => _pressed = value),
               onTap: widget.onTap,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 13,
+                ),
                 child: Row(
                   children: [
                     Icon(widget.icon, color: foreground, size: 21),
@@ -1050,7 +1069,8 @@ class _DrawerNavItemState extends State<_DrawerNavItem> {
                         children: [
                           Text(
                             widget.label,
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
                                   color: foreground,
                                   fontWeight: widget.selected
                                       ? FontWeight.w800
@@ -1062,7 +1082,8 @@ class _DrawerNavItemState extends State<_DrawerNavItem> {
                               widget.subtitle!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
                                     color: foreground.withValues(alpha: 0.72),
                                   ),
                             ),
