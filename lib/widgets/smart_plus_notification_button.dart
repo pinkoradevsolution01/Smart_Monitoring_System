@@ -278,6 +278,51 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                           ),
                                         ),
                                       ),
+                                    Wrap(
+                                      spacing: 4,
+                                      runSpacing: 2,
+                                      children: [
+                                        TextButton.icon(
+                                          onPressed: () => _recordFeedback(
+                                            context,
+                                            service,
+                                            notification.id,
+                                            'useful',
+                                          ),
+                                          icon: const Icon(
+                                            Icons.thumb_up_alt_outlined,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Useful'),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: () => _recordFeedback(
+                                            context,
+                                            service,
+                                            notification.id,
+                                            'ignored',
+                                          ),
+                                          icon: const Icon(
+                                            Icons.remove_circle_outline,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Ignore'),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: () => _recordFeedback(
+                                            context,
+                                            service,
+                                            notification.id,
+                                            'inaccurate',
+                                          ),
+                                          icon: const Icon(
+                                            Icons.flag_outlined,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Inaccurate'),
+                                        ),
+                                      ],
+                                    ),
                                     Align(
                                       alignment: Alignment.centerRight,
                                       child: reviewed
@@ -389,6 +434,24 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
     if (confirmed) await service.confirmOwnerReview(notification.id);
   }
 
+  Future<void> _recordFeedback(
+    BuildContext context,
+    SmartPlusNotificationService service,
+    String notificationId,
+    String verdict,
+  ) async {
+    final problem = await service.recordFeedback(notificationId, verdict);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          problem ??
+              'Feedback recorded for the next SmartPlus accuracy review.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _openPreferences(
     BuildContext context,
     SmartPlusNotificationService service,
@@ -464,6 +527,111 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                         draft = draft.copyWith(supplierDeliveryEnabled: value),
                   ),
                 ),
+                _preferenceSwitch(
+                  value: draft.customerLoyaltyEnabled,
+                  title: 'Customer and loyalty reminders',
+                  subtitle:
+                      'Points-expiry and consented follow-up reviews only. SmartPlus never contacts customers automatically.',
+                  onChanged: (value) => setDialogState(
+                    () => draft = draft.copyWith(customerLoyaltyEnabled: value),
+                  ),
+                ),
+                const Divider(),
+                DropdownButtonFormField<SmartPlusNotificationLevel>(
+                  key: ValueKey(draft.minimumSeverity),
+                  initialValue: draft.minimumSeverity,
+                  decoration: const InputDecoration(
+                    labelText: 'Minimum in-app severity',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: SmartPlusNotificationLevel.values
+                      .map(
+                        (level) => DropdownMenuItem(
+                          value: level,
+                          child: Text(
+                            level.name[0].toUpperCase() +
+                                level.name.substring(1),
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(
+                        () => draft = draft.copyWith(minimumSeverity: value),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<SmartPlusDigestFrequency>(
+                  key: ValueKey(draft.digestFrequency),
+                  initialValue: draft.digestFrequency,
+                  decoration: const InputDecoration(
+                    labelText: 'Owner email digest',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: SmartPlusDigestFrequency.values
+                      .map(
+                        (frequency) => DropdownMenuItem(
+                          value: frequency,
+                          child: Text(
+                            frequency == SmartPlusDigestFrequency.off
+                                ? 'Off'
+                                : '${frequency.name[0].toUpperCase()}${frequency.name.substring(1)} digest',
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(
+                        () => draft = draft.copyWith(digestFrequency: value),
+                      );
+                    }
+                  },
+                ),
+                SwitchListTile.adaptive(
+                  value:
+                      draft.quietHoursStart != null &&
+                      draft.quietHoursEnd != null,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Quiet hours'),
+                  subtitle: const Text(
+                    'Defer non-critical in-app suggestions during the selected hours.',
+                  ),
+                  onChanged: (enabled) => setDialogState(
+                    () => draft = enabled
+                        ? draft.copyWith(quietHoursStart: 22, quietHoursEnd: 7)
+                        : draft.copyWith(clearQuietHours: true),
+                  ),
+                ),
+                if (draft.quietHoursStart != null &&
+                    draft.quietHoursEnd != null) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _hourSelector(
+                          label: 'Starts',
+                          value: draft.quietHoursStart!,
+                          onChanged: (hour) => setDialogState(
+                            () => draft = draft.copyWith(quietHoursStart: hour),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _hourSelector(
+                          label: 'Ends',
+                          value: draft.quietHoursEnd!,
+                          onChanged: (hour) => setDialogState(
+                            () => draft = draft.copyWith(quietHoursEnd: hour),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -505,5 +673,28 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
     onChanged: onChanged,
     title: Text(title),
     subtitle: subtitle == null ? null : Text(subtitle),
+  );
+
+  Widget _hourSelector({
+    required String label,
+    required int value,
+    required ValueChanged<int> onChanged,
+  }) => DropdownButtonFormField<int>(
+    key: ValueKey(value),
+    initialValue: value,
+    decoration: InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+    ),
+    items: List<DropdownMenuItem<int>>.generate(
+      24,
+      (hour) => DropdownMenuItem(
+        value: hour,
+        child: Text('${hour.toString().padLeft(2, '0')}:00'),
+      ),
+    ),
+    onChanged: (hour) {
+      if (hour != null) onChanged(hour);
+    },
   );
 }

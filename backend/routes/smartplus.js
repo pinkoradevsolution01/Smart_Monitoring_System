@@ -12,7 +12,20 @@ const FIELDS = [
   'discount_enabled',
   'forecast_enabled',
   'supplier_delivery_enabled',
+  'customer_loyalty_enabled',
 ];
+const SETTING_FIELDS = [
+  'minimum_severity',
+  'digest_frequency',
+  'quiet_hours_start',
+  'quiet_hours_end',
+];
+const SEVERITIES = new Set(['info', 'warning', 'critical']);
+const DIGEST_FREQUENCIES = new Set(['off', 'daily', 'weekly']);
+const FEEDBACK_VERDICTS = new Set(['useful', 'ignored', 'inaccurate']);
+const writeRateWindows = new Map();
+const WRITE_RATE_WINDOW_MS = 5 * 60 * 1000;
+const WRITE_RATE_LIMIT = 30;
 const ACTION_TYPES = new Set([
   'reorder',
   'price_change_proposal',
@@ -28,8 +41,30 @@ function requireOwner(req, res, next) {
   return next();
 }
 
+// SmartPlus accepts only structured, allow-listed input. This small
+// per-owner/server-process limit protects review and feedback routes from
+// rapid scripted writes without using a client-supplied identity.
+function limitOwnerWrites(req, res, next) {
+  const key = `${req.businessContext?.businessId || ''}:${req.businessContext?.userId || ''}`;
+  const now = Date.now();
+  const recent = (writeRateWindows.get(key) || []).filter((time) => now - time < WRITE_RATE_WINDOW_MS);
+  if (recent.length >= WRITE_RATE_LIMIT) {
+    console.warn(JSON.stringify({ event: 'smartplus_rate_limited', businessId: req.businessContext?.businessId, userId: req.businessContext?.userId, timestamp: new Date().toISOString() }));
+    return res.status(429).json({ success: false, message: 'Too many SmartPlus write requests. Please wait a few minutes and try again.' });
+  }
+  recent.push(now);
+  writeRateWindows.set(key, recent);
+  return next();
+}
+
 function preferencesFromRow(row = {}) {
-  return Object.fromEntries(FIELDS.map((field) => [field, Number(row[field] ?? 1) === 1]));
+  return {
+    ...Object.fromEntries(FIELDS.map((field) => [field, Number(row[field] ?? 1) === 1])),
+    minimum_severity: SEVERITIES.has(row.minimum_severity) ? row.minimum_severity : 'info',
+    digest_frequency: DIGEST_FREQUENCIES.has(row.digest_frequency) ? row.digest_frequency : 'daily',
+    quiet_hours_start: row.quiet_hours_start != null && Number.isInteger(Number(row.quiet_hours_start)) && Number(row.quiet_hours_start) >= 0 && Number(row.quiet_hours_start) <= 23 ? Number(row.quiet_hours_start) : null,
+    quiet_hours_end: row.quiet_hours_end != null && Number.isInteger(Number(row.quiet_hours_end)) && Number(row.quiet_hours_end) >= 0 && Number(row.quiet_hours_end) <= 23 ? Number(row.quiet_hours_end) : null,
+  };
 }
 
 function parseJson(value, fallback = {}) {
@@ -114,7 +149,7 @@ router.use(requireActiveBusiness, requireOwner);
 router.get('/preferences', async (req, res) => {
   try {
     const [row] = await query(
-      `SELECT ${FIELDS.join(', ')}
+      `SELECT ${[...FIELDS, ...SETTING_FIELDS].join(', ')}
          FROM smartplus_notification_preferences
         WHERE business_id = ? LIMIT 1`,
       [req.businessContext.businessId],
@@ -135,19 +170,49 @@ router.put('/preferences', async (req, res) => {
     }
     values.push(input[field] ? 1 : 0);
   }
+  const minimumSeverity = String(input.minimum_severity || '').trim();
+  const digestFrequency = String(input.digest_frequency || '').trim();
+  const quietHoursStart = input.quiet_hours_start;
+  const quietHoursEnd = input.quiet_hours_end;
+  const validHour = (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 23);
+  if (!SEVERITIES.has(minimumSeverity) || !DIGEST_FREQUENCIES.has(digestFrequency) ||
+      !validHour(quietHoursStart) || !validHour(quietHoursEnd) ||
+      ((quietHoursStart === null) !== (quietHoursEnd === null))) {
+    return res.status(400).json({ success: false, message: 'Provide a valid severity, digest frequency, and both quiet-hour values or neither.' });
+  }
   try {
     await execute(
       `INSERT INTO smartplus_notification_preferences
-        (business_id, ${FIELDS.join(', ')})
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+        (business_id, ${[...FIELDS, ...SETTING_FIELDS].join(', ')})
+       VALUES (${Array(FIELDS.length + SETTING_FIELDS.length + 1).fill('?').join(', ')})
        ON DUPLICATE KEY UPDATE
-         ${FIELDS.map((field) => `${field} = VALUES(${field})`).join(', ')}`,
-      [req.businessContext.businessId, ...values],
+         ${[...FIELDS, ...SETTING_FIELDS].map((field) => `${field} = VALUES(${field})`).join(', ')}`,
+      [req.businessContext.businessId, ...values, minimumSeverity, digestFrequency, quietHoursStart, quietHoursEnd],
     );
     return res.json({ success: true, preferences: preferencesFromRow(input) });
   } catch (error) {
     console.error('SmartPlus preference write error:', error.message);
     return res.status(500).json({ success: false, message: 'Unable to save SmartPlus notification preferences.' });
+  }
+});
+
+router.post('/feedback', limitOwnerWrites, async (req, res) => {
+  const notificationId = String(req.body?.notificationId || '').trim();
+  const verdict = String(req.body?.verdict || '').trim();
+  if (!notificationId || notificationId.length > 128 || !FEEDBACK_VERDICTS.has(verdict)) {
+    return res.status(400).json({ success: false, message: 'Provide a valid SmartPlus notification and feedback verdict.' });
+  }
+  try {
+    await execute(
+      `INSERT INTO smartplus_feedback
+        (id, business_id, notification_id, owner_id, verdict)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), req.businessContext.businessId, notificationId, req.businessContext.userId, verdict],
+    );
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('SmartPlus feedback write error:', error.message);
+    return res.status(500).json({ success: false, message: 'Unable to record SmartPlus feedback.' });
   }
 });
 
@@ -165,7 +230,7 @@ router.get('/actions', async (req, res) => {
   }
 });
 
-router.post('/actions', requireCurrentSubscription, async (req, res) => {
+router.post('/actions', limitOwnerWrites, requireCurrentSubscription, async (req, res) => {
   const input = req.body || {};
   const actionType = String(input.actionType || '').trim();
   const title = String(input.title || '').trim();

@@ -19,6 +19,34 @@ function manilaDate(now = new Date()) {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+function manilaHour(now = new Date()) {
+  return Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', hour: '2-digit', hourCycle: 'h23',
+  }).format(now));
+}
+
+function manilaWeekday(now = new Date()) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', weekday: 'short',
+  }).format(now);
+}
+
+function isQuietHour(preferences, now = new Date()) {
+  const start = preferences.quiet_hours_start;
+  const end = preferences.quiet_hours_end;
+  if (!Number.isInteger(Number(start)) || !Number.isInteger(Number(end)) ||
+      Number(start) < 0 || Number(start) > 23 || Number(end) < 0 || Number(end) > 23 ||
+      Number(start) === Number(end)) return false;
+  const hour = manilaHour(now);
+  return Number(start) < Number(end)
+    ? hour >= Number(start) && hour < Number(end)
+    : hour >= Number(start) || hour < Number(end);
+}
+
+function severityRank(level) {
+  return { info: 0, warning: 1, critical: 2 }[level] ?? 0;
+}
+
 function asNumber(value) {
   return Number(value || 0);
 }
@@ -103,7 +131,9 @@ function normalizeSuggestions({ outOfStock, lowStock, discountReview, supplierDe
   if (preferences.supplier_delivery_enabled !== false) {
     suggestions.push(...supplierDeliverySuggestions(supplierDelivery));
   }
-  return suggestions;
+  const minimum = preferences.minimum_severity || 'info';
+  return suggestions.filter((suggestion) =>
+    severityRank(suggestion.level) >= severityRank(minimum));
 }
 
 function emailContent({ businessName, suggestions }) {
@@ -154,7 +184,8 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   if (!business?.owner_email) return { skipped: 'business_not_found' };
 
   const preferenceRows = await dbQuery(
-    `SELECT email_enabled, low_stock_enabled, discount_enabled, supplier_delivery_enabled
+      `SELECT email_enabled, low_stock_enabled, discount_enabled, supplier_delivery_enabled,
+              minimum_severity, digest_frequency, quiet_hours_start, quiet_hours_end
        FROM smartplus_notification_preferences
       WHERE business_id = ? LIMIT 1`,
     [businessId],
@@ -163,6 +194,12 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   if (Number(preferences.email_enabled ?? 1) !== 1) {
     return { skipped: 'email_disabled_by_owner' };
   }
+  const digestFrequency = String(preferences.digest_frequency || 'daily');
+  if (digestFrequency === 'off') return { skipped: 'digest_disabled_by_owner' };
+  if (digestFrequency === 'weekly' && manilaWeekday() !== 'Mon') {
+    return { skipped: 'weekly_digest_not_due' };
+  }
+  if (isQuietHour(preferences)) return { skipped: 'quiet_hours' };
 
   const [outOfStock, lowStock, discountRows, supplierDelivery] = await Promise.all([
     dbQuery(
@@ -233,12 +270,15 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
       discount_enabled: Number(preferences.discount_enabled ?? 1) === 1,
       supplier_delivery_enabled:
         Number(preferences.supplier_delivery_enabled ?? 1) === 1,
+      minimum_severity: preferences.minimum_severity,
     },
     supplierDelivery,
   });
   if (!suggestions.length) return { skipped: 'no_actionable_suggestions' };
 
-  const notificationKey = `owner-digest-${manilaDate()}`;
+  const notificationKey = digestFrequency === 'weekly'
+    ? `owner-digest-week-${manilaDate()}`
+    : `owner-digest-${manilaDate()}`;
   // Reserve the daily delivery before contacting Resend. The unique key makes
   // concurrent device syncs unable to send duplicate owner messages.
   const insert = await dbExecute(
@@ -299,6 +339,9 @@ module.exports = {
   dispatchOwnerDigest,
   emailContent,
   manilaDate,
+  manilaHour,
+  manilaWeekday,
+  isQuietHour,
   normalizeSuggestions,
   supplierDeliverySuggestions,
   dispatchScheduledOwnerDigests,

@@ -10,12 +10,15 @@ import '../models/purchase_order.dart';
 import '../models/sale.dart';
 import '../models/expense_record.dart';
 import 'backend_api_service.dart';
+import 'customer_service.dart';
 import 'database_service.dart';
 import 'financial_reporting_service.dart';
 import 'pos_service.dart';
 import 'supabase_sync_service.dart';
 
 enum SmartPlusNotificationLevel { info, warning, critical }
+
+enum SmartPlusDigestFrequency { off, daily, weekly }
 
 enum SmartPlusInsightKind { rule, forecast }
 
@@ -108,6 +111,11 @@ class SmartPlusNotificationPreferences {
     this.discountEnabled = true,
     this.forecastEnabled = true,
     this.supplierDeliveryEnabled = true,
+    this.customerLoyaltyEnabled = true,
+    this.minimumSeverity = SmartPlusNotificationLevel.info,
+    this.digestFrequency = SmartPlusDigestFrequency.daily,
+    this.quietHoursStart,
+    this.quietHoursEnd,
   });
 
   final bool inAppEnabled;
@@ -117,6 +125,13 @@ class SmartPlusNotificationPreferences {
   final bool discountEnabled;
   final bool forecastEnabled;
   final bool supplierDeliveryEnabled;
+  final bool customerLoyaltyEnabled;
+  final SmartPlusNotificationLevel minimumSeverity;
+  final SmartPlusDigestFrequency digestFrequency;
+
+  /// Local-hours 0–23. Null means quiet hours are disabled.
+  final int? quietHoursStart;
+  final int? quietHoursEnd;
 
   Map<String, dynamic> toApiMap() => {
     'in_app_enabled': inAppEnabled,
@@ -126,6 +141,11 @@ class SmartPlusNotificationPreferences {
     'discount_enabled': discountEnabled,
     'forecast_enabled': forecastEnabled,
     'supplier_delivery_enabled': supplierDeliveryEnabled,
+    'customer_loyalty_enabled': customerLoyaltyEnabled,
+    'minimum_severity': minimumSeverity.name,
+    'digest_frequency': digestFrequency.name,
+    'quiet_hours_start': quietHoursStart,
+    'quiet_hours_end': quietHoursEnd,
   };
 
   factory SmartPlusNotificationPreferences.fromMap(Map<String, dynamic> map) =>
@@ -137,6 +157,17 @@ class SmartPlusNotificationPreferences {
         discountEnabled: map['discount_enabled'] != false,
         forecastEnabled: map['forecast_enabled'] != false,
         supplierDeliveryEnabled: map['supplier_delivery_enabled'] != false,
+        customerLoyaltyEnabled: map['customer_loyalty_enabled'] != false,
+        minimumSeverity: SmartPlusNotificationLevel.values.firstWhere(
+          (value) => value.name == map['minimum_severity'],
+          orElse: () => SmartPlusNotificationLevel.info,
+        ),
+        digestFrequency: SmartPlusDigestFrequency.values.firstWhere(
+          (value) => value.name == map['digest_frequency'],
+          orElse: () => SmartPlusDigestFrequency.daily,
+        ),
+        quietHoursStart: _validHour(map['quiet_hours_start']),
+        quietHoursEnd: _validHour(map['quiet_hours_end']),
       );
 
   SmartPlusNotificationPreferences copyWith({
@@ -147,6 +178,12 @@ class SmartPlusNotificationPreferences {
     bool? discountEnabled,
     bool? forecastEnabled,
     bool? supplierDeliveryEnabled,
+    bool? customerLoyaltyEnabled,
+    SmartPlusNotificationLevel? minimumSeverity,
+    SmartPlusDigestFrequency? digestFrequency,
+    int? quietHoursStart,
+    int? quietHoursEnd,
+    bool clearQuietHours = false,
   }) => SmartPlusNotificationPreferences(
     inAppEnabled: inAppEnabled ?? this.inAppEnabled,
     emailEnabled: emailEnabled ?? this.emailEnabled,
@@ -156,7 +193,20 @@ class SmartPlusNotificationPreferences {
     forecastEnabled: forecastEnabled ?? this.forecastEnabled,
     supplierDeliveryEnabled:
         supplierDeliveryEnabled ?? this.supplierDeliveryEnabled,
+    customerLoyaltyEnabled:
+        customerLoyaltyEnabled ?? this.customerLoyaltyEnabled,
+    minimumSeverity: minimumSeverity ?? this.minimumSeverity,
+    digestFrequency: digestFrequency ?? this.digestFrequency,
+    quietHoursStart: clearQuietHours
+        ? null
+        : quietHoursStart ?? this.quietHoursStart,
+    quietHoursEnd: clearQuietHours ? null : quietHoursEnd ?? this.quietHoursEnd,
   );
+
+  static int? _validHour(dynamic value) {
+    final hour = value is num ? value.toInt() : int.tryParse('$value');
+    return hour != null && hour >= 0 && hour <= 23 ? hour : null;
+  }
 }
 
 class SmartPlusNotification {
@@ -236,6 +286,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
   final Map<String, SmartPlusNotification> _milestones =
       <String, SmartPlusNotification>{};
   List<SmartPlusNotification> _supplierDeliveryNotifications = const [];
+  List<SmartPlusNotification> _customerIntelligenceNotifications = const [];
   List<PurchaseOrder> _purchaseOrders = const [];
   bool _supplierRefreshInFlight = false;
   DateTime? _lastSupplierRefresh;
@@ -330,6 +381,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
             ..._milestones.values,
             ..._evaluate(),
             ..._supplierDeliveryNotifications,
+            ..._customerIntelligenceNotifications,
           ]
         : const <SmartPlusNotification>[];
     _notifications = visible
@@ -340,6 +392,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
             confidence: _dataTrust.confidenceLabel,
           ),
         )
+        .where(_shouldShowNotification)
         .toList(growable: false);
     notifyListeners();
   }
@@ -365,6 +418,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
       _dailyBrief = await _buildDailyBrief();
       _supplierDeliveryNotifications = _preferences.supplierDeliveryEnabled
           ? await _evaluateSupplierDeliveryRules()
+          : const [];
+      _customerIntelligenceNotifications = _preferences.customerLoyaltyEnabled
+          ? await _evaluateCustomerIntelligenceRules()
           : const [];
       _applyVisibleNotifications();
     } catch (error) {
@@ -404,6 +460,96 @@ class SmartPlusNotificationService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_reviewedKey, _reviewedIds.toList());
     refresh();
+  }
+
+  /// Feedback is tenant-scoped and owner-only on the backend. It is used for
+  /// periodic accuracy review; it does not train or contact any third party.
+  Future<String?> recordFeedback(String notificationId, String verdict) async {
+    try {
+      await ApiClient().postJson(
+        'smartplus/feedback',
+        body: {'notificationId': notificationId, 'verdict': verdict},
+      );
+      return null;
+    } catch (error) {
+      return safeApiError(error);
+    }
+  }
+
+  bool _shouldShowNotification(SmartPlusNotification notification) {
+    int rank(SmartPlusNotificationLevel value) => switch (value) {
+      SmartPlusNotificationLevel.info => 0,
+      SmartPlusNotificationLevel.warning => 1,
+      SmartPlusNotificationLevel.critical => 2,
+    };
+    if (rank(notification.level) < rank(_preferences.minimumSeverity)) {
+      return false;
+    }
+    // Quiet hours defer non-critical in-app alerts. The source records remain
+    // available and the next refresh shows them when quiet hours end.
+    if (notification.level != SmartPlusNotificationLevel.critical &&
+        _isInQuietHours(DateTime.now())) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isInQuietHours(DateTime now) {
+    final start = _preferences.quietHoursStart;
+    final end = _preferences.quietHoursEnd;
+    if (start == null || end == null || start == end) return false;
+    final hour = now.hour;
+    return start < end
+        ? hour >= start && hour < end
+        : hour >= start || hour < end;
+  }
+
+  Future<List<SmartPlusNotification>>
+  _evaluateCustomerIntelligenceRules() async {
+    try {
+      final summary = await CustomerService().getIntelligenceSummary();
+      final results = <SmartPlusNotification>[];
+      if (summary.pointsExpiringSoon.isNotEmpty) {
+        results.add(
+          SmartPlusNotification(
+            id: 'loyalty-points-expiring',
+            title: 'Loyalty points expiring soon',
+            message:
+                '${summary.pointsExpiringSoon.length} customer account(s) have points expiring within 30 days. Open Customer Management to review the consent and loyalty record before any contact.',
+            level: SmartPlusNotificationLevel.info,
+            sourceData: 'Local loyalty ledger and active customer records',
+            dataRange: 'Next 30 days',
+            proposedAction: 'Review the affected customer loyalty records.',
+            why:
+                'Unredeemed earned points have a recorded expiry within 30 days.',
+            recordTarget: SmartPlusRecordTarget.customers,
+          ),
+        );
+      }
+      if (summary.consentEligibleFollowUps.isNotEmpty) {
+        results.add(
+          SmartPlusNotification(
+            id: 'consented-customer-follow-up',
+            title: 'Consented customer follow-up available',
+            message:
+                '${summary.consentEligibleFollowUps.length} at-risk or inactive customer account(s) have recorded marketing consent. SmartPlus will not send a message automatically.',
+            level: SmartPlusNotificationLevel.info,
+            sourceData:
+                'Local customer segments and recorded marketing consent',
+            dataRange: 'Current customer records',
+            proposedAction:
+                'Review consent and draft an owner-approved follow-up.',
+            why:
+                'The customer segment is at-risk or inactive and consent is explicitly recorded.',
+            recordTarget: SmartPlusRecordTarget.customers,
+          ),
+        );
+      }
+      return results;
+    } catch (error) {
+      debugPrint('SmartPlus customer intelligence review unavailable: $error');
+      return const [];
+    }
   }
 
   List<SmartPlusNotification> _evaluate() {

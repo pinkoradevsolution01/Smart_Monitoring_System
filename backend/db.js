@@ -435,6 +435,11 @@ async function ensureSmartPlusNotificationPreferencesTable() {
       discount_enabled TINYINT(1) NOT NULL DEFAULT 1,
       forecast_enabled TINYINT(1) NOT NULL DEFAULT 1,
       supplier_delivery_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      customer_loyalty_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      minimum_severity ENUM('info', 'warning', 'critical') NOT NULL DEFAULT 'info',
+      digest_frequency ENUM('off', 'daily', 'weekly') NOT NULL DEFAULT 'daily',
+      quiet_hours_start TINYINT UNSIGNED NULL,
+      quiet_hours_end TINYINT UNSIGNED NULL,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT fk_smartplus_preferences_business
         FOREIGN KEY (business_id) REFERENCES businesses(id)
@@ -446,6 +451,52 @@ async function ensureSmartPlusNotificationPreferencesTable() {
     'supplier_delivery_enabled',
     'TINYINT(1) NOT NULL DEFAULT 1',
   );
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'customer_loyalty_enabled',
+    'TINYINT(1) NOT NULL DEFAULT 1',
+  );
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'minimum_severity',
+    "VARCHAR(16) NOT NULL DEFAULT 'info'",
+  );
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'digest_frequency',
+    "VARCHAR(16) NOT NULL DEFAULT 'daily'",
+  );
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'quiet_hours_start',
+    'TINYINT UNSIGNED NULL',
+  );
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'quiet_hours_end',
+    'TINYINT UNSIGNED NULL',
+  );
+}
+
+async function ensureSmartPlusFeedbackTable() {
+  const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
+  const userIdDefinition = await foreignKeyColumnDefinition('users', 'id');
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS smartplus_feedback (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      business_id ${businessIdDefinition} NOT NULL,
+      notification_id VARCHAR(128) NOT NULL,
+      owner_id ${userIdDefinition} NOT NULL,
+      verdict ENUM('useful', 'ignored', 'inaccurate') NOT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      KEY idx_smartplus_feedback_business_created (business_id, created_at),
+      KEY idx_smartplus_feedback_notification (business_id, notification_id),
+      CONSTRAINT fk_smartplus_feedback_business FOREIGN KEY (business_id)
+        REFERENCES businesses(id) ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_smartplus_feedback_owner FOREIGN KEY (owner_id)
+        REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
 }
 
 // SmartPlus actions are server-owned review records.  The client may propose
@@ -550,6 +601,7 @@ async function initDb() {
   await ensureExpensesTable();
   await ensureSmartPlusEmailDeliveriesTable();
   await ensureSmartPlusNotificationPreferencesTable();
+  await ensureSmartPlusFeedbackTable();
   await ensureSmartPlusActionTables();
   await ensureOperationalEventsTable();
   connection.release();
