@@ -1920,7 +1920,11 @@ class SupabaseSyncService extends ChangeNotifier {
       }).toList();
 
       for (final report in reports) {
-        await db.insertDamageReport(report);
+        // The remote ID is also the local SQLite primary key. Ignore an
+        // already-restored report rather than failing the entire restore or
+        // overwriting local signature/payment settlement details that the
+        // compact cloud payload does not contain.
+        await db.insertDamageReportIfAbsent(report);
       }
 
       _syncStats['damage_reports_pulled'] = reports.length;

@@ -145,7 +145,7 @@ class _SmartPlusDecisionCenterScreenState
   Future<void> _openApprovedWorkflow(
     BuildContext context,
     SmartPlusActionDraft action,
-  ) {
+  ) async {
     if (action.actionType == 'reorder') {
       final productId = _asPositiveInt(action.proposal['productId']);
       final quantity = _asPositiveInt(action.proposal['quantity']);
@@ -157,9 +157,9 @@ class _SmartPlusDecisionCenterScreenState
             ),
           ),
         );
-        return Future<void>.value();
+        return;
       }
-      return Navigator.of(context).push(
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => InventoryScreen(
             smartPlusReorderProductId: productId,
@@ -168,6 +168,7 @@ class _SmartPlusDecisionCenterScreenState
           ),
         ),
       );
+      return;
     }
 
     final targetName = action.proposal['recordTarget']?.toString();
@@ -182,9 +183,23 @@ class _SmartPlusDecisionCenterScreenState
           ),
         ),
       );
-      return Future<void>.value();
+      return;
     }
-    return Navigator.of(context).push(
+
+    if (_isDamageSettlement(action)) {
+      final selectedTarget = await _chooseDamageWorkspace(context);
+      if (!context.mounted || selectedTarget == null) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => _GuidedSmartPlusTaskScreen(
+            action: action,
+            target: selectedTarget,
+          ),
+        ),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
             _GuidedSmartPlusTaskScreen(action: action, target: targets.first),
@@ -196,6 +211,40 @@ class _SmartPlusDecisionCenterScreenState
     final number = value is num ? value.toInt() : int.tryParse('$value');
     return number != null && number > 0 ? number : null;
   }
+
+  bool _isDamageSettlement(SmartPlusActionDraft action) =>
+      action.title.toLowerCase().contains('damage') ||
+      action.proposal['workflow'] == 'damage_settlement';
+
+  Future<SmartPlusRecordTarget?> _chooseDamageWorkspace(
+    BuildContext context,
+  ) => showDialog<SmartPlusRecordTarget>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Choose a damage settlement workspace'),
+      content: const Text(
+        'Choose where you will record the real settlement. Both paths use the same damage-report records. Complete the SmartPlus task only after an approved return or payment is recorded.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Cancel'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () =>
+              Navigator.pop(dialogContext, SmartPlusRecordTarget.inventory),
+          icon: const Icon(Icons.inventory_2_outlined),
+          label: const Text('Inventory'),
+        ),
+        FilledButton.icon(
+          onPressed: () =>
+              Navigator.pop(dialogContext, SmartPlusRecordTarget.suppliers),
+          icon: const Icon(Icons.local_shipping_outlined),
+          label: const Text('Supplier Management'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Guides an owner through a non-reorder SmartPlus task. The guide does not
@@ -249,12 +298,20 @@ class _GuidedSmartPlusTaskScreenState
     return 'Open the related workspace, review the relevant records, and make the required owner-approved change.';
   }
 
+  bool get _isDamageSettlement =>
+      widget.action.title.toLowerCase().contains('damage') ||
+      widget.action.proposal['workflow'] == 'damage_settlement';
+
   Future<void> _openWorkspace() async {
     final screen = switch (widget.target) {
-      SmartPlusRecordTarget.inventory => const InventoryScreen(),
+      SmartPlusRecordTarget.inventory => InventoryScreen(
+        initialTab: _isDamageSettlement ? 3 : null,
+      ),
       SmartPlusRecordTarget.sales => const SalesReportScreen(),
       SmartPlusRecordTarget.customers => const CustomerManagementScreen(),
-      SmartPlusRecordTarget.suppliers => const SupplierManagementScreen(),
+      SmartPlusRecordTarget.suppliers => SupplierManagementScreen(
+        initialTab: _isDamageSettlement ? 3 : null,
+      ),
     };
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
     if (mounted) setState(() => _workspaceOpened = true);

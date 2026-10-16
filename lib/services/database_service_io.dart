@@ -1885,6 +1885,19 @@ class DatabaseService {
     return await db.insert('damage_reports', report.toMap());
   }
 
+  /// Restores a cloud report without creating a duplicate local primary key.
+  /// Cloud damage-report payloads intentionally omit rich local fields such as
+  /// signatures and payment dates, so an existing local row is preserved.
+  /// A report absent from this device is inserted normally.
+  Future<int> insertDamageReportIfAbsent(DamageReport report) async {
+    final db = await database;
+    return db.insert(
+      'damage_reports',
+      report.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
   /// Get all damage reports
   Future<List<DamageReport>> getAllDamageReports() async {
     final db = await database;

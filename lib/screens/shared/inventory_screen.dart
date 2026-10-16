@@ -25,6 +25,7 @@ enum InventoryFilter { all, lowStock, outOfStock, inStock }
 
 class InventoryScreen extends StatefulWidget {
   final User? user;
+  final int? initialTab;
   final int? smartPlusReorderProductId;
   final int? smartPlusSuggestedQuantity;
   final String? smartPlusActionId;
@@ -32,6 +33,7 @@ class InventoryScreen extends StatefulWidget {
   const InventoryScreen({
     super.key,
     this.user,
+    this.initialTab,
     this.smartPlusReorderProductId,
     this.smartPlusSuggestedQuantity,
     this.smartPlusActionId,
@@ -59,7 +61,11 @@ class _InventoryScreenState extends State<InventoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTab ?? 0,
+    );
     pos.addListener(_onPosChanged);
     _loadProducts();
     _loadDamageReports();
