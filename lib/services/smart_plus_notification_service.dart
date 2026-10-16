@@ -172,6 +172,8 @@ class SmartPlusNotification {
   final String confidence;
   final String why;
   final SmartPlusRecordTarget? recordTarget;
+  final String? draftActionType;
+  final Map<String, dynamic>? draftProposal;
   final bool requiresOwnerConfirmation;
   final bool isRead;
 
@@ -188,6 +190,8 @@ class SmartPlusNotification {
     this.confidence = 'Moderate confidence',
     this.why = 'SmartPlus evaluated the stated source data and rule.',
     this.recordTarget,
+    this.draftActionType,
+    this.draftProposal,
     this.requiresOwnerConfirmation = true,
     this.isRead = false,
   });
@@ -198,6 +202,8 @@ class SmartPlusNotification {
     String? confidence,
     String? why,
     SmartPlusRecordTarget? recordTarget,
+    String? draftActionType,
+    Map<String, dynamic>? draftProposal,
   }) => SmartPlusNotification(
     id: id,
     title: title,
@@ -211,6 +217,8 @@ class SmartPlusNotification {
     confidence: confidence ?? this.confidence,
     why: why ?? this.why,
     recordTarget: recordTarget ?? this.recordTarget,
+    draftActionType: draftActionType ?? this.draftActionType,
+    draftProposal: draftProposal ?? this.draftProposal,
     requiresOwnerConfirmation: requiresOwnerConfirmation,
     isRead: isRead ?? this.isRead,
   );
@@ -812,6 +820,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
           why:
               'The suggested quantity covers expected sales during the recorded/default lead time plus safety stock.',
           recordTarget: SmartPlusRecordTarget.suppliers,
+          draftActionType: 'reorder',
+          draftProposal: {'productId': productId, 'quantity': recommended},
         ),
       );
     }

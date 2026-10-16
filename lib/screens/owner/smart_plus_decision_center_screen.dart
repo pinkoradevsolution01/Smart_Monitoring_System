@@ -433,9 +433,9 @@ class _AlertSection extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(right: 8, bottom: 6),
                         child: TextButton.icon(
-                          onPressed: () => _draftFollowUp(context, alert),
+                          onPressed: () => _draftAction(context, alert),
                           icon: const Icon(Icons.edit_note_rounded, size: 18),
-                          label: const Text('Draft owner follow-up'),
+                          label: const Text('Draft safe action'),
                         ),
                       ),
                     ),
@@ -458,38 +458,47 @@ class _AlertSection extends StatelessWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
-  Future<void> _draftFollowUp(
+  Future<void> _draftAction(
     BuildContext context,
     SmartPlusNotification notification,
   ) async {
-    final approved =
-        await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('Draft a safe owner follow-up?'),
-            content: Text(
-              'SmartPlus will save a review-only draft for “${notification.title}”. It will not change stock, prices, suppliers, carts, discounts, or payments.',
+    final actionTypes = <String>[
+      if (notification.draftActionType == 'reorder') 'reorder',
+      'price_change_proposal',
+      'supplier_message',
+      'promotion',
+      'staff_follow_up',
+    ];
+    final actionType = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Choose a safe action draft'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 10),
+            child: Text(
+              'Drafts require owner approval and secure backend re-checks. SmartPlus will not change business data automatically.',
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Save draft'),
-              ),
-            ],
           ),
-        ) ??
-        false;
-    if (!approved || !context.mounted) return;
+          ...actionTypes.map(
+            (type) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, type),
+              child: Text(_actionLabel(type)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (actionType == null || !context.mounted) return;
     try {
-      await SmartPlusActionService().draftFollowUp(notification);
+      await SmartPlusActionService().draftAction(
+        notification,
+        actionType: actionType,
+      );
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('SmartPlus draft saved for owner review.'),
+          content: Text('SmartPlus action draft saved for owner review.'),
         ),
       );
     } catch (error) {
@@ -499,4 +508,12 @@ class _AlertSection extends StatelessWidget {
       ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
     }
   }
+
+  String _actionLabel(String value) => switch (value) {
+    'reorder' => 'Reorder proposal',
+    'price_change_proposal' => 'Price-change proposal',
+    'supplier_message' => 'Supplier message draft',
+    'promotion' => 'Promotion proposal',
+    _ => 'Staff follow-up',
+  };
 }

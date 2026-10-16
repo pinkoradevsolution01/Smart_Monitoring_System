@@ -36,16 +36,23 @@ class SmartPlusActionService {
     );
   }
 
-  Future<void> draftFollowUp(SmartPlusNotification notification) async {
+  Future<void> draftAction(
+    SmartPlusNotification notification, {
+    required String actionType,
+  }) async {
+    final isBoundReorder =
+        actionType == 'reorder' && notification.draftProposal != null;
     await _api.post(
       'smartplus/actions',
       body: {
-        'actionType': 'staff_follow_up',
-        'title': 'Follow up: ${notification.title}',
-        'proposal': {
-          'recommendedNextStep': notification.proposedAction,
-          'recordTarget': notification.recordTarget?.name,
-        },
+        'actionType': actionType,
+        'title': '${_actionLabel(actionType)}: ${notification.title}',
+        'proposal': isBoundReorder
+            ? notification.draftProposal!
+            : {
+                'recommendedNextStep': notification.proposedAction,
+                'recordTarget': notification.recordTarget?.name,
+              },
         'evidence': {
           'label': notification.insightKind.name,
           'sourceData': notification.sourceData,
@@ -58,6 +65,14 @@ class SmartPlusActionService {
       },
     );
   }
+
+  String _actionLabel(String value) => switch (value) {
+    'reorder' => 'Reorder proposal',
+    'price_change_proposal' => 'Price-change proposal',
+    'supplier_message' => 'Supplier message draft',
+    'promotion' => 'Promotion proposal',
+    _ => 'Staff follow-up',
+  };
 }
 
 class SmartPlusActionDraft {
