@@ -151,6 +151,7 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
     final color = switch (insights.segment) {
       CustomerSegment.vip => Colors.purple,
       CustomerSegment.atRisk => Colors.orange,
+      CustomerSegment.inactive => Colors.grey,
       CustomerSegment.regular => Colors.blue,
       CustomerSegment.newCustomer => Colors.teal,
     };
@@ -1285,6 +1286,7 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
   late final TextEditingController _emailController;
   late final TextEditingController _phoneController;
   late final TextEditingController _addressController;
+  late bool _marketingConsent;
   var _isSaving = false;
 
   @override
@@ -1302,6 +1304,7 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
     _addressController = TextEditingController(
       text: widget.customer?.address ?? '',
     );
+    _marketingConsent = widget.customer?.marketingConsent ?? false;
   }
 
   @override
@@ -1336,6 +1339,7 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
             address: _addressController.text.trim().isEmpty
                 ? null
                 : _addressController.text.trim(),
+            marketingConsent: _marketingConsent,
           )
         : customer.copyWith(
             fullName: _fullNameController.text.trim(),
@@ -1348,6 +1352,7 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
             address: _addressController.text.trim().isEmpty
                 ? null
                 : _addressController.text.trim(),
+            marketingConsent: _marketingConsent,
           );
 
     try {
@@ -1416,6 +1421,20 @@ class _CustomerFormDialogState extends State<_CustomerFormDialog> {
               ),
               textCapitalization: TextCapitalization.words,
               maxLines: 2,
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: _marketingConsent,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Marketing contact consent'),
+              subtitle: const Text(
+                'Record only when the customer has agreed to receive re-engagement messages.',
+              ),
+              onChanged: _isSaving
+                  ? null
+                  : (value) =>
+                        setState(() => _marketingConsent = value ?? false),
             ),
           ],
         ),

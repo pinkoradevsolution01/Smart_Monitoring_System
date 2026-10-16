@@ -155,7 +155,7 @@ test('sync normalizes ISO timestamps and resolves loyalty records using customer
       const purchaseItemInsert = executions.find((call) =>
         call.sql.includes('INSERT INTO purchase_order_items'),
       );
-      assert.equal(purchaseItemInsert.params[8], '2026-10-04 10:42:35');
+      assert.equal(purchaseItemInsert.params[9], '2026-10-04 10:42:35');
 
       const saleInsert = executions.find((call) =>
         call.sql.includes('INSERT INTO sales'),

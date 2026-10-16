@@ -171,7 +171,7 @@ class DatabaseService {
 
     final db = await openDatabase(
       path,
-      version: 26,
+      version: 27,
       onCreate: (db, version) {
         debugPrint('🆕 Creating new database (version $version)');
         return _createTables(db, version);
@@ -377,6 +377,7 @@ class DatabaseService {
         address TEXT,
         pointsBalance INTEGER NOT NULL DEFAULT 0,
         lifetimePoints INTEGER NOT NULL DEFAULT 0,
+        marketingConsent INTEGER NOT NULL DEFAULT 0,
         barcodeValue TEXT UNIQUE NOT NULL,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
@@ -816,6 +817,17 @@ class DatabaseService {
         );
       } catch (_) {
         // Existing/newer local databases already have the column.
+      }
+    }
+    if (oldVersion < 27) {
+      // Consent is opt-in. Existing customer records remain opted out until
+      // the owner records a customer's permission in Customer Management.
+      try {
+        await db.execute(
+          'ALTER TABLE customers ADD COLUMN marketingConsent INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {
+        // A partially upgraded database may already have the column.
       }
     }
     if (oldVersion < 16) {

@@ -169,8 +169,8 @@ router.post('/push', async (req, res) => {
       for (const customer of customers) {
         await connection.execute(
           `INSERT INTO customers
-            (business_id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, barcode_value, created_at, updated_at, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (business_id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, marketing_consent, barcode_value, created_at, updated_at, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               full_name = VALUES(full_name),
               phone_number = VALUES(phone_number),
@@ -178,6 +178,7 @@ router.post('/push', async (req, res) => {
               address = VALUES(address),
               points_balance = VALUES(points_balance),
               lifetime_points = VALUES(lifetime_points),
+              marketing_consent = VALUES(marketing_consent),
               barcode_value = VALUES(barcode_value),
               updated_at = VALUES(updated_at),
               is_active = VALUES(is_active)`,
@@ -190,6 +191,7 @@ router.post('/push', async (req, res) => {
             customer.address,
             customer.points_balance,
             customer.lifetime_points,
+            customer.marketing_consent ? 1 : 0,
             customer.barcode_value,
             toMySqlDateTime(customer.created_at, new Date()),
             toMySqlDateTime(customer.updated_at, new Date()),

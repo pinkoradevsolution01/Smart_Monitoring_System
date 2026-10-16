@@ -9,6 +9,10 @@ class Customer {
   final String? address;
   final int pointsBalance;
   final int lifetimePoints;
+
+  /// Explicit permission for marketing or re-engagement communication.
+  /// SmartPlus never assumes consent from an email address or phone number.
+  final bool marketingConsent;
   final String barcodeValue;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -23,6 +27,7 @@ class Customer {
     this.address,
     this.pointsBalance = 0,
     this.lifetimePoints = 0,
+    this.marketingConsent = false,
     String? barcodeValue,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -44,6 +49,7 @@ class Customer {
       'address': address,
       'pointsBalance': pointsBalance,
       'lifetimePoints': lifetimePoints,
+      'marketingConsent': marketingConsent ? 1 : 0,
       'barcodeValue': barcodeValue,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -61,6 +67,9 @@ class Customer {
       address: map['address'] as String?,
       pointsBalance: (map['pointsBalance'] as num?)?.toInt() ?? 0,
       lifetimePoints: (map['lifetimePoints'] as num?)?.toInt() ?? 0,
+      marketingConsent:
+          map['marketingConsent'] == true ||
+          (map['marketingConsent'] as num?)?.toInt() == 1,
       barcodeValue: (map['barcodeValue'] as String?) ?? '',
       createdAt: map['createdAt'] is String
           ? DateTime.parse(map['createdAt'] as String)
@@ -81,6 +90,7 @@ class Customer {
     String? address,
     int? pointsBalance,
     int? lifetimePoints,
+    bool? marketingConsent,
     String? barcodeValue,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -95,6 +105,7 @@ class Customer {
       address: address ?? this.address,
       pointsBalance: pointsBalance ?? this.pointsBalance,
       lifetimePoints: lifetimePoints ?? this.lifetimePoints,
+      marketingConsent: marketingConsent ?? this.marketingConsent,
       barcodeValue: barcodeValue ?? this.barcodeValue,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,

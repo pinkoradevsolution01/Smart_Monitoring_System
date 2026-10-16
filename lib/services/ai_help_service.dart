@@ -3,6 +3,8 @@ import 'package:get_it/get_it.dart';
 import '../models/chat_message.dart';
 import '../models/sale.dart';
 import '../services/pos_service.dart';
+import '../services/customer_service.dart';
+import '../services/financial_reporting_service.dart';
 import '../services/smart_plus_notification_service.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/locale_controller.dart';
@@ -597,7 +599,7 @@ On the login screen:
       // abruptly while data rules are evaluated.
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
-      final response = _generateSmartPlusResponse(query);
+      final response = await _generateSmartPlusResponse(query);
       _messages.add(
         ChatMessage(
           text: _explainSmartPlusAnswer(query, response),
@@ -684,7 +686,7 @@ On the login screen:
               'Try rephrasing your question or ask about one of these topics!';
   }
 
-  String _generateSmartPlusResponse(String query) {
+  Future<String> _generateSmartPlusResponse(String query) async {
     final pos = GetIt.I<POSService>();
     final products = pos.products;
     final completedSales = pos.recentSales
@@ -695,6 +697,70 @@ On the login screen:
         query.contains('checkout') ||
         query.contains('add 2')) {
       return 'Voice-enabled checkout is not enabled in this system yet. SmartPlus can explain a checkout instruction, but it cannot add items, apply discounts, or complete a sale automatically.';
+    }
+
+    if ((query.contains('low stock') || query.contains('stock')) &&
+        (query.contains('fast') || query.contains('sell'))) {
+      final quantities = _salesQuantities(completedSales, days: 31);
+      final affected = products.where((product) => product.lowStock).toList()
+        ..sort(
+          (a, b) =>
+              (quantities[b.name] ?? 0).compareTo(quantities[a.name] ?? 0),
+        );
+      if (affected.isEmpty) {
+        return 'No products are currently at or below their reorder level. There is no low-stock and fast-selling combination to review.';
+      }
+      return 'Rule-based low-stock velocity review\nSource: current inventory and completed item sales\nRange: current inventory; last 31 days of sales\n\n${affected.take(5).map((product) => '- ${product.name}: ${product.quantity} in stock; ${quantities[product.name] ?? 0} unit(s) sold in 31 days').join('\n')}\n\nReview these products first with the supplier before placing a reorder. SmartPlus will not create an order automatically.';
+    }
+
+    if (query.contains('customer') ||
+        query.contains('loyalty') ||
+        query.contains('points exp') ||
+        query.contains('purchase history') ||
+        query.contains('re-engage') ||
+        query.contains('vip') ||
+        query.contains('at-risk') ||
+        query.contains('inactive')) {
+      return _customerIntelligenceResponse(query);
+    }
+
+    if (query.contains('profit') && query.contains('expense')) {
+      final now = DateTime.now();
+      final monthStart = DateTime(now.year, now.month);
+      final monthSales = completedSales
+          .where((sale) => !sale.saleDate.isBefore(monthStart))
+          .toList(growable: false);
+      final productsById = {
+        for (final product in products)
+          if (product.id != null) product.id!: product,
+      };
+      final grossProfit = monthSales.fold<double>(
+        0,
+        (sum, sale) =>
+            sum +
+            sale.items.fold<double>(
+              0,
+              (itemSum, item) =>
+                  itemSum +
+                  ((item.unitPrice -
+                          (productsById[item.productId]?.buyingPrice ??
+                              item.unitPrice)) *
+                      item.quantity),
+            ),
+      );
+      try {
+        final expenses = await FinancialReportingService().getExpenses(
+          from: monthStart,
+          to: now,
+        );
+        final totalExpenses = expenses.fold<double>(
+          0,
+          (sum, expense) => sum + expense.amount,
+        );
+        return 'Insight: estimated net profit after recorded expenses\nSource: completed sale items, product cost, and expense records\nRange: ${monthStart.toIso8601String().split('T').first} to ${now.toIso8601String().split('T').first}\n\nEstimated gross profit: ${AppCurrency.peso(grossProfit)}\nRecorded expenses: ${AppCurrency.peso(totalExpenses)}\nEstimated net profit: ${AppCurrency.peso(grossProfit - totalExpenses)}\n\nThis is a management estimate. Review expense categorization and your Financial & BIR report before filing or making tax decisions.';
+      } catch (_) {
+        return 'SmartPlus can estimate gross profit from completed sales, but recorded expenses are not available for this account or period. Enable Expense Tracking and make sure the device is online, then try again. It will not treat unavailable expenses as zero.';
+      }
     }
 
     if (query.contains('reorder') ||
@@ -830,6 +896,51 @@ On the login screen:
     // SmartPlus also carries the previous system-help knowledge, so owners can
     // ask operational questions such as POS, roles, reports, or settings.
     return _generateResponse(query);
+  }
+
+  Future<String> _customerIntelligenceResponse(String query) async {
+    final customers = CustomerService();
+    final summary = await customers.getIntelligenceSummary();
+    const privacyNotice =
+        'Privacy: this owner-only summary is calculated from local customer, loyalty, and completed-sale records. SmartPlus does not send customer names, phone numbers, emails, addresses, or purchase histories to an external AI provider.';
+
+    if (query.contains('points exp') || query.contains('loyalty exp')) {
+      final expiring = summary.pointsExpiringSoon;
+      if (expiring.isEmpty) {
+        return 'Rule: loyalty points expiring soon\nSource: local loyalty ledger\nRange: next 30 days\n\nNo active customer has earned points scheduled to expire within 30 days.\n\n$privacyNotice';
+      }
+      return 'Rule: loyalty points expiring soon\nSource: local loyalty ledger\nRange: next 30 days\n\n${expiring.take(5).map((item) => '- ${item.customer.fullName}: ${item.points} point(s), next expiry ${item.expiryDate.toLocal().toIso8601String().split('T').first}').join('\n')}\n\nThese are reminders only; points are never removed automatically. $privacyNotice';
+    }
+
+    if (query.contains('purchase history')) {
+      final all = await customers.getCustomers();
+      final match = all.where(
+        (customer) => query.contains(customer.fullName.toLowerCase()),
+      );
+      if (match.isNotEmpty) {
+        final customer = match.first;
+        final insights = await customers.getInsights(customer);
+        final latest =
+            insights.lastPurchaseAt
+                ?.toLocal()
+                .toIso8601String()
+                .split('T')
+                .first ??
+            'no completed purchase';
+        return 'Insight: purchase-history summary\nSource: local completed sales linked to ${customer.fullName}\nRange: all available completed purchases\n\n${customer.fullName} is classified as ${insights.segmentLabel.toLowerCase()}. ${insights.purchaseHistory.length} completed purchase(s), ${AppCurrency.peso(insights.completedSalesTotal)} total spend, last purchase: $latest.\n\nOpen Customer Management to review the underlying transactions. $privacyNotice';
+      }
+      return 'To summarize one customer\'s purchases, include the customer\'s full name in your question, for example: “Purchase history for Maria Santos.” $privacyNotice';
+    }
+
+    if (query.contains('re-engage') || query.contains('follow-up')) {
+      final candidates = summary.consentEligibleFollowUps;
+      if (candidates.isEmpty) {
+        return 'Rule: consented re-engagement review\nSource: local customer segment and recorded marketing-consent status\nRange: current customer records\n\nNo at-risk or inactive customer currently has recorded marketing consent. SmartPlus will not draft or send a message without explicit consent.\n\n$privacyNotice';
+      }
+      return 'Rule: consented re-engagement review\nSource: local customer segments and recorded marketing-consent status\nRange: current customer records\n\n${candidates.take(5).map((customer) => '- ${customer.fullName}').join('\n')}\n\nThese are owner-review candidates only. Confirm the consent record and message content before contacting anyone; SmartPlus does not send messages automatically. $privacyNotice';
+    }
+
+    return 'Insight: customer intelligence\nSource: local active customers, loyalty records, and completed sales\nRange: all available records\n\n- New: ${summary.count(CustomerSegment.newCustomer)}\n- Regular: ${summary.count(CustomerSegment.regular)}\n- VIP: ${summary.count(CustomerSegment.vip)}\n- At-risk: ${summary.count(CustomerSegment.atRisk)}\n- Inactive: ${summary.count(CustomerSegment.inactive)}\n- Customers with points expiring within 30 days: ${summary.pointsExpiringSoon.length}\n\nSegments use transparent purchase rules: VIP has 10 purchases or ${AppCurrency.peso(10000)} spend; at-risk has no purchase for 91-180 days; inactive exceeds 180 days or remains purchase-free after 30 days. $privacyNotice';
   }
 
   Map<String, int> _salesQuantities(List<Sale> sales, {required int days}) {

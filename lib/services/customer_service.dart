@@ -25,7 +25,7 @@ class DuplicateCustomerException implements Exception {
       'A customer with this $field already exists: $existingCustomerName.';
 }
 
-enum CustomerSegment { newCustomer, regular, vip, atRisk }
+enum CustomerSegment { newCustomer, regular, vip, atRisk, inactive }
 
 class CustomerInsights {
   final CustomerSegment segment;
@@ -45,7 +45,37 @@ class CustomerInsights {
     CustomerSegment.regular => 'Regular customer',
     CustomerSegment.vip => 'VIP customer',
     CustomerSegment.atRisk => 'At-risk customer',
+    CustomerSegment.inactive => 'Inactive customer',
   };
+}
+
+/// Local owner-only customer insight output. It deliberately contains no
+/// contact details: SmartPlus uses it to describe segments and draft an
+/// owner-reviewed follow-up, never to contact a customer itself.
+class CustomerIntelligenceSummary {
+  const CustomerIntelligenceSummary({
+    required this.segmentCounts,
+    required this.consentEligibleFollowUps,
+    required this.pointsExpiringSoon,
+  });
+
+  final Map<CustomerSegment, int> segmentCounts;
+  final List<Customer> consentEligibleFollowUps;
+  final List<CustomerLoyaltyExpiryCandidate> pointsExpiringSoon;
+
+  int count(CustomerSegment segment) => segmentCounts[segment] ?? 0;
+}
+
+class CustomerLoyaltyExpiryCandidate {
+  const CustomerLoyaltyExpiryCandidate({
+    required this.customer,
+    required this.points,
+    required this.expiryDate,
+  });
+
+  final Customer customer;
+  final int points;
+  final DateTime expiryDate;
 }
 
 class LoyaltyExpirySummary {
@@ -189,6 +219,81 @@ class CustomerService {
     );
   }
 
+  /// Builds privacy-safe, owner-only customer intelligence from locally stored
+  /// customer, loyalty, and completed-sales records. Nothing in this method is
+  /// sent to an external AI provider or used to contact a customer.
+  Future<CustomerIntelligenceSummary> getIntelligenceSummary() async {
+    final customers = (await getCustomers())
+        .where((customer) => customer.isActive)
+        .toList(growable: false);
+    final completedSales = (await _databaseService.getAllSales())
+        .where((sale) => sale.status == SaleStatus.completed)
+        .toList(growable: false);
+    final salesByCustomer = <int, List<Sale>>{};
+    for (final sale in completedSales) {
+      final customerId = sale.customerId;
+      if (customerId != null) {
+        (salesByCustomer[customerId] ??= <Sale>[]).add(sale);
+      }
+    }
+
+    final counts = <CustomerSegment, int>{
+      for (final segment in CustomerSegment.values) segment: 0,
+    };
+    final followUps = <Customer>[];
+    final expiring = <CustomerLoyaltyExpiryCandidate>[];
+    final now = DateTime.now();
+
+    for (final customer in customers) {
+      final sales = customer.id == null
+          ? const <Sale>[]
+          : (salesByCustomer[customer.id] ?? const <Sale>[]);
+      final total = sales.fold<double>(
+        0,
+        (sum, sale) => sum + sale.totalAmount,
+      );
+      DateTime? lastPurchaseAt;
+      for (final sale in sales) {
+        if (lastPurchaseAt == null || sale.saleDate.isAfter(lastPurchaseAt)) {
+          lastPurchaseAt = sale.saleDate;
+        }
+      }
+      final segment = _segmentFor(
+        customer: customer,
+        completedSales: sales,
+        completedSalesTotal: total,
+        lastPurchaseAt: lastPurchaseAt,
+        now: now,
+      );
+      counts[segment] = (counts[segment] ?? 0) + 1;
+      if (customer.marketingConsent &&
+          (segment == CustomerSegment.atRisk ||
+              segment == CustomerSegment.inactive)) {
+        followUps.add(customer);
+      }
+      if (customer.id != null && customer.pointsBalance > 0) {
+        final expiry = await getLoyaltyExpirySummary(customer.id!);
+        if (expiry.pointsExpiringSoon > 0 && expiry.nextExpiryDate != null) {
+          expiring.add(
+            CustomerLoyaltyExpiryCandidate(
+              customer: customer,
+              points: expiry.pointsExpiringSoon,
+              expiryDate: expiry.nextExpiryDate!,
+            ),
+          );
+        }
+      }
+    }
+
+    followUps.sort((a, b) => a.fullName.compareTo(b.fullName));
+    expiring.sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
+    return CustomerIntelligenceSummary(
+      segmentCounts: Map.unmodifiable(counts),
+      consentEligibleFollowUps: List.unmodifiable(followUps),
+      pointsExpiringSoon: List.unmodifiable(expiring),
+    );
+  }
+
   CustomerSegment _segmentFor({
     required Customer customer,
     required List<Sale> completedSales,
@@ -198,9 +303,13 @@ class CustomerService {
   }) {
     // Segments are transparent, local labels rather than hidden scoring:
     // VIP = 10 completed purchases or PHP 10,000 completed spend; at-risk =
-    // a prior purchase but no purchase in 90 days.
+    // no purchase in 91-180 days; inactive = no purchase for more than 180
+    // days, or an account that remained purchase-free for 31 days.
     if (completedSales.length >= 10 || completedSalesTotal >= 10000) {
       return CustomerSegment.vip;
+    }
+    if (lastPurchaseAt != null && now.difference(lastPurchaseAt).inDays > 180) {
+      return CustomerSegment.inactive;
     }
     if (lastPurchaseAt != null && now.difference(lastPurchaseAt).inDays > 90) {
       return CustomerSegment.atRisk;
@@ -209,6 +318,7 @@ class CustomerService {
         now.difference(customer.createdAt).inDays <= 30) {
       return CustomerSegment.newCustomer;
     }
+    if (completedSales.isEmpty) return CustomerSegment.inactive;
     return CustomerSegment.regular;
   }
 
