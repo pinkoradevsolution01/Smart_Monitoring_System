@@ -412,42 +412,88 @@ class _SmartPlusNotificationsSheetState
     String notificationId,
   ) {
     final selected = service.feedbackFor(notificationId);
-    return Wrap(
-      spacing: 6,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Text(_text('Was this helpful?')),
-        _feedbackChip(
-          context,
-          service,
-          notificationId,
-          verdict: 'useful',
-          label: _text('Useful'),
-          icon: Icons.thumb_up_alt_outlined,
-          selected: selected == 'useful',
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 260),
+      reverseDuration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeIn,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.92, end: 1).animate(animation),
+          child: child,
         ),
-        _feedbackChip(
-          context,
-          service,
-          notificationId,
-          verdict: 'ignored',
-          label: _text('Ignore'),
-          icon: Icons.remove_circle_outline,
-          selected: selected == 'ignored',
-        ),
-        _feedbackChip(
-          context,
-          service,
-          notificationId,
-          verdict: 'inaccurate',
-          label: _text('Inaccurate'),
-          icon: Icons.flag_outlined,
-          selected: selected == 'inaccurate',
-        ),
-      ],
+      ),
+      child: selected == null
+          ? Wrap(
+              key: ValueKey('feedback-options-$notificationId'),
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(_text('Was this helpful?')),
+                _feedbackChip(
+                  context,
+                  service,
+                  notificationId,
+                  verdict: 'useful',
+                  label: _text('Useful'),
+                  icon: Icons.thumb_up_alt_outlined,
+                  selected: false,
+                ),
+                _feedbackChip(
+                  context,
+                  service,
+                  notificationId,
+                  verdict: 'ignored',
+                  label: _text('Ignore'),
+                  icon: Icons.remove_circle_outline,
+                  selected: false,
+                ),
+                _feedbackChip(
+                  context,
+                  service,
+                  notificationId,
+                  verdict: 'inaccurate',
+                  label: _text('Inaccurate'),
+                  icon: Icons.flag_outlined,
+                  selected: false,
+                ),
+              ],
+            )
+          : Semantics(
+              key: ValueKey('feedback-saved-$notificationId-$selected'),
+              liveRegion: true,
+              label:
+                  '${_text('Feedback saved')}: ${_text(_feedbackLabel(selected))}',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.check_circle_rounded,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${_text('Feedback saved')}: ${_text(_feedbackLabel(selected))}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
+
+  String _feedbackLabel(String verdict) => switch (verdict) {
+    'useful' => 'Useful',
+    'ignored' => 'Ignore',
+    'inaccurate' => 'Inaccurate',
+    _ => verdict,
+  };
 
   Widget _feedbackChip(
     BuildContext context,
@@ -805,6 +851,7 @@ class _SmartPlusInboxText {
     'Reviewed by owner': 'Nasuri na ng may-ari',
     'Confirm review': 'Kumpirmahin ang pagsusuri',
     'Was this helpful?': 'Nakatulong ba ito?',
+    'Feedback saved': 'Naitala ang feedback',
     'Useful': 'Nakatulong',
     'Ignore': 'Balewalain',
     'Inaccurate': 'Hindi tumpak',

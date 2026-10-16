@@ -6,6 +6,7 @@ import '../../services/pos_service.dart';
 import '../../services/database_service.dart';
 import '../../services/user_service.dart';
 import '../../services/package_service.dart';
+import '../../services/smart_plus_notification_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../utils/currency_formatter.dart';
 import '../../utils/receipt_generator.dart';
@@ -24,7 +25,17 @@ enum InventoryFilter { all, lowStock, outOfStock, inStock }
 
 class InventoryScreen extends StatefulWidget {
   final User? user;
-  const InventoryScreen({super.key, this.user});
+  final int? smartPlusReorderProductId;
+  final int? smartPlusSuggestedQuantity;
+  final String? smartPlusActionId;
+
+  const InventoryScreen({
+    super.key,
+    this.user,
+    this.smartPlusReorderProductId,
+    this.smartPlusSuggestedQuantity,
+    this.smartPlusActionId,
+  });
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -43,6 +54,7 @@ class _InventoryScreenState extends State<InventoryScreen>
   List<DamageReport> _damageReports = [];
   bool _loadingDamageReports = false;
   bool _loadingProducts = true;
+  bool _smartPlusGuideShown = false;
 
   @override
   void initState() {
@@ -57,6 +69,82 @@ class _InventoryScreenState extends State<InventoryScreen>
     if (mounted) setState(() => _loadingProducts = true);
     await pos.loadProducts();
     if (mounted) setState(() => _loadingProducts = false);
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showSmartPlusReorderGuideIfNeeded(),
+      );
+    }
+  }
+
+  Future<void> _showSmartPlusReorderGuideIfNeeded() async {
+    final productId = widget.smartPlusReorderProductId;
+    if (_smartPlusGuideShown || productId == null || !mounted) return;
+    _smartPlusGuideShown = true;
+    final product = await db.getProductById(productId);
+    if (!mounted || product == null) return;
+
+    final quantity = widget.smartPlusSuggestedQuantity ?? product.reorderLevel;
+    final openOrder =
+        await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('SmartPlus reorder guide'),
+            content: Text(
+              'Step 1 of 3: Review ${product.name} in Inventory. Current stock is ${product.quantity}. SmartPlus suggests ordering $quantity unit(s).\n\nNext, open Supplier Orders. The product and suggested quantity will be filled in for you. Review the supplier, price, and expected delivery date before creating the order.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Finish later'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.arrow_forward_rounded),
+                label: const Text('Open Supplier Orders'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!openOrder || !mounted) return;
+
+    final result = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute(
+        builder: (_) => SupplierManagementScreen(
+          initialTab: 2,
+          autoCreateOrder: true,
+          preselectedProduct: product,
+          preselectedQuantity: quantity,
+          smartPlusActionId: widget.smartPlusActionId,
+        ),
+      ),
+    );
+    if (!mounted || result is! SmartPlusOrderCreationResult) return;
+    if (result.actionCompleted) {
+      if (GetIt.I.isRegistered<SmartPlusNotificationService>()) {
+        GetIt.I<SmartPlusNotificationService>().notifyActionCompleted(
+          actionId: widget.smartPlusActionId ?? 'reorder-${product.id}',
+          title: 'Reorder action completed',
+          message:
+              'You created a supplier order for ${product.name} with $quantity suggested unit(s). Review the purchase order delivery status in Supplier Management.',
+        );
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Purchase order created. SmartPlus action completed.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Purchase order created. SmartPlus completion could not sync yet; retry it from the Action review center when online.',
+          ),
+        ),
+      );
+    }
   }
 
   void _onPosChanged() {

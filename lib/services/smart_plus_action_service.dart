@@ -71,7 +71,7 @@ class SmartPlusActionService {
     'price_change_proposal' => 'Price-change proposal',
     'supplier_message' => 'Supplier message draft',
     'promotion' => 'Promotion proposal',
-    _ => 'Staff follow-up',
+    _ => 'Owner follow-up',
   };
 }
 
@@ -82,6 +82,11 @@ class SmartPlusActionDraft {
     required this.actionType,
     required this.status,
     required this.resultMessage,
+    required this.proposal,
+    required this.evidence,
+    required this.createdAt,
+    required this.approvedAt,
+    required this.executedAt,
   });
 
   final String id;
@@ -89,13 +94,37 @@ class SmartPlusActionDraft {
   final String actionType;
   final String status;
   final String? resultMessage;
+  final Map<String, dynamic> proposal;
+  final Map<String, dynamic> evidence;
+  final DateTime? createdAt;
+  final DateTime? approvedAt;
+  final DateTime? executedAt;
 
   factory SmartPlusActionDraft.fromMap(Map<String, dynamic> map) =>
       SmartPlusActionDraft(
         id: '${map['id'] ?? ''}',
-        title: '${map['title'] ?? 'SmartPlus action'}',
+        title: _ownerFacingTitle('${map['title'] ?? 'SmartPlus action'}'),
         actionType: '${map['actionType'] ?? ''}',
         status: '${map['status'] ?? 'draft'}',
         resultMessage: map['resultMessage']?.toString(),
+        proposal: _mapValue(map['proposal']),
+        evidence: _mapValue(map['evidence']),
+        createdAt: _dateValue(map['createdAt']),
+        approvedAt: _dateValue(map['approvedAt']),
+        executedAt: _dateValue(map['executedAt']),
       );
+
+  static Map<String, dynamic> _mapValue(dynamic value) => value is Map
+      ? Map<String, dynamic>.from(value)
+      : const <String, dynamic>{};
+
+  static DateTime? _dateValue(dynamic value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  static String _ownerFacingTitle(String value) => value.replaceFirst(
+    'Staff follow-up:',
+    'Owner follow-up:',
+  );
 }

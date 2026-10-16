@@ -273,6 +273,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
   final POSService _pos;
   final Set<String> _readIds = <String>{};
   final Set<String> _reviewedIds = <String>{};
+  final Map<String, DateTime> _detectedAtByNotification = <String, DateTime>{};
   final Map<String, String> _feedbackByNotification = <String, String>{};
   final Map<String, SmartPlusNotification> _milestones =
       <String, SmartPlusNotification>{};
@@ -299,7 +300,13 @@ class SmartPlusNotificationService extends ChangeNotifier {
 
   List<SmartPlusNotification> get notifications =>
       List.unmodifiable(_notifications);
-  int get unreadCount => _notifications.where((item) => !item.isRead).length;
+
+  /// The bell represents work that still needs the owner's attention.
+  /// A confirmed review is persisted, while a transient "read" state is not,
+  /// so always exclude reviewed suggestions here as well.
+  int get unreadCount => _notifications
+      .where((item) => !item.isRead && !_reviewedIds.contains(item.id))
+      .length;
   SmartPlusNotificationPreferences get preferences => _preferences;
   SmartPlusDataTrust get dataTrust => _dataTrust;
   SmartPlusDailyBrief get dailyBrief => _dailyBrief;
@@ -390,16 +397,38 @@ class SmartPlusNotificationService extends ChangeNotifier {
             ..._customerIntelligenceNotifications,
           ]
         : const <SmartPlusNotification>[];
-    _notifications = visible
-        .map(
-          (item) => item.copyWith(
-            isRead: _readIds.contains(item.id),
-            dataQuality: _dataTrust.quality,
-            confidence: _dataTrust.confidenceLabel,
-          ),
-        )
-        .where(_shouldShowNotification)
-        .toList(growable: false);
+    final now = DateTime.now();
+    for (final notification in visible) {
+      _detectedAtByNotification.putIfAbsent(notification.id, () => now);
+    }
+    _detectedAtByNotification.removeWhere(
+      (id, _) => !visible.any((notification) => notification.id == id),
+    );
+
+    _notifications =
+        visible
+            .map(
+              (item) => item.copyWith(
+                // A review is a durable acknowledgement and must remain read
+                // after a refresh or application restart.
+                isRead:
+                    _readIds.contains(item.id) ||
+                    _reviewedIds.contains(item.id),
+                dataQuality: _dataTrust.quality,
+                confidence: _dataTrust.confidenceLabel,
+              ),
+            )
+            .where(_shouldShowNotification)
+            .toList(growable: false)
+          ..sort(
+            (first, second) =>
+                (_detectedAtByNotification[second.id] ??
+                        DateTime.fromMillisecondsSinceEpoch(0))
+                    .compareTo(
+                      _detectedAtByNotification[first.id] ??
+                          DateTime.fromMillisecondsSinceEpoch(0),
+                    ),
+          );
     notifyListeners();
   }
 
@@ -450,6 +479,29 @@ class SmartPlusNotificationService extends ChangeNotifier {
     refresh();
   }
 
+  /// Adds an in-app acknowledgement after an owner completes a guided
+  /// SmartPlus follow-up. The business change itself was made by the owner in
+  /// its normal module; SmartPlus only records and communicates the outcome.
+  void notifyActionCompleted({
+    required String actionId,
+    required String title,
+    required String message,
+  }) {
+    _milestones['action-completed-$actionId'] = SmartPlusNotification(
+      id: 'action-completed-$actionId',
+      title: title,
+      message: message,
+      level: SmartPlusNotificationLevel.info,
+      sourceData: 'Owner-completed SmartPlus guided workflow',
+      dataRange: 'Current action',
+      proposedAction: 'Review the related record if any details need updating.',
+      why:
+          'The owner completed the required follow-up and SmartPlus recorded the acknowledgement.',
+      requiresOwnerConfirmation: false,
+    );
+    refresh();
+  }
+
   void markAllRead() {
     _readIds.addAll(_notifications.map((item) => item.id));
     refresh();
@@ -463,9 +515,11 @@ class SmartPlusNotificationService extends ChangeNotifier {
   Future<void> confirmOwnerReview(String id) async {
     _reviewedIds.add(id);
     _readIds.add(id);
+    // Update the inbox and bell immediately; saving the acknowledgement must
+    // not make the owner wait for storage I/O before the count changes.
+    refresh();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_reviewedKey, _reviewedIds.toList());
-    refresh();
   }
 
   /// Feedback is tenant-scoped and owner-only on the backend. It is used for

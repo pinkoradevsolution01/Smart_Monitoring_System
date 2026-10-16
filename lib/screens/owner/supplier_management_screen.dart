@@ -8,6 +8,7 @@ import '../../models/product.dart';
 import '../../models/damage_report.dart';
 import '../../services/database_service.dart';
 import '../../services/purchase_order_pdf_service.dart';
+import '../../services/smart_plus_action_service.dart';
 import '../../services/damage_return_pdf_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/signature_pad.dart';
@@ -16,17 +17,35 @@ class SupplierManagementScreen extends StatefulWidget {
   final int? initialTab;
   final bool? autoCreateOrder;
   final Product? preselectedProduct;
+  final int? preselectedQuantity;
+  final String? smartPlusActionId;
 
   const SupplierManagementScreen({
     super.key,
     this.initialTab,
     this.autoCreateOrder,
     this.preselectedProduct,
+    this.preselectedQuantity,
+    this.smartPlusActionId,
   });
 
   @override
   State<SupplierManagementScreen> createState() =>
       _SupplierManagementScreenState();
+}
+
+/// Returned only by a SmartPlus-guided supplier order. Existing callers that
+/// use a boolean result keep their current behavior.
+class SmartPlusOrderCreationResult {
+  const SmartPlusOrderCreationResult({
+    required this.orderCreated,
+    required this.actionCompleted,
+    this.actionError,
+  });
+
+  final bool orderCreated;
+  final bool actionCompleted;
+  final String? actionError;
 }
 
 class _SupplierManagementScreenState extends State<SupplierManagementScreen>
@@ -1837,19 +1856,19 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
 
     // If a product was preselected, add it to the order items
     if (preselectedProduct != null) {
+      final preselectedQuantity =
+          widget.preselectedQuantity != null && widget.preselectedQuantity! > 0
+          ? widget.preselectedQuantity!
+          : (preselectedProduct.reorderLevel > 0
+                ? preselectedProduct.reorderLevel
+                : 10);
       final preselectedItem = PurchaseOrderItem(
         orderId: 0,
         productId: preselectedProduct.id!,
         productName: preselectedProduct.name,
-        quantity: preselectedProduct.reorderLevel > 0
-            ? preselectedProduct.reorderLevel
-            : 10,
+        quantity: preselectedQuantity,
         unitPrice: preselectedProduct.buyingPrice,
-        totalPrice:
-            (preselectedProduct.reorderLevel > 0
-                ? preselectedProduct.reorderLevel
-                : 10) *
-            preselectedProduct.buyingPrice,
+        totalPrice: preselectedQuantity * preselectedProduct.buyingPrice,
       );
       orderItems.add(preselectedItem);
     }
@@ -1872,6 +1891,18 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (widget.smartPlusActionId != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Text(
+                          'Step 2 of 3: Choose a supplier, confirm the suggested quantity and price, then set an expected delivery date. SmartPlus will not create this order until you press Create order.',
+                        ),
+                      ),
                     if (preselectedProduct != null)
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -2097,11 +2128,34 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                   await db.insertPurchaseOrder(order);
                   await _loadData();
 
+                  var actionCompleted = false;
+                  String? actionError;
+                  final actionId = widget.smartPlusActionId;
+                  if (actionId != null && actionId.isNotEmpty) {
+                    try {
+                      await SmartPlusActionService().execute(actionId);
+                      actionCompleted = true;
+                    } catch (error) {
+                      actionError = error.toString();
+                    }
+                  }
+
                   if (mounted) {
                     Navigator.pop(ctx);
                     // Return true if this was an auto-created order from inventory
                     if (preselectedProduct != null) {
-                      Navigator.pop(context, true);
+                      if (actionId != null && actionId.isNotEmpty) {
+                        Navigator.pop(
+                          context,
+                          SmartPlusOrderCreationResult(
+                            orderCreated: true,
+                            actionCompleted: actionCompleted,
+                            actionError: actionError,
+                          ),
+                        );
+                      } else {
+                        Navigator.pop(context, true);
+                      }
                     }
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -2111,7 +2165,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     );
                   }
                 },
-                child: Text(AppLocalizations.t('create_order')),
+                child: Text(
+                  widget.smartPlusActionId == null
+                      ? AppLocalizations.t('create_order')
+                      : 'Create order and complete SmartPlus action',
+                ),
               ),
             ],
           );
