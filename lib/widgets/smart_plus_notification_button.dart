@@ -6,6 +6,7 @@ import '../screens/owner/customer_management_screen.dart';
 import '../screens/owner/sales_report_screen.dart';
 import '../screens/owner/supplier_management_screen.dart';
 import '../screens/shared/inventory_screen.dart';
+import '../utils/locale_controller.dart';
 
 /// Owner-facing entry point for SmartPlus suggestions.
 class SmartPlusNotificationButton extends StatelessWidget {
@@ -79,8 +80,31 @@ class SmartPlusNotificationButton extends StatelessWidget {
   }
 }
 
-class _SmartPlusNotificationsSheet extends StatelessWidget {
+enum _SmartPlusInboxLanguage { english, tagalog }
+
+class _SmartPlusNotificationsSheet extends StatefulWidget {
   const _SmartPlusNotificationsSheet();
+
+  @override
+  State<_SmartPlusNotificationsSheet> createState() =>
+      _SmartPlusNotificationsSheetState();
+}
+
+class _SmartPlusNotificationsSheetState
+    extends State<_SmartPlusNotificationsSheet> {
+  late _SmartPlusInboxLanguage _language;
+
+  @override
+  void initState() {
+    super.initState();
+    _language = LocaleController.locale.value.languageCode == 'fil'
+        ? _SmartPlusInboxLanguage.tagalog
+        : _SmartPlusInboxLanguage.english;
+  }
+
+  bool get _isTagalog => _language == _SmartPlusInboxLanguage.tagalog;
+  String _text(String english) =>
+      _SmartPlusInboxText.translate(english, tagalog: _isTagalog);
 
   @override
   Widget build(BuildContext context) {
@@ -107,12 +131,14 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'SmartPlus suggestions',
+                              _text('SmartPlus suggestions'),
                               style: Theme.of(context).textTheme.titleLarge
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             Text(
-                              'Suggestions based on your business activity',
+                              _text(
+                                'Suggestions based on your business activity',
+                              ),
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: colors.onSurfaceVariant),
                             ),
@@ -120,15 +146,32 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Refresh suggestions',
+                        tooltip: _text('Refresh suggestions'),
                         onPressed: () =>
                             service.refresh(forceSupplierCheck: true),
                         icon: const Icon(Icons.refresh_rounded),
                       ),
                       IconButton(
-                        tooltip: 'Notification preferences',
+                        tooltip: _text('Notification preferences'),
                         onPressed: () => _openPreferences(context, service),
                         icon: const Icon(Icons.tune_rounded),
+                      ),
+                      PopupMenuButton<_SmartPlusInboxLanguage>(
+                        tooltip: _text('Inbox language'),
+                        initialValue: _language,
+                        onSelected: (language) =>
+                            setState(() => _language = language),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: _SmartPlusInboxLanguage.english,
+                            child: Text('English'),
+                          ),
+                          PopupMenuItem(
+                            value: _SmartPlusInboxLanguage.tagalog,
+                            child: Text('Tagalog'),
+                          ),
+                        ],
+                        icon: const Icon(Icons.language_rounded),
                       ),
                     ],
                   ),
@@ -148,13 +191,15 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'No action needed right now',
+                                  _text('No action needed right now'),
                                   style: Theme.of(context).textTheme.titleMedium
                                       ?.copyWith(fontWeight: FontWeight.w800),
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  'SmartPlus will add suggestions when there is something worth reviewing.',
+                                  _text(
+                                    'SmartPlus will add suggestions when there is something worth reviewing.',
+                                  ),
                                   textAlign: TextAlign.center,
                                   style: Theme.of(context).textTheme.bodyMedium
                                       ?.copyWith(
@@ -201,7 +246,7 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Text(
-                                            notification.title,
+                                            _text(notification.title),
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w800,
                                             ),
@@ -213,46 +258,50 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                             notification.insightKind ==
                                                     SmartPlusInsightKind
                                                         .forecast
-                                                ? 'Forecast'
-                                                : 'Rule',
+                                                ? _text('Forecast')
+                                                : _text('Rule'),
                                           ),
                                         ),
                                       ],
                                     ),
                                     const SizedBox(height: 10),
-                                    Text(notification.message),
+                                    Text(_text(notification.message)),
                                     const SizedBox(height: 10),
                                     _evidenceRow(
                                       context,
                                       Icons.storage_outlined,
-                                      'Source: ${notification.sourceData}',
+                                      '${_text('Source')}: ${_text(notification.sourceData)}',
                                     ),
                                     _evidenceRow(
                                       context,
                                       Icons.date_range_outlined,
-                                      'Range: ${notification.dataRange}',
+                                      '${_text('Range')}: ${_text(notification.dataRange)}',
                                     ),
                                     _evidenceRow(
                                       context,
                                       Icons.verified_outlined,
-                                      'Data quality: ${notification.dataQuality.name} — ${notification.confidence}',
+                                      '${_text('Data quality')}: ${_text(notification.dataQuality.name)} — ${_text(notification.confidence)}',
                                     ),
                                     _evidenceRow(
                                       context,
                                       Icons.psychology_alt_outlined,
-                                      'Why: ${notification.why}',
+                                      '${_text('Why')}: ${_text(notification.why)}',
                                     ),
                                     _evidenceRow(
                                       context,
                                       Icons.task_alt_outlined,
-                                      'Suggested next step: ${notification.proposedAction}',
+                                      '${_text('Suggested next step')}: ${_text(notification.proposedAction)}',
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       notification.insightKind ==
                                               SmartPlusInsightKind.forecast
-                                          ? 'This is an estimate from the stated data range, not a guarantee.'
-                                          : 'This is a review rule, not an automatic decision.',
+                                          ? _text(
+                                              'This is an estimate from the stated data range, not a guarantee.',
+                                            )
+                                          : _text(
+                                              'This is a review rule, not an automatic decision.',
+                                            ),
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall
@@ -273,65 +322,27 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                             Icons.open_in_new_rounded,
                                             size: 17,
                                           ),
-                                          label: const Text(
-                                            'Open supporting records',
+                                          label: Text(
+                                            _text('Open supporting records'),
                                           ),
                                         ),
                                       ),
-                                    Wrap(
-                                      spacing: 4,
-                                      runSpacing: 2,
-                                      children: [
-                                        TextButton.icon(
-                                          onPressed: () => _recordFeedback(
-                                            context,
-                                            service,
-                                            notification.id,
-                                            'useful',
-                                          ),
-                                          icon: const Icon(
-                                            Icons.thumb_up_alt_outlined,
-                                            size: 16,
-                                          ),
-                                          label: const Text('Useful'),
-                                        ),
-                                        TextButton.icon(
-                                          onPressed: () => _recordFeedback(
-                                            context,
-                                            service,
-                                            notification.id,
-                                            'ignored',
-                                          ),
-                                          icon: const Icon(
-                                            Icons.remove_circle_outline,
-                                            size: 16,
-                                          ),
-                                          label: const Text('Ignore'),
-                                        ),
-                                        TextButton.icon(
-                                          onPressed: () => _recordFeedback(
-                                            context,
-                                            service,
-                                            notification.id,
-                                            'inaccurate',
-                                          ),
-                                          icon: const Icon(
-                                            Icons.flag_outlined,
-                                            size: 16,
-                                          ),
-                                          label: const Text('Inaccurate'),
-                                        ),
-                                      ],
+                                    _feedbackSelector(
+                                      context,
+                                      service,
+                                      notification.id,
                                     ),
                                     Align(
                                       alignment: Alignment.centerRight,
                                       child: reviewed
-                                          ? const Chip(
-                                              avatar: Icon(
+                                          ? Chip(
+                                              avatar: const Icon(
                                                 Icons.verified_outlined,
                                                 size: 18,
                                               ),
-                                              label: Text('Reviewed by owner'),
+                                              label: Text(
+                                                _text('Reviewed by owner'),
+                                              ),
                                             )
                                           : OutlinedButton.icon(
                                               onPressed: () => _confirmReview(
@@ -342,8 +353,8 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                                               icon: const Icon(
                                                 Icons.verified_user_outlined,
                                               ),
-                                              label: const Text(
-                                                'Confirm review',
+                                              label: Text(
+                                                _text('Confirm review'),
                                               ),
                                             ),
                                     ),
@@ -395,6 +406,68 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
         ),
       );
 
+  Widget _feedbackSelector(
+    BuildContext context,
+    SmartPlusNotificationService service,
+    String notificationId,
+  ) {
+    final selected = service.feedbackFor(notificationId);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(_text('Was this helpful?')),
+        _feedbackChip(
+          context,
+          service,
+          notificationId,
+          verdict: 'useful',
+          label: _text('Useful'),
+          icon: Icons.thumb_up_alt_outlined,
+          selected: selected == 'useful',
+        ),
+        _feedbackChip(
+          context,
+          service,
+          notificationId,
+          verdict: 'ignored',
+          label: _text('Ignore'),
+          icon: Icons.remove_circle_outline,
+          selected: selected == 'ignored',
+        ),
+        _feedbackChip(
+          context,
+          service,
+          notificationId,
+          verdict: 'inaccurate',
+          label: _text('Inaccurate'),
+          icon: Icons.flag_outlined,
+          selected: selected == 'inaccurate',
+        ),
+      ],
+    );
+  }
+
+  Widget _feedbackChip(
+    BuildContext context,
+    SmartPlusNotificationService service,
+    String notificationId, {
+    required String verdict,
+    required String label,
+    required IconData icon,
+    required bool selected,
+  }) => ChoiceChip(
+    selected: selected,
+    avatar: Icon(icon, size: 16),
+    label: Text(label),
+    onSelected: (isSelected) {
+      if (isSelected && !selected) {
+        _recordFeedback(context, service, notificationId, verdict);
+      }
+    },
+  );
+
   void _openRecords(BuildContext context, SmartPlusRecordTarget target) {
     final screen = switch (target) {
       SmartPlusRecordTarget.inventory => const InventoryScreen(),
@@ -445,8 +518,7 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          problem ??
-              'Feedback recorded for the next SmartPlus accuracy review.',
+          problem ?? 'Marked as ${verdict == 'ignored' ? 'ignored' : verdict}.',
         ),
       ),
     );
@@ -669,4 +741,124 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
       if (hour != null) onChanged(hour);
     },
   );
+}
+
+/// Presentation-only translations for the inbox. Product names, amounts,
+/// purchase-order numbers, and other business evidence remain unchanged.
+class _SmartPlusInboxText {
+  static String translate(String english, {required bool tagalog}) {
+    if (!tagalog) return english;
+    final exact = _tagalog[english];
+    if (exact != null) return exact;
+
+    // Live SmartPlus messages contain product names, quantities, dates, and
+    // purchase-order numbers. Translate their stable wording without changing
+    // those business values.
+    return english
+        .replaceAll(
+          'No products are currently',
+          'Walang produkto na kasalukuyang',
+        )
+        .replaceAll(
+          'Products are out of stock',
+          'Ubos na ang stock ng mga produkto',
+        )
+        .replaceAll('Low-stock', 'Mababang stock')
+        .replaceAll('low-stock', 'mababang stock')
+        .replaceAll('product(s)', 'produkto')
+        .replaceAll('customer(s)', 'customer')
+        .replaceAll('sale(s)', 'benta')
+        .replaceAll('day(s)', 'araw')
+        .replaceAll('needs review', 'ay kailangang suriin')
+        .replaceAll('requires review', 'ay nangangailangan ng pagsusuri')
+        .replaceAll('Review ', 'Suriin ang ')
+        .replaceAll('Open ', 'Buksan ang ')
+        .replaceAll('Current ', 'Kasalukuyang ')
+        .replaceAll('current ', 'kasalukuyang ')
+        .replaceAll('Last ', 'Huling ')
+        .replaceAll('Next ', 'Susunod na ')
+        .replaceAll('Today', 'Ngayon')
+        .replaceAll('today', 'ngayon')
+        .replaceAll('and ', 'at ')
+        .replaceAll(' before ', ' bago ')
+        .replaceAll(' after ', ' pagkatapos ng ');
+  }
+
+  static const Map<String, String> _tagalog = {
+    'SmartPlus suggestions': 'Mga mungkahi ng SmartPlus',
+    'Suggestions based on your business activity':
+        'Mga mungkahing batay sa aktibidad ng iyong negosyo',
+    'Refresh suggestions': 'I-refresh ang mga mungkahi',
+    'Notification preferences': 'Mga kagustuhan sa notification',
+    'Inbox language': 'Wika ng inbox',
+    'No action needed right now': 'Walang kailangang aksyon sa ngayon',
+    'SmartPlus will add suggestions when there is something worth reviewing.':
+        'Magdadagdag ang SmartPlus ng mungkahi kapag may kailangang suriin.',
+    'Forecast': 'Pagtataya',
+    'Rule': 'Patakaran',
+    'Source': 'Pinagmulan',
+    'Range': 'Saklaw',
+    'Data quality': 'Kalidad ng data',
+    'Why': 'Dahilan',
+    'Suggested next step': 'Inirerekomendang susunod na hakbang',
+    'Open supporting records': 'Buksan ang kaugnay na mga rekord',
+    'Reviewed by owner': 'Nasuri na ng may-ari',
+    'Confirm review': 'Kumpirmahin ang pagsusuri',
+    'Was this helpful?': 'Nakatulong ba ito?',
+    'Useful': 'Nakatulong',
+    'Ignore': 'Balewalain',
+    'Inaccurate': 'Hindi tumpak',
+    'This is an estimate from the stated data range, not a guarantee.':
+        'Ito ay pagtataya mula sa nakasaad na saklaw ng data, hindi garantiya.',
+    'This is a review rule, not an automatic decision.':
+        'Ito ay patakaran para sa pagsusuri, hindi awtomatikong desisyon.',
+    'Business setup complete': 'Kumpleto na ang pag-set up ng negosyo',
+    'Loyalty points expiring soon':
+        'Malapit nang mag-expire ang loyalty points',
+    'Consented customer follow-up available':
+        'May available na follow-up para sa customer na may pahintulot',
+    'Data freshness': 'Kasariwaan ng data',
+    'Forecasts are paused until data improves':
+        'Naka-pause ang mga pagtataya hanggang gumanda ang data',
+    'Products are out of stock': 'Ubos na ang stock ng mga produkto',
+    'Low-stock reorder suggested':
+        'Inirerekomenda ang pag-order muli para sa mababang stock',
+    'Top-selling product needs attention':
+        'Kailangang tingnan ang produktong mabilis mabenta',
+    'Weekly sales need review': 'Kailangang suriin ang lingguhang benta',
+    'Large discounts require review':
+        'Kailangang suriin ang malalaking diskwento',
+    'Refund activity needs review': 'Kailangang suriin ang mga refund',
+    'Forecast requires stronger records':
+        'Kailangan ng mas maayos na mga rekord para sa pagtataya',
+    'Today’s decision brief': 'Buod ng mahahalagang desisyon ngayon',
+    'Expired stock needs immediate review':
+        'Kailangang agad suriin ang expired na stock',
+    'Near-expiry stock needs review':
+        'Kailangang suriin ang stock na malapit mag-expire',
+    'Potential dead stock detected': 'May natukoy na posibleng dead stock',
+    'Seasonal demand forecast is ready to review':
+        'Handa nang suriin ang pana-panahong pagtataya ng demand',
+    'Supplier order awaiting confirmation':
+        'Naghihintay ng kumpirmasyon ang order sa supplier',
+    'Shipment marked complete but not received':
+        'Nakumpleto ang shipment ngunit hindi pa natatanggap',
+    'Partial supplier delivery needs review':
+        'Kailangang suriin ang bahagyang delivery ng supplier',
+    'Delivered stock has not been added to inventory':
+        'Hindi pa naidadagdag sa imbentaryo ang na-deliver na stock',
+    'Supplier delivery is due today':
+        'Nakatakda ngayong araw ang delivery ng supplier',
+    'Supplier delivery is overdue': 'Late na ang delivery ng supplier',
+    'Supplier reliability trend needs review':
+        'Kailangang suriin ang pagiging maaasahan ng supplier',
+    'checking': 'Sinusuri',
+    'weak': 'Mahina',
+    'limited': 'Limitado',
+    'strong': 'Matibay',
+    'High confidence': 'Mataas ang kumpiyansa',
+    'Moderate confidence': 'Katamtaman ang kumpiyansa',
+    'Low confidence': 'Mababa ang kumpiyansa',
+    'Confidence pending': 'Hinihintay ang kumpiyansa',
+  };
 }

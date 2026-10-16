@@ -269,9 +269,11 @@ class SmartPlusNotification {
 class SmartPlusNotificationService extends ChangeNotifier {
   static const _preferencesKey = 'smartplus_notification_preferences_v1';
   static const _reviewedKey = 'smartplus_reviewed_suggestions_v1';
+  static const _feedbackKey = 'smartplus_suggestion_feedback_v1';
   final POSService _pos;
   final Set<String> _readIds = <String>{};
   final Set<String> _reviewedIds = <String>{};
+  final Map<String, String> _feedbackByNotification = <String, String>{};
   final Map<String, SmartPlusNotification> _milestones =
       <String, SmartPlusNotification>{};
   List<SmartPlusNotification> _supplierDeliveryNotifications = const [];
@@ -302,6 +304,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
   SmartPlusDataTrust get dataTrust => _dataTrust;
   SmartPlusDailyBrief get dailyBrief => _dailyBrief;
   bool isReviewed(String id) => _reviewedIds.contains(id);
+  String? feedbackFor(String notificationId) =>
+      _feedbackByNotification[notificationId];
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -316,6 +320,19 @@ class SmartPlusNotificationService extends ChangeNotifier {
       }
     }
     _reviewedIds.addAll(prefs.getStringList(_reviewedKey) ?? const []);
+    final rawFeedback = prefs.getString(_feedbackKey);
+    if (rawFeedback != null) {
+      try {
+        final decoded = Map<String, dynamic>.from(
+          jsonDecode(rawFeedback) as Map,
+        );
+        _feedbackByNotification.addAll(
+          decoded.map((key, value) => MapEntry(key, value.toString())),
+        );
+      } catch (_) {
+        // Feedback is optional; ignore an older or malformed local cache.
+      }
+    }
     refresh();
   }
 
@@ -454,6 +471,14 @@ class SmartPlusNotificationService extends ChangeNotifier {
   /// Feedback is tenant-scoped and owner-only on the backend. It is used for
   /// periodic accuracy review; it does not train or contact any third party.
   Future<String?> recordFeedback(String notificationId, String verdict) async {
+    const allowed = {'useful', 'ignored', 'inaccurate'};
+    if (!allowed.contains(verdict)) {
+      return 'Choose Useful, Ignore, or Inaccurate.';
+    }
+    final previous = _feedbackByNotification[notificationId];
+    _feedbackByNotification[notificationId] = verdict;
+    await _saveFeedback();
+    notifyListeners();
     try {
       await ApiClient().postJson(
         'smartplus/feedback',
@@ -461,8 +486,20 @@ class SmartPlusNotificationService extends ChangeNotifier {
       );
       return null;
     } catch (error) {
+      if (previous == null) {
+        _feedbackByNotification.remove(notificationId);
+      } else {
+        _feedbackByNotification[notificationId] = previous;
+      }
+      await _saveFeedback();
+      notifyListeners();
       return safeApiError(error);
     }
+  }
+
+  Future<void> _saveFeedback() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_feedbackKey, jsonEncode(_feedbackByNotification));
   }
 
   bool _shouldShowNotification(SmartPlusNotification notification) {

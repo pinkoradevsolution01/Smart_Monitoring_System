@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get_it/get_it.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
@@ -72,6 +73,7 @@ Future<void> main() async {
   }
 
   // Initialize persisted theme selection
+  await LocaleController.initialize();
   await ThemeController.init();
   await MotionController.init();
 
@@ -556,12 +558,27 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
             return ValueListenableBuilder<Locale>(
               valueListenable: LocaleController.locale,
               builder: (context, locale, _) {
+                // The revision is visually neutral, but changes Theme's
+                // inherited data when language changes. This makes existing
+                // widgets that call AppLocalizations.t(...) rebuild without
+                // resetting the active Navigator route or form state.
+                final localeAwareTheme = theme.copyWith(
+                  extensions: <ThemeExtension<dynamic>>[
+                    _LocaleThemeRevision(locale.languageCode),
+                  ],
+                );
                 return MaterialApp(
                   navigatorKey: _navigatorKey,
                   title: 'Smart Store Monitoring System',
                   debugShowCheckedModeBanner: false,
-                  theme: theme,
+                  theme: localeAwareTheme,
                   locale: locale,
+                  supportedLocales: const [Locale('en'), Locale('fil')],
+                  localizationsDelegates: const [
+                    GlobalMaterialLocalizations.delegate,
+                    GlobalWidgetsLocalizations.delegate,
+                    GlobalCupertinoLocalizations.delegate,
+                  ],
                   home: const SplashScreen(),
                   routes: {
                     ...AppRouter.routes,
@@ -603,4 +620,19 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
       },
     );
   }
+}
+
+@immutable
+class _LocaleThemeRevision extends ThemeExtension<_LocaleThemeRevision> {
+  const _LocaleThemeRevision(this.languageCode);
+
+  final String languageCode;
+
+  @override
+  _LocaleThemeRevision copyWith({String? languageCode}) =>
+      _LocaleThemeRevision(languageCode ?? this.languageCode);
+
+  @override
+  _LocaleThemeRevision lerp(_LocaleThemeRevision? other, double t) =>
+      t < 0.5 ? this : (other ?? this);
 }

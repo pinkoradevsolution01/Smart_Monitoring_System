@@ -120,8 +120,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _saveChanges() {
-    LocaleController.setLocale(_selectedLocale);
+  Future<void> _saveChanges() async {
+    await LocaleController.setLocale(_selectedLocale);
     ThemeController.setTheme(_selectedThemeKey);
     MotionController.setReduceMotion(_selectedReduceMotion);
 
