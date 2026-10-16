@@ -249,6 +249,7 @@ CREATE TABLE IF NOT EXISTS smartplus_notification_preferences (
   sales_enabled TINYINT(1) NOT NULL DEFAULT 1,
   discount_enabled TINYINT(1) NOT NULL DEFAULT 1,
   forecast_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  supplier_delivery_enabled TINYINT(1) NOT NULL DEFAULT 1,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (business_id),
   CONSTRAINT fk_smartplus_preferences_business
@@ -661,6 +662,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   product_id VARCHAR(64) NOT NULL,
   product_name VARCHAR(255) NOT NULL,
   quantity INT NOT NULL,
+  received_quantity INT NOT NULL DEFAULT 0,
   unit_price DECIMAL(12, 2) NOT NULL,
   total_price DECIMAL(12, 2) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

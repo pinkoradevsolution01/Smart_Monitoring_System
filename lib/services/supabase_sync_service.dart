@@ -1049,6 +1049,7 @@ class SupabaseSyncService extends ChangeNotifier {
             'product_id': item.productId.toString(),
             'product_name': item.productName,
             'quantity': item.quantity,
+            'received_quantity': item.receivedQuantity,
             'unit_price': item.unitPrice,
             'total_price': item.totalPrice,
           });
@@ -1786,6 +1787,9 @@ class SupabaseSyncService extends ChangeNotifier {
             productId: _asInt(itemData['product_id']),
             productName: itemData['product_name']?.toString() ?? '',
             quantity: quantity,
+            receivedQuantity: _asInt(
+              itemData['received_quantity'] ?? itemData['receivedQuantity'],
+            ),
             unitPrice: unitPrice,
             totalPrice: _asDouble(
               itemData['total_price'],

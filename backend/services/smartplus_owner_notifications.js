@@ -23,7 +23,61 @@ function asNumber(value) {
   return Number(value || 0);
 }
 
-function normalizeSuggestions({ outOfStock, lowStock, discountReview, preferences = {} }) {
+function supplierDeliverySuggestions(rows = []) {
+  return rows.map((row) => {
+    const orderNumber = String(row.order_number || 'Unknown purchase order');
+    const supplier = String(row.supplier_name || 'Unassigned supplier');
+    const items = String(row.ordered_items || 'No line items recorded');
+    const expected = row.expected_delivery ? String(row.expected_delivery).slice(0, 10) : 'No expected delivery date';
+    const overdueDays = Math.max(0, Number(row.overdue_days || 0));
+    const impact = Number(row.low_stock_count || 0);
+    const prefix = `Rule: Purchase Order ${orderNumber}. Supplier: ${supplier}. Ordered: ${items}. Expected delivery: ${expected}.`;
+    const impactText = impact > 0 ? ` Impact: ${impact} affected low-stock or out-of-stock product(s).` : '';
+    const status = String(row.status || '').toLowerCase();
+    if (Number(row.missing_inventory || 0) === 1) {
+      return {
+        level: 'critical',
+        title: 'Delivered stock has not been added to inventory',
+        message: `${prefix} Delivery is marked received, but no linked restock record was found.${impactText} Suggested next step: Verify the delivery and record stock.`,
+      };
+    }
+    if (status === 'partial') {
+      return {
+        level: 'warning',
+        title: 'Partial supplier delivery needs review',
+        message: `${prefix} A partial receipt is recorded.${impactText} Suggested next step: Record the remaining delivery or contact supplier.`,
+      };
+    }
+    if (status === 'completed') {
+      return {
+        level: 'warning',
+        title: 'Shipment marked complete but not received',
+        message: `${prefix} Shipment is marked completed but has not been received into inventory.${impactText} Suggested next step: Check shipment and record delivery quantities.`,
+      };
+    }
+    if (status === 'pending' && Number(row.pending_days || 0) >= 2 && !row.expected_delivery) {
+      return {
+        level: 'warning',
+        title: 'Supplier order awaiting confirmation',
+        message: `${prefix} The order has been pending for ${row.pending_days} day(s).${impactText} Suggested next step: Contact supplier and record approval or cancellation.`,
+      };
+    }
+    if (overdueDays > 0) {
+      return {
+        level: impact > 0 ? 'critical' : 'warning',
+        title: 'Supplier delivery is overdue',
+        message: `${prefix} Status: ${overdueDays} day(s) overdue.${impactText} Suggested next step: Confirm delivery status with supplier.`,
+      };
+    }
+    return {
+      level: 'info',
+      title: 'Supplier delivery is due today',
+      message: `${prefix} Status: due today.${impactText} Suggested next step: Confirm the delivery schedule with supplier.`,
+    };
+  });
+}
+
+function normalizeSuggestions({ outOfStock, lowStock, discountReview, supplierDelivery = [], preferences = {} }) {
   const suggestions = [];
   if (preferences.low_stock_enabled !== false && outOfStock.length) {
     suggestions.push({
@@ -46,12 +100,15 @@ function normalizeSuggestions({ outOfStock, lowStock, discountReview, preference
       message: `${discountReview.count} completed sale(s) in the last 30 days used a discount of 20% or more. This is a review reminder, not a fraud finding.`,
     });
   }
+  if (preferences.supplier_delivery_enabled !== false) {
+    suggestions.push(...supplierDeliverySuggestions(supplierDelivery));
+  }
   return suggestions;
 }
 
 function emailContent({ businessName, suggestions }) {
   const textLines = [
-    `SmartPlus update for ${businessName}`,
+      `SmartPlus update for ${businessName}`,
     '',
     ...suggestions.flatMap((suggestion) => [`${suggestion.title}`, suggestion.message, '']),
     'Open Smart Monitoring System to review the relevant business records.',
@@ -97,7 +154,7 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   if (!business?.owner_email) return { skipped: 'business_not_found' };
 
   const preferenceRows = await dbQuery(
-    `SELECT email_enabled, low_stock_enabled, discount_enabled
+    `SELECT email_enabled, low_stock_enabled, discount_enabled, supplier_delivery_enabled
        FROM smartplus_notification_preferences
       WHERE business_id = ? LIMIT 1`,
     [businessId],
@@ -107,7 +164,7 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
     return { skipped: 'email_disabled_by_owner' };
   }
 
-  const [outOfStock, lowStock, discountRows] = await Promise.all([
+  const [outOfStock, lowStock, discountRows, supplierDelivery] = await Promise.all([
     dbQuery(
       `SELECT name, quantity
          FROM products
@@ -134,6 +191,38 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
           AND discount / subtotal >= 0.20`,
       [businessId],
     ),
+    dbQuery(
+      `SELECT po.order_number, po.status, po.order_date, po.expected_delivery,
+              COALESCE(s.name, 'Unassigned supplier') AS supplier_name,
+              GROUP_CONCAT(CONCAT(poi.product_name, ' x', poi.quantity)
+                ORDER BY poi.product_name SEPARATOR ', ') AS ordered_items,
+              SUM(CASE WHEN p.quantity <= p.low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
+              MAX(CASE WHEN po.status = 'received' AND poi.received_quantity > 0
+                AND rr.id IS NULL THEN 1 ELSE 0 END) AS missing_inventory,
+              DATEDIFF(CURDATE(), DATE(po.expected_delivery)) AS overdue_days,
+              DATEDIFF(CURDATE(), DATE(po.order_date)) AS pending_days
+         FROM purchase_orders po
+         LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.business_id = po.business_id
+         LEFT JOIN purchase_order_items poi ON poi.order_id = po.id AND poi.business_id = po.business_id
+         LEFT JOIN products p ON p.id = poi.product_id AND p.business_id = po.business_id
+         LEFT JOIN restock_records rr ON rr.business_id = po.business_id
+           AND rr.referenced_by = CONCAT('Purchase Order ', po.order_number)
+        WHERE po.business_id = ?
+          AND (
+            po.status IN ('completed', 'partial')
+            OR (po.status = 'received' AND poi.received_quantity > 0)
+            OR (po.status = 'pending' AND po.expected_delivery IS NULL
+                AND DATEDIFF(CURDATE(), DATE(po.order_date)) >= 2
+                AND MOD(DATEDIFF(CURDATE(), DATE(po.order_date)) - 2, 3) = 0)
+            OR (po.status NOT IN ('received', 'cancelled') AND po.expected_delivery IS NOT NULL
+                AND (DATEDIFF(CURDATE(), DATE(po.expected_delivery)) = 0
+                  OR DATEDIFF(CURDATE(), DATE(po.expected_delivery)) = 1
+                  OR (DATEDIFF(CURDATE(), DATE(po.expected_delivery)) > 1
+                    AND MOD(DATEDIFF(CURDATE(), DATE(po.expected_delivery)), 3) = 0)))
+          )
+        GROUP BY po.id, po.order_number, po.status, po.order_date, po.expected_delivery, s.name`,
+      [businessId],
+    ).catch(() => []),
   ]);
   const suggestions = normalizeSuggestions({
     outOfStock,
@@ -142,7 +231,10 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
     preferences: {
       low_stock_enabled: Number(preferences.low_stock_enabled ?? 1) === 1,
       discount_enabled: Number(preferences.discount_enabled ?? 1) === 1,
+      supplier_delivery_enabled:
+        Number(preferences.supplier_delivery_enabled ?? 1) === 1,
     },
+    supplierDelivery,
   });
   if (!suggestions.length) return { skipped: 'no_actionable_suggestions' };
 
@@ -186,9 +278,28 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   }
 }
 
+/// Runs from the backend process as well as after sync. Each individual
+/// business remains protected by the per-day delivery key in dispatchOwnerDigest.
+async function dispatchScheduledOwnerDigests(dependencies = {}) {
+  if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
+  const dbQuery = dependencies.query || query;
+  const businesses = await dbQuery(
+    'SELECT id FROM businesses WHERE is_active = 1',
+  );
+  const results = await Promise.allSettled(
+    businesses.map((business) => dispatchOwnerDigest(business.id, dependencies)),
+  );
+  return {
+    processed: businesses.length,
+    failed: results.filter((result) => result.status === 'rejected').length,
+  };
+}
+
 module.exports = {
   dispatchOwnerDigest,
   emailContent,
   manilaDate,
   normalizeSuggestions,
+  supplierDeliverySuggestions,
+  dispatchScheduledOwnerDigests,
 };

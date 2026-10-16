@@ -10,6 +10,7 @@ const FIELDS = [
   'sales_enabled',
   'discount_enabled',
   'forecast_enabled',
+  'supplier_delivery_enabled',
 ];
 
 function requireOwner(req, res, next) {

@@ -117,7 +117,8 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                       ),
                       IconButton(
                         tooltip: 'Refresh suggestions',
-                        onPressed: service.refresh,
+                        onPressed: () =>
+                            service.refresh(forceSupplierCheck: true),
                         icon: const Icon(Icons.refresh_rounded),
                       ),
                       IconButton(
@@ -412,6 +413,16 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                     () => draft = draft.copyWith(forecastEnabled: value),
                   ),
                 ),
+                _preferenceSwitch(
+                  value: draft.supplierDeliveryEnabled,
+                  title: 'Supplier and delivery alerts',
+                  subtitle:
+                      'In-app and owner email digest: on due date, one day overdue, then every three days overdue.',
+                  onChanged: (value) => setDialogState(
+                    () =>
+                        draft = draft.copyWith(supplierDeliveryEnabled: value),
+                  ),
+                ),
               ],
             ),
           ),
@@ -446,10 +457,12 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
   Widget _preferenceSwitch({
     required bool value,
     required String title,
+    String? subtitle,
     required ValueChanged<bool> onChanged,
   }) => SwitchListTile.adaptive(
     value: value,
     onChanged: onChanged,
     title: Text(title),
+    subtitle: subtitle == null ? null : Text(subtitle),
   );
 }

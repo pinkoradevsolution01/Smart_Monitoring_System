@@ -108,6 +108,11 @@ class PurchaseOrderItem {
   final int productId;
   final String productName;
   final int quantity;
+
+  /// Quantity physically recorded through the delivery/receiving workflow.
+  /// Kept separately from [quantity] so an incomplete supplier delivery can
+  /// remain visible to the owner and SmartPlus without changing inventory.
+  final int receivedQuantity;
   final double unitPrice;
   final double totalPrice;
 
@@ -117,6 +122,7 @@ class PurchaseOrderItem {
     required this.productId,
     required this.productName,
     required this.quantity,
+    this.receivedQuantity = 0,
     required this.unitPrice,
     required this.totalPrice,
   });
@@ -128,6 +134,7 @@ class PurchaseOrderItem {
       'productId': productId,
       'productName': productName,
       'quantity': quantity,
+      'receivedQuantity': receivedQuantity,
       'unitPrice': unitPrice,
       'totalPrice': totalPrice,
     };
@@ -139,9 +146,10 @@ class PurchaseOrderItem {
       orderId: map['orderId'],
       productId: map['productId'],
       productName: map['productName'],
-      quantity: map['quantity'],
-      unitPrice: map['unitPrice'],
-      totalPrice: map['totalPrice'],
+      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+      receivedQuantity: (map['receivedQuantity'] as num?)?.toInt() ?? 0,
+      unitPrice: (map['unitPrice'] as num?)?.toDouble() ?? 0,
+      totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -151,6 +159,7 @@ class PurchaseOrderItem {
     int? productId,
     String? productName,
     int? quantity,
+    int? receivedQuantity,
     double? unitPrice,
     double? totalPrice,
   }) {
@@ -160,6 +169,7 @@ class PurchaseOrderItem {
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
       quantity: quantity ?? this.quantity,
+      receivedQuantity: receivedQuantity ?? this.receivedQuantity,
       unitPrice: unitPrice ?? this.unitPrice,
       totalPrice: totalPrice ?? this.totalPrice,
     );

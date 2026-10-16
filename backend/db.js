@@ -213,6 +213,7 @@ async function ensureSalesAndCustomerRelations() {
   await ensureColumn('sales', 'loyalty_points_redeemed', 'INT NOT NULL DEFAULT 0');
   await ensureColumn('sales', 'updated_at', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
   await ensureColumn('sale_items', 'shoe_size', 'VARCHAR(32) NULL');
+  await ensureColumn('purchase_order_items', 'received_quantity', 'INT NOT NULL DEFAULT 0');
   await ensureColumn('attendance_archive', 'business_id', 'VARCHAR(64) NOT NULL');
   await ensureColumn('attendance_archive', 'user_id', 'VARCHAR(64) NOT NULL');
   await ensureColumn('attendance_archive', 'date_key', 'VARCHAR(16) NOT NULL');
@@ -432,12 +433,18 @@ async function ensureSmartPlusNotificationPreferencesTable() {
       sales_enabled TINYINT(1) NOT NULL DEFAULT 1,
       discount_enabled TINYINT(1) NOT NULL DEFAULT 1,
       forecast_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      supplier_delivery_enabled TINYINT(1) NOT NULL DEFAULT 1,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       CONSTRAINT fk_smartplus_preferences_business
         FOREIGN KEY (business_id) REFERENCES businesses(id)
         ON DELETE CASCADE ON UPDATE CASCADE
     ) ENGINE=InnoDB
   `);
+  await ensureColumn(
+    'smartplus_notification_preferences',
+    'supplier_delivery_enabled',
+    'TINYINT(1) NOT NULL DEFAULT 1',
+  );
 }
 
 // Operational events are intentionally server-authored. They provide the

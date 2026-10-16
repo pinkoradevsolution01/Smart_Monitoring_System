@@ -1726,7 +1726,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                 ),
                 onTap: () => _markOrderCompleted(order.id!),
               ),
-            if (order.status == 'completed')
+            if (order.status == 'completed' || order.status == 'partial')
               PopupMenuItem(
                 child: Row(
                   children: [
@@ -2701,7 +2701,9 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
     // Initialize controllers for each item
     for (var item in order.items) {
       quantityControllers[item.productId] = TextEditingController(
-        text: item.quantity.toString(),
+        text: (item.quantity - item.receivedQuantity)
+            .clamp(0, item.quantity)
+            .toString(),
       );
       damageControllers[item.productId] = TextEditingController(text: '0');
       damageReasonControllers[item.productId] = TextEditingController();
@@ -2874,17 +2876,26 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                       .text
                       .trim();
 
-                  if (receivedQty > 0) {
+                  final remainingQty = (item.quantity - item.receivedQuantity)
+                      .clamp(0, item.quantity)
+                      .toInt();
+                  final acceptedQty = receivedQty
+                      .clamp(0, remainingQty)
+                      .toInt();
+                  if (acceptedQty > 0) {
                     // Create restock record with damage info
-                    final damageNote = damageQty > 0
-                        ? 'Restocked from purchase order ($damageQty damaged items excluded${serialNumber.isNotEmpty ? ', SN: $serialNumber' : ''})'
+                    final acceptedDamageQty = damageQty
+                        .clamp(0, acceptedQty)
+                        .toInt();
+                    final damageNote = acceptedDamageQty > 0
+                        ? 'Restocked from purchase order ($acceptedDamageQty damaged items excluded${serialNumber.isNotEmpty ? ', SN: $serialNumber' : ''})'
                         : 'Restocked from purchase order';
 
                     final record = RestockRecord(
                       productId: item.productId,
                       productName: item.productName,
-                      quantity: receivedQty,
-                      damageQuantity: damageQty,
+                      quantity: acceptedQty,
+                      damageQuantity: acceptedDamageQty,
                       damageReason: damageReason.isNotEmpty
                           ? '$damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
                           : serialNumber.isNotEmpty
@@ -2900,7 +2911,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     await db.insertRestockRecord(record);
 
                     // If there are damaged items, create a damage report
-                    if (damageQty > 0) {
+                    if (acceptedDamageQty > 0) {
                       final damageReportReason = damageReason.isNotEmpty
                           ? '${AppLocalizations.t('purchase_order')}: ${order.orderNumber} - $damageReason${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}'
                           : '${AppLocalizations.t('purchase_order')}: ${order.orderNumber}${serialNumber.isNotEmpty ? ' (SN: $serialNumber)' : ''}';
@@ -2908,7 +2919,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                       final damageReport = DamageReport(
                         productId: item.productId,
                         productName: item.productName,
-                        quantity: damageQty,
+                        quantity: acceptedDamageQty,
                         unitPrice: item.unitPrice,
                         totalValue: item.unitPrice * damageQty,
                         reason: damageReportReason,
@@ -2919,7 +2930,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     }
 
                     // Update product stock: add only good items (received - damaged)
-                    final goodItems = receivedQty - damageQty;
+                    final goodItems = acceptedQty - acceptedDamageQty;
                     if (goodItems > 0) {
                       final product = await db.getProductById(item.productId);
                       if (product != null) {
@@ -2933,8 +2944,25 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                   }
                 }
 
-                // Mark order as received
-                await db.updatePurchaseOrderStatus(order.id!, 'received');
+                final recordedItems = order.items.map((item) {
+                  final receivedQty =
+                      int.tryParse(quantityControllers[item.productId]!.text) ??
+                      0;
+                  return item.copyWith(
+                    receivedQuantity: (item.receivedQuantity + receivedQty)
+                        .clamp(0, item.quantity)
+                        .toInt(),
+                  );
+                }).toList();
+                final hasPartialDelivery = recordedItems.any(
+                  (item) => item.receivedQuantity < item.quantity,
+                );
+                await db.updatePurchaseOrder(
+                  order.copyWith(
+                    items: recordedItems,
+                    status: hasPartialDelivery ? 'partial' : 'received',
+                  ),
+                );
                 await _loadData();
 
                 if (mounted) {

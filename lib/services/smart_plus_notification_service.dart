@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/product.dart';
+import '../models/purchase_order.dart';
 import '../models/sale.dart';
 import 'backend_api_service.dart';
+import 'database_service.dart';
 import 'pos_service.dart';
 
 enum SmartPlusNotificationLevel { info, warning, critical }
@@ -20,6 +23,7 @@ class SmartPlusNotificationPreferences {
     this.salesEnabled = true,
     this.discountEnabled = true,
     this.forecastEnabled = true,
+    this.supplierDeliveryEnabled = true,
   });
 
   final bool inAppEnabled;
@@ -28,6 +32,7 @@ class SmartPlusNotificationPreferences {
   final bool salesEnabled;
   final bool discountEnabled;
   final bool forecastEnabled;
+  final bool supplierDeliveryEnabled;
 
   Map<String, dynamic> toApiMap() => {
     'in_app_enabled': inAppEnabled,
@@ -36,6 +41,7 @@ class SmartPlusNotificationPreferences {
     'sales_enabled': salesEnabled,
     'discount_enabled': discountEnabled,
     'forecast_enabled': forecastEnabled,
+    'supplier_delivery_enabled': supplierDeliveryEnabled,
   };
 
   factory SmartPlusNotificationPreferences.fromMap(Map<String, dynamic> map) =>
@@ -46,6 +52,7 @@ class SmartPlusNotificationPreferences {
         salesEnabled: map['sales_enabled'] != false,
         discountEnabled: map['discount_enabled'] != false,
         forecastEnabled: map['forecast_enabled'] != false,
+        supplierDeliveryEnabled: map['supplier_delivery_enabled'] != false,
       );
 
   SmartPlusNotificationPreferences copyWith({
@@ -55,6 +62,7 @@ class SmartPlusNotificationPreferences {
     bool? salesEnabled,
     bool? discountEnabled,
     bool? forecastEnabled,
+    bool? supplierDeliveryEnabled,
   }) => SmartPlusNotificationPreferences(
     inAppEnabled: inAppEnabled ?? this.inAppEnabled,
     emailEnabled: emailEnabled ?? this.emailEnabled,
@@ -62,6 +70,8 @@ class SmartPlusNotificationPreferences {
     salesEnabled: salesEnabled ?? this.salesEnabled,
     discountEnabled: discountEnabled ?? this.discountEnabled,
     forecastEnabled: forecastEnabled ?? this.forecastEnabled,
+    supplierDeliveryEnabled:
+        supplierDeliveryEnabled ?? this.supplierDeliveryEnabled,
   );
 }
 
@@ -115,6 +125,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
   final Set<String> _reviewedIds = <String>{};
   final Map<String, SmartPlusNotification> _milestones =
       <String, SmartPlusNotification>{};
+  List<SmartPlusNotification> _supplierDeliveryNotifications = const [];
+  bool _supplierRefreshInFlight = false;
+  DateTime? _lastSupplierRefresh;
   List<SmartPlusNotification> _notifications = const [];
   SmartPlusNotificationPreferences _preferences =
       const SmartPlusNotificationPreferences();
@@ -186,14 +199,55 @@ class SmartPlusNotificationService extends ChangeNotifier {
 
   void _onBusinessDataChanged() => refresh();
 
-  void refresh() {
+  void refresh({bool forceSupplierCheck = false}) {
+    _applyVisibleNotifications();
+    unawaited(_refreshSupplierDeliveryNotifications(force: forceSupplierCheck));
+  }
+
+  void _applyVisibleNotifications() {
     final visible = _preferences.inAppEnabled
-        ? [..._milestones.values, ..._evaluate()]
+        ? [
+            ..._milestones.values,
+            ..._evaluate(),
+            ..._supplierDeliveryNotifications,
+          ]
         : const <SmartPlusNotification>[];
     _notifications = visible
         .map((item) => item.copyWith(isRead: _readIds.contains(item.id)))
         .toList(growable: false);
     notifyListeners();
+  }
+
+  Future<void> _refreshSupplierDeliveryNotifications({
+    bool force = false,
+  }) async {
+    if (!_preferences.supplierDeliveryEnabled) {
+      if (_supplierDeliveryNotifications.isNotEmpty) {
+        _supplierDeliveryNotifications = const [];
+        _applyVisibleNotifications();
+      }
+      return;
+    }
+    final now = DateTime.now();
+    if (_supplierRefreshInFlight ||
+        (!force &&
+            _lastSupplierRefresh != null &&
+            now.difference(_lastSupplierRefresh!) <
+                const Duration(seconds: 30))) {
+      return;
+    }
+    _supplierRefreshInFlight = true;
+    _lastSupplierRefresh = now;
+    try {
+      _supplierDeliveryNotifications = await _evaluateSupplierDeliveryRules();
+      _applyVisibleNotifications();
+    } catch (error) {
+      // SmartPlus must never interrupt a normal POS/inventory workflow if a
+      // local data source is temporarily unavailable.
+      debugPrint('SmartPlus supplier delivery review unavailable: $error');
+    } finally {
+      _supplierRefreshInFlight = false;
+    }
   }
 
   void notifySetupCompleted() {
@@ -402,6 +456,306 @@ class SmartPlusNotificationService extends ChangeNotifier {
           sale.discountAmount / sale.subtotal >= 0.20;
     }).length;
   }
+
+  Future<List<SmartPlusNotification>> _evaluateSupplierDeliveryRules() async {
+    final database = DatabaseService();
+    final orders = await database.getAllPurchaseOrders();
+    final restocks = await database.getAllRestockRecords();
+    final today = _dateOnly(DateTime.now());
+    final productsById = {
+      for (final product in _pos.products)
+        if (product.id != null) product.id!: product,
+    };
+    final suggestions = <SmartPlusNotification>[];
+
+    for (final order in orders) {
+      final status = order.status.trim().toLowerCase();
+      if (status == 'cancelled') continue;
+      final expected = order.expectedDeliveryDate == null
+          ? null
+          : _dateOnly(order.expectedDeliveryDate!);
+      final orderedItems = _orderedItems(order);
+      final impact = _stockImpact(order, productsById);
+      final context = _deliveryContext(order, expected, today, impact);
+
+      if (status == 'pending' &&
+          today.difference(_dateOnly(order.orderDate)).inDays >= 2) {
+        final waitDays = today.difference(_dateOnly(order.orderDate)).inDays;
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-awaiting-confirmation-${order.orderNumber}',
+            title: 'Supplier order awaiting confirmation',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} has been pending for $waitDays day(s). Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: SmartPlusNotificationLevel.warning,
+            source: 'Purchase-order status and order date',
+            range:
+                'Order date ${_formatDate(order.orderDate)} to ${_formatDate(today)}',
+            action: 'Contact supplier and record approval or cancellation.',
+          ),
+        );
+      }
+
+      if (status == 'completed') {
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-in-transit-not-received-${order.orderNumber}',
+            title: 'Shipment marked complete but not received',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} is marked completed but has not been received into inventory. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: SmartPlusNotificationLevel.warning,
+            source: 'Purchase-order status and delivery receipt records',
+            range: expected == null
+                ? 'Current purchase-order status'
+                : 'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            action: 'Check the shipment, then record the delivery quantities.',
+          ),
+        );
+      }
+
+      final partialItems = order.items
+          .where(
+            (item) =>
+                item.receivedQuantity > 0 &&
+                item.receivedQuantity < item.quantity,
+          )
+          .toList();
+      if (status == 'partial' || partialItems.isNotEmpty) {
+        final received = partialItems.isEmpty
+            ? orderedItems
+            : partialItems
+                  .map(
+                    (item) =>
+                        '${item.productName} ${item.receivedQuantity}/${item.quantity}',
+                  )
+                  .join(', ');
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-partial-delivery-${order.orderNumber}',
+            title: 'Partial supplier delivery needs review',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} has a recorded partial delivery. Supplier: ${order.supplierName}. Ordered: $orderedItems. Received: $received. $context',
+            level: SmartPlusNotificationLevel.warning,
+            source: 'Recorded purchase-order receipt quantities',
+            range: expected == null
+                ? 'Current purchase-order receipt'
+                : 'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            action:
+                'Record the remaining delivery or contact the supplier about the shortage.',
+          ),
+        );
+      }
+
+      if (status == 'received' &&
+          order.items.any((item) => item.receivedQuantity > 0) &&
+          !restocks.any(
+            (record) => record.referencedBy.contains(
+              'Purchase Order ${order.orderNumber}',
+            ),
+          )) {
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-received-stock-unrecorded-${order.orderNumber}',
+            title: 'Delivered stock has not been added to inventory',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} is marked received, but no linked restock record was found. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: SmartPlusNotificationLevel.critical,
+            source: 'Purchase-order receipt status and restock records',
+            range: 'Current records as of ${_formatDate(today)}',
+            action:
+                'Verify the delivery and record the stock before selling it.',
+          ),
+        );
+      }
+
+      if (status == 'received') continue;
+
+      if (expected == null) continue;
+      final overdueDays = today.difference(expected).inDays;
+      if (overdueDays == 0) {
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-delivery-due-${order.orderNumber}',
+            title: 'Supplier delivery is due today',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} is due today. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: SmartPlusNotificationLevel.info,
+            source: 'Purchase-order expected delivery date',
+            range:
+                'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            action: 'Confirm the delivery schedule with the supplier.',
+          ),
+        );
+      } else if (overdueDays > 0 && _isOverdueReminderDay(overdueDays)) {
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-delivery-overdue-${order.orderNumber}-$overdueDays',
+            title: 'Supplier delivery is overdue',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} is $overdueDays day(s) overdue. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: impact.isEmpty
+                ? SmartPlusNotificationLevel.warning
+                : SmartPlusNotificationLevel.critical,
+            source: 'Purchase-order expected delivery date and current stock',
+            range:
+                'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            action: 'Confirm delivery status with supplier.',
+          ),
+        );
+      }
+    }
+
+    suggestions.addAll(_supplierReliabilityRules(orders, today));
+    return suggestions;
+  }
+
+  SmartPlusNotification _supplierRule({
+    required String id,
+    required String title,
+    required String message,
+    required SmartPlusNotificationLevel level,
+    required String source,
+    required String range,
+    required String action,
+  }) => SmartPlusNotification(
+    id: id,
+    title: title,
+    message: message,
+    level: level,
+    insightKind: SmartPlusInsightKind.rule,
+    sourceData: source,
+    dataRange: range,
+    proposedAction: action,
+    requiresOwnerConfirmation: true,
+  );
+
+  List<SmartPlusNotification> _supplierReliabilityRules(
+    List<PurchaseOrder> orders,
+    DateTime today,
+  ) {
+    final bySupplier = <int, List<PurchaseOrder>>{};
+    for (final order in orders) {
+      bySupplier.putIfAbsent(order.supplierId, () => []).add(order);
+    }
+    final results = <SmartPlusNotification>[];
+    for (final entries in bySupplier.entries) {
+      final supplierOrders = entries.value
+        ..sort((a, b) => a.orderDate.compareTo(b.orderDate));
+      final supplier = supplierOrders.first.supplierName;
+      final delayed = supplierOrders.where((order) {
+        final expected = order.expectedDeliveryDate;
+        final closed =
+            order.status == 'received' || order.status == 'cancelled';
+        return !closed &&
+            expected != null &&
+            _dateOnly(expected).isBefore(today);
+      }).length;
+      final incomplete = supplierOrders
+          .where(
+            (order) =>
+                order.status == 'partial' ||
+                order.items.any(
+                  (item) =>
+                      item.receivedQuantity > 0 &&
+                      item.receivedQuantity < item.quantity,
+                ),
+          )
+          .length;
+      final increases = _priceIncreaseCount(supplierOrders);
+      if (delayed == 0 && incomplete == 0 && increases == 0) {
+        continue;
+      }
+      final evidence = <String>[];
+      if (delayed > 0) evidence.add('$delayed delayed open order(s)');
+      if (incomplete > 0) evidence.add('$incomplete partial order(s)');
+      if (increases > 0) {
+        evidence.add('$increases repeated item price increase(s)');
+      }
+      results.add(
+        _supplierRule(
+          id: 'supplier-reliability-${entries.key}',
+          title: 'Supplier reliability trend needs review',
+          message:
+              'Rule: ${supplier.isEmpty ? 'This supplier' : supplier} has ${evidence.join(', ')} in the recorded purchase-order history. This is an operational review trend, not a supplier rating or forecast.',
+          level: delayed > 0 || incomplete > 0
+              ? SmartPlusNotificationLevel.warning
+              : SmartPlusNotificationLevel.info,
+          source: 'Purchase-order dates, receipt quantities, and unit prices',
+          range:
+              '${_formatDate(supplierOrders.first.orderDate)} to ${_formatDate(today)}',
+          action:
+              'Review supplier performance and confirm future pricing or delivery commitments.',
+        ),
+      );
+    }
+    return results;
+  }
+
+  int _priceIncreaseCount(List<PurchaseOrder> orders) {
+    final lastPriceByProduct = <int, double>{};
+    var increases = 0;
+    for (final order in orders) {
+      for (final item in order.items) {
+        final previous = lastPriceByProduct[item.productId];
+        if (previous != null && item.unitPrice > previous * 1.05) {
+          increases += 1;
+        }
+        lastPriceByProduct[item.productId] = item.unitPrice;
+      }
+    }
+    return increases;
+  }
+
+  String _orderedItems(PurchaseOrder order) {
+    final items = order.items
+        .take(3)
+        .map((item) => '${item.productName} x${item.quantity}')
+        .toList();
+    if (order.items.length > items.length) {
+      items.add('+${order.items.length - items.length} more');
+    }
+    return items.isEmpty ? 'No line items recorded' : items.join(', ');
+  }
+
+  List<Product> _stockImpact(
+    PurchaseOrder order,
+    Map<int, Product> productsById,
+  ) => order.items
+      .map((item) => productsById[item.productId])
+      .whereType<Product>()
+      .where((product) => product.quantity <= 0 || product.lowStock)
+      .toList();
+
+  String _deliveryContext(
+    PurchaseOrder order,
+    DateTime? expected,
+    DateTime today,
+    List<Product> impact,
+  ) {
+    final parts = <String>[];
+    if (expected != null) {
+      final overdue = today.difference(expected).inDays;
+      parts.add(
+        'Expected delivery: ${_formatDate(expected)}; current date: ${_formatDate(today)}${overdue > 0 ? '; $overdue day(s) overdue' : ''}.',
+      );
+    } else {
+      parts.add('No expected delivery date is recorded.');
+    }
+    if (impact.isNotEmpty) {
+      parts.add(
+        'Impact: ${impact.length} affected low-stock or out-of-stock product(s): ${impact.take(3).map((product) => product.name).join(', ')}.',
+      );
+    }
+    return parts.join(' ');
+  }
+
+  bool _isOverdueReminderDay(int days) => days == 1 || days % 3 == 0;
+
+  DateTime _dateOnly(DateTime value) =>
+      DateTime(value.year, value.month, value.day);
+
+  String _formatDate(DateTime value) =>
+      '${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][value.month - 1]} ${value.day}, ${value.year}';
 
   @override
   void dispose() {

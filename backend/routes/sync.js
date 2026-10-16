@@ -670,12 +670,13 @@ router.post('/push', async (req, res) => {
         const refOrderId = item.purchase_order_id || item.order_id || item.orderId || null;
         await connection.execute(
           `INSERT INTO purchase_order_items
-            (id, business_id, order_id, product_id, product_name, quantity, unit_price, total_price, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, business_id, order_id, product_id, product_name, quantity, received_quantity, unit_price, total_price, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               product_id = VALUES(product_id),
               product_name = VALUES(product_name),
               quantity = VALUES(quantity),
+              received_quantity = VALUES(received_quantity),
               unit_price = VALUES(unit_price),
               total_price = VALUES(total_price)`,
           [
@@ -685,6 +686,7 @@ router.post('/push', async (req, res) => {
             item.product_id,
             item.product_name,
             item.quantity,
+            item.received_quantity ?? item.receivedQuantity ?? 0,
             item.unit_price,
             item.total_price,
             toMySqlDateTime(item.created_at, new Date()),

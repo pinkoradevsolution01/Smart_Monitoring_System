@@ -171,7 +171,7 @@ class DatabaseService {
 
     final db = await openDatabase(
       path,
-      version: 25,
+      version: 26,
       onCreate: (db, version) {
         debugPrint('🆕 Creating new database (version $version)');
         return _createTables(db, version);
@@ -463,6 +463,7 @@ class DatabaseService {
         productId INTEGER NOT NULL,
         productName TEXT NOT NULL,
         quantity INTEGER NOT NULL,
+        receivedQuantity INTEGER NOT NULL DEFAULT 0,
         unitPrice REAL NOT NULL,
         totalPrice REAL NOT NULL,
         FOREIGN KEY (orderId) REFERENCES purchase_orders(id) ON DELETE CASCADE,
@@ -804,6 +805,17 @@ class DatabaseService {
       } catch (e) {
         // Columns might already exist
         debugPrint('Note: Return columns may already exist in damage_reports');
+      }
+    }
+    if (oldVersion < 26) {
+      // Delivery receipts must retain the physically received quantity. This
+      // supports partial-delivery review without inferring stock changes.
+      try {
+        await db.execute(
+          'ALTER TABLE purchase_order_items ADD COLUMN receivedQuantity INTEGER NOT NULL DEFAULT 0',
+        );
+      } catch (_) {
+        // Existing/newer local databases already have the column.
       }
     }
     if (oldVersion < 16) {
