@@ -42,7 +42,7 @@ async function resolveAuthenticatedBusiness(req) {
 }
 
 function hasMismatchedRecordBusiness(payload, businessId) {
-  const collections = ['users', 'customers', 'loyaltyLedger', 'cameras', 'cctvTimestamps', 'attendanceEntries', 'attendanceLeaves', 'attendanceArchive', 'activityLogs', 'products', 'suppliers', 'sales', 'saleItems', 'purchaseOrders', 'purchaseOrderItems', 'inventoryMovements', 'damageReports'];
+  const collections = ['users', 'customers', 'loyaltyLedger', 'cameras', 'cctvTimestamps', 'attendanceEntries', 'attendanceLeaves', 'attendanceArchive', 'activityLogs', 'products', 'suppliers', 'sales', 'saleItems', 'purchaseOrders', 'purchaseOrderItems', 'inventoryMovements', 'restockRecords', 'damageReports'];
   for (const name of collections) {
     if (!Array.isArray(payload[name])) continue;
     for (const record of payload[name]) {
@@ -73,6 +73,7 @@ router.post('/push', async (req, res) => {
     purchaseOrders,
     purchaseOrderItems,
     inventoryMovements,
+    restockRecords,
     damageReports,
   } = req.body;
 
@@ -126,6 +127,7 @@ router.post('/push', async (req, res) => {
       purchaseOrders: 0,
       purchaseOrderItems: 0,
       inventoryMovements: 0,
+      restockRecords: 0,
       damageReports: 0,
     };
 
@@ -695,6 +697,49 @@ router.post('/push', async (req, res) => {
           ],
         );
         stats.purchaseOrderItems += 1;
+      }
+    }
+
+    if (Array.isArray(restockRecords)) {
+      for (const record of restockRecords) {
+        const productId = String(record.product_id || record.productId || '').trim();
+        const referencedBy = String(record.referenced_by || record.referencedBy || '').trim();
+        const restockDate = toMySqlDateTime(record.restock_date || record.restockDate, new Date());
+        if (!productId || !referencedBy) {
+          throw new Error('A restock record requires a product and purchase-order reference.');
+        }
+        const receipt = String(record.delivery_receipt_no || record.deliveryReceiptNo || '').trim();
+        await connection.execute(
+          `INSERT INTO restock_records
+            (business_id, product_id, product_name, quantity, supplier_id, supplier_name,
+             delivery_receipt_no, damage_quantity, damage_reason, notes, referenced_by, restock_date)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (
+              SELECT 1 FROM restock_records
+               WHERE business_id = ? AND product_id = ? AND referenced_by = ?
+                 AND COALESCE(delivery_receipt_no, '') = ? AND restock_date = ?
+            )`,
+          [
+            resolvedBusinessId,
+            productId,
+            record.product_name || record.productName || '',
+            Number(record.quantity || 0),
+            record.supplier_id || record.supplierId || null,
+            record.supplier_name || record.supplierName || null,
+            receipt || null,
+            Number(record.damage_quantity ?? record.damageQuantity ?? 0),
+            record.damage_reason || record.damageReason || null,
+            record.notes || null,
+            referencedBy,
+            restockDate,
+            resolvedBusinessId,
+            productId,
+            referencedBy,
+            receipt,
+            restockDate,
+          ],
+        );
+        stats.restockRecords += 1;
       }
     }
 

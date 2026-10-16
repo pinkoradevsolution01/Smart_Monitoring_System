@@ -192,6 +192,7 @@ class SupabaseSyncService extends ChangeNotifier {
       await _pushSales();
       await _pushInventoryMovements();
       await _pushPurchaseOrders();
+      await _pushRestockRecords();
       await _pushDamageReports();
 
       await _recordSyncSuccess();
@@ -1071,6 +1072,47 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('✅ Pushed ${orderItems.length} purchase order items');
     } catch (e) {
       debugPrint('❌ Error pushing purchase orders: $e');
+      rethrow;
+    }
+  }
+
+  /// Restock records prove that a received purchase-order item was added to
+  /// inventory. They must reach the central backend so SmartPlus can avoid
+  /// sending a false "delivered stock not added" owner alert.
+  Future<void> _pushRestockRecords() async {
+    try {
+      final db = DatabaseService();
+      final records = await db.getAllRestockRecords();
+      if (records.isEmpty) {
+        _syncStats['restock_records_pushed'] = 0;
+        return;
+      }
+      final payload = records
+          .map(
+            (record) => {
+              'business_id': _businessId,
+              'product_id': record.productId.toString(),
+              'product_name': record.productName,
+              'quantity': record.quantity,
+              'supplier_id': record.supplierId?.toString(),
+              'supplier_name': record.supplierName,
+              'delivery_receipt_no': record.deliveryReceiptNo,
+              'damage_quantity': record.damageQuantity,
+              'damage_reason': record.damageReason,
+              'notes': record.notes,
+              'referenced_by': record.referencedBy,
+              'restock_date': record.restockDate.toIso8601String(),
+            },
+          )
+          .toList();
+      await _api.postJson(
+        'sync/push',
+        body: {'businessId': _businessId, 'restockRecords': payload},
+      );
+      _syncStats['restock_records_pushed'] = records.length;
+      debugPrint('Pushed ${records.length} restock records');
+    } catch (error) {
+      debugPrint('Error pushing restock records: $error');
       rethrow;
     }
   }

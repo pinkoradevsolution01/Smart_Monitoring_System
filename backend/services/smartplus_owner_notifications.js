@@ -253,7 +253,8 @@ async function dispatchOwnerAlert(businessId, dependencies = {}) {
          LEFT JOIN purchase_order_items poi ON poi.order_id = po.id AND poi.business_id = po.business_id
          LEFT JOIN products p ON p.id = poi.product_id AND p.business_id = po.business_id
          LEFT JOIN restock_records rr ON rr.business_id = po.business_id
-           AND rr.referenced_by = CONCAT('Purchase Order ', po.order_number)
+           AND CAST(rr.product_id AS CHAR) = CAST(poi.product_id AS CHAR)
+           AND LOWER(rr.referenced_by) LIKE CONCAT('%', LOWER(po.order_number), '%')
         WHERE po.business_id = ?
           AND (
             po.status IN ('completed', 'partial')
