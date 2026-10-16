@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { query, execute } = require('../db');
 const { requireActiveBusiness } = require('../security/business_access');
+const { dispatchOwnerActionCompletion } = require('../services/smartplus_owner_notifications');
 
 const router = express.Router();
 const FIELDS = [
@@ -307,7 +308,7 @@ router.post('/actions/:id/execute', requireCurrentSubscription, async (req, res)
     if (action.status !== 'approved') return res.status(409).json({ success: false, message: 'Only an owner-approved action can be executed.' });
     const recheck = await recheckActionData(action, req.businessContext.businessId);
     if (!recheck.ok) return res.status(409).json({ success: false, message: recheck.message });
-    const result = `${recheck.message} No sale, cart, discount, payment, stock, price, or supplier record was changed automatically.`;
+    const result = `${recheck.message} The owner marked the guided follow-up complete. SmartPlus did not change any business record automatically.`;
     await execute(
       `UPDATE smartplus_action_drafts
           SET status = 'executed', executed_at = NOW(), result_message = ?
@@ -315,7 +316,18 @@ router.post('/actions/:id/execute', requireCurrentSubscription, async (req, res)
       [result, action.id, req.businessContext.businessId],
     );
     await auditAction({ actionId: action.id, businessId: req.businessContext.businessId, actorId: req.businessContext.userId, eventType: 'owner_executed_manual_handoff', details: { recheck: recheck.message } });
-    return res.json({ success: true, message: result, action: actionFromRow(await loadTenantAction(action.id, req.businessContext.businessId)) });
+    const completedAction = actionFromRow(
+      await loadTenantAction(action.id, req.businessContext.businessId),
+    );
+    // Never let email delivery alter the completion result. The action is
+    // already tenant-scoped, owner-authorized, and recorded before delivery.
+    void dispatchOwnerActionCompletion(
+      req.businessContext.businessId,
+      completedAction,
+    ).catch((emailError) => {
+      console.error('SmartPlus action-completion email error:', emailError.message);
+    });
+    return res.json({ success: true, message: result, action: completedAction });
   } catch (error) {
     console.error('SmartPlus action execution error:', error.message);
     return res.status(500).json({ success: false, message: 'Unable to execute SmartPlus action.' });

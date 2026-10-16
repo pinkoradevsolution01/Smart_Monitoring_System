@@ -130,10 +130,21 @@ class _InventoryScreenState extends State<InventoryScreen>
               'You created a supplier order for ${product.name} with $quantity suggested unit(s). Review the purchase order delivery status in Supplier Management.',
         );
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Purchase order created. SmartPlus action completed.'),
-          backgroundColor: Colors.green,
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.celebration_rounded, color: Colors.green),
+          title: const Text('Congratulations! You completed the task.'),
+          content: Text(
+            'The supplier order for ${product.name} was created. SmartPlus recorded the completed reorder task and added an in-app notification. A completion email is also sent to the registered owner when SmartPlus email notifications are enabled.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ],
         ),
       );
     } else {

@@ -123,8 +123,6 @@ class SmartPlusActionDraft {
     return DateTime.tryParse(value.toString())?.toLocal();
   }
 
-  static String _ownerFacingTitle(String value) => value.replaceFirst(
-    'Staff follow-up:',
-    'Owner follow-up:',
-  );
+  static String _ownerFacingTitle(String value) =>
+      value.replaceFirst('Staff follow-up:', 'Owner follow-up:');
 }

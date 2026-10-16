@@ -111,14 +111,40 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
     BuildContext context,
     SmartPlusActionDraft action,
   ) {
-    if (action.actionType != 'reorder') return;
-    final productId = _asPositiveInt(action.proposal['productId']);
-    final quantity = _asPositiveInt(action.proposal['quantity']);
-    if (productId == null || quantity == null) {
+    if (action.actionType == 'reorder') {
+      final productId = _asPositiveInt(action.proposal['productId']);
+      final quantity = _asPositiveInt(action.proposal['quantity']);
+      if (productId == null || quantity == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This reorder recommendation no longer has a valid product or quantity. Refresh SmartPlus and create a new review.',
+            ),
+          ),
+        );
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => InventoryScreen(
+            smartPlusReorderProductId: productId,
+            smartPlusSuggestedQuantity: quantity,
+            smartPlusActionId: action.id,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final targetName = action.proposal['recordTarget']?.toString();
+    final targets = SmartPlusRecordTarget.values.where(
+      (value) => value.name == targetName,
+    );
+    if (targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'This reorder recommendation no longer has a valid product or quantity. Refresh SmartPlus and create a new review.',
+            'This task has no linked workspace. Review its details before marking it complete.',
           ),
         ),
       );
@@ -126,11 +152,8 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
     }
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => InventoryScreen(
-          smartPlusReorderProductId: productId,
-          smartPlusSuggestedQuantity: quantity,
-          smartPlusActionId: action.id,
-        ),
+        builder: (_) =>
+            _GuidedSmartPlusTaskScreen(action: action, target: targets.first),
       ),
     );
   }
@@ -138,6 +161,252 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
   int? _asPositiveInt(dynamic value) {
     final number = value is num ? value.toInt() : int.tryParse('$value');
     return number != null && number > 0 ? number : null;
+  }
+}
+
+/// Guides an owner through a non-reorder SmartPlus task. The guide does not
+/// alter business data; it opens the correct workspace and requires an
+/// explicit owner completion confirmation afterward.
+class _GuidedSmartPlusTaskScreen extends StatefulWidget {
+  const _GuidedSmartPlusTaskScreen({
+    required this.action,
+    required this.target,
+  });
+
+  final SmartPlusActionDraft action;
+  final SmartPlusRecordTarget target;
+
+  @override
+  State<_GuidedSmartPlusTaskScreen> createState() =>
+      _GuidedSmartPlusTaskScreenState();
+}
+
+class _GuidedSmartPlusTaskScreenState
+    extends State<_GuidedSmartPlusTaskScreen> {
+  final _service = SmartPlusActionService();
+  bool _workspaceOpened = false;
+  bool _completing = false;
+
+  String get _workspaceLabel => switch (widget.target) {
+    SmartPlusRecordTarget.inventory => 'Inventory',
+    SmartPlusRecordTarget.sales => 'Sales reports',
+    SmartPlusRecordTarget.customers => 'Customer Management',
+    SmartPlusRecordTarget.suppliers => 'Supplier Management',
+  };
+
+  String get _nextStep => widget.proposalText.isEmpty
+      ? 'Review the related records and complete the required follow-up.'
+      : widget.proposalText;
+
+  Future<void> _openWorkspace() async {
+    final screen = switch (widget.target) {
+      SmartPlusRecordTarget.inventory => const InventoryScreen(),
+      SmartPlusRecordTarget.sales => const SalesReportScreen(),
+      SmartPlusRecordTarget.customers => const CustomerManagementScreen(),
+      SmartPlusRecordTarget.suppliers => const SupplierManagementScreen(),
+    };
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (mounted) setState(() => _workspaceOpened = true);
+  }
+
+  Future<void> _completeTask() async {
+    final confirmed =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Complete this SmartPlus task?'),
+            content: Text(
+              'Confirm that you completed the required follow-up for "${widget.action.title}" in $_workspaceLabel. SmartPlus will record your completion but will not make or undo any business change.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Not yet'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('Mark task complete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    setState(() => _completing = true);
+    try {
+      await _service.execute(widget.action.id);
+      if (!mounted) return;
+      if (GetIt.I.isRegistered<SmartPlusNotificationService>()) {
+        GetIt.I<SmartPlusNotificationService>().notifyActionCompleted(
+          actionId: widget.action.id,
+          title: 'Task completed',
+          message:
+              'You completed the SmartPlus task: ${widget.action.title}. A completion email is sent to the registered owner when SmartPlus email notifications are enabled.',
+        );
+      }
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.celebration_rounded, color: Colors.green),
+          title: const Text('Congratulations! You completed the task.'),
+          content: const Text(
+            'SmartPlus recorded the completed action and added an in-app notification. A completion email is also sent to the registered owner when SmartPlus email notifications are enabled.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _completing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('SmartPlus task guide')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(
+            widget.action.title,
+            style: Theme.of(
+              context,
+            ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Complete each step. SmartPlus will only mark this task complete after your confirmation.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 24),
+          _GuideStep(
+            number: 1,
+            title: 'Review the recommendation',
+            detail: _nextStep,
+            complete: true,
+          ),
+          _GuideStep(
+            number: 2,
+            title: 'Complete the follow-up in $_workspaceLabel',
+            detail:
+                'Open the related workspace, review the relevant records, and make the required owner-approved change.',
+            complete: _workspaceOpened,
+            action: FilledButton.icon(
+              onPressed: _openWorkspace,
+              icon: const Icon(Icons.open_in_new_rounded),
+              label: Text('Open $_workspaceLabel'),
+            ),
+          ),
+          _GuideStep(
+            number: 3,
+            title: 'Confirm completion',
+            detail: _workspaceOpened
+                ? 'When the task is truly finished, confirm it below. A check icon, in-app notice, and email confirmation will follow.'
+                : 'Open the related workspace first, then return here to confirm completion.',
+            complete: false,
+            action: FilledButton.icon(
+              onPressed: _workspaceOpened && !_completing
+                  ? _completeTask
+                  : null,
+              icon: _completing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: const Text('Mark task complete'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension on _GuidedSmartPlusTaskScreen {
+  String get proposalText {
+    final value = action.proposal['recommendedNextStep']?.toString().trim();
+    return value ?? '';
+  }
+}
+
+class _GuideStep extends StatelessWidget {
+  const _GuideStep({
+    required this.number,
+    required this.title,
+    required this.detail,
+    required this.complete,
+    this.action,
+  });
+
+  final int number;
+  final String title;
+  final String detail;
+  final bool complete;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              backgroundColor: complete
+                  ? Colors.green.withValues(alpha: 0.16)
+                  : colors.primaryContainer,
+              foregroundColor: complete
+                  ? Colors.green.shade700
+                  : colors.primary,
+              child: complete
+                  ? const Icon(Icons.check_rounded)
+                  : Text(
+                      '$number',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Step $number: $title',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(detail),
+                  if (action != null) ...[const SizedBox(height: 12), action!],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -215,8 +484,22 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                                     )
                                   : draft.status == 'approved'
                                   ? FilledButton.tonal(
-                                      onPressed: () => _execute(draft),
-                                      child: const Text('Complete'),
+                                      // Completing a SmartPlus task must go
+                                      // through its linked workspace first.
+                                      // This prevents a single tap from
+                                      // falsely marking a manual follow-up as
+                                      // done.
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(draft),
+                                      child: const Text('Continue task'),
+                                    )
+                                  : draft.status == 'executed'
+                                  ? const Tooltip(
+                                      message: 'Task completed',
+                                      child: Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Colors.green,
+                                      ),
                                     )
                                   : null,
                             ),
@@ -257,69 +540,7 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
     try {
       await _service.approve(draft.id);
       if (!mounted) return;
-      if (draft.actionType == 'reorder') {
-        Navigator.of(context).pop(draft);
-      } else {
-        _reload();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Recommendation approved. Review its next step in the Action review center.',
-            ),
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
-      }
-    }
-  }
-
-  Future<void> _execute(SmartPlusActionDraft draft) async {
-    final confirmed =
-        await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('Mark manual follow-up complete?'),
-            content: const Text(
-              'The backend will re-check your owner session, subscription, tenant, and current proposal data. SmartPlus will not change POS, payment, discount, or stock data automatically.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Mark complete'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!confirmed) return;
-    try {
-      await _service.execute(draft.id);
-      if (GetIt.I.isRegistered<SmartPlusNotificationService>()) {
-        GetIt.I<SmartPlusNotificationService>().notifyActionCompleted(
-          actionId: draft.id,
-          title: 'Action completed',
-          message:
-              'You marked the owner follow-up for "${draft.title}" as complete. SmartPlus did not make the business change automatically.',
-        );
-      }
-      _reload();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Action completed and SmartPlus notification added.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
+      Navigator.of(context).pop(draft);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(

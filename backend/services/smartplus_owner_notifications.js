@@ -178,6 +178,121 @@ function emailContent({ businessName, suggestions }) {
   return { text: textLines.join('\n'), html };
 }
 
+function actionCompletionEmailContent({ businessName, action }) {
+  const title = String(action?.title || 'SmartPlus task');
+  const completedAt = action?.executedAt
+    ? new Date(action.executedAt).toLocaleString('en-PH', {
+      timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short',
+    })
+    : 'just now';
+  const result = String(
+    action?.resultMessage ||
+      'The owner completed the guided follow-up. SmartPlus did not change business records automatically.',
+  );
+  const text = [
+    `SmartPlus task completed for ${businessName}`,
+    '',
+    `Task: ${title}`,
+    `Completed: ${completedAt}`,
+    '',
+    result,
+    '',
+    'Open Smart Monitoring System to review the related records or the SmartPlus Action review center.',
+  ].join('\n');
+  const html = `
+    <!doctype html>
+    <html lang="en"><body style="margin:0;padding:0;background:#f1f5f9">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:32px 16px;font-family:Inter,Arial,sans-serif">
+        <tr><td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.08)">
+            <tr><td style="background:linear-gradient(135deg,#166534,#16a34a);padding:28px 32px;color:#ffffff">
+              <div style="font-size:12px;font-weight:700;letter-spacing:.1em;opacity:.86">SMART MONITORING SYSTEM</div>
+              <div style="font-size:26px;line-height:34px;font-weight:800;margin-top:8px">Task completed</div>
+              <div style="font-size:14px;line-height:21px;opacity:.92;margin-top:8px">${escapeHtml(businessName)}</div>
+            </td></tr>
+            <tr><td style="padding:28px 32px">
+              <div style="display:inline-block;padding:6px 10px;border-radius:999px;background:#dcfce7;color:#166534;font-size:12px;font-weight:800;letter-spacing:.04em">COMPLETED</div>
+              <h1 style="margin:16px 0 8px;font-size:20px;line-height:28px;color:#0f172a">${escapeHtml(title)}</h1>
+              <p style="margin:0 0 20px;font-size:14px;line-height:21px;color:#64748b">Completed by the business owner on ${escapeHtml(completedAt)}.</p>
+              <div style="border:1px solid #bbf7d0;border-radius:12px;background:#f0fdf4;padding:16px;font-size:14px;line-height:21px;color:#166534">${escapeHtml(result)}</div>
+              <p style="margin:20px 0 0;font-size:13px;line-height:20px;color:#475569">SmartPlus records completion only. It does not automatically change stock, supplier orders, prices, sales, discounts, or payments.</p>
+            </td></tr>
+            <tr><td style="padding:20px 32px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:18px">You received this because SmartPlus email notifications are enabled for your owner account. You can change this in SmartPlus notification preferences.</td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body></html>`;
+  return { text, html };
+}
+
+/// Sends a single professional acknowledgement after a backend-recorded,
+/// owner-completed SmartPlus task. The recipient and tenant scope are always
+/// loaded from MySQL; no client can choose where this email is sent.
+async function dispatchOwnerActionCompletion(businessId, action, dependencies = {}) {
+  if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
+  if (!action?.id) return { skipped: 'missing_action' };
+
+  const dbQuery = dependencies.query || query;
+  const dbExecute = dependencies.execute || execute;
+  const emailSender = dependencies.sendEmail || sendEmail;
+  const businesses = await dbQuery(
+    `SELECT id, name, owner_email
+       FROM businesses
+      WHERE id = ? AND is_active = 1
+      LIMIT 1`,
+    [businessId],
+  );
+  const business = businesses[0];
+  if (!business?.owner_email) return { skipped: 'business_not_found' };
+
+  const preferenceRows = await dbQuery(
+    `SELECT email_enabled
+       FROM smartplus_notification_preferences
+      WHERE business_id = ? LIMIT 1`,
+    [businessId],
+  ).catch(() => []);
+  if (Number(preferenceRows[0]?.email_enabled ?? 1) !== 1) {
+    return { skipped: 'email_disabled_by_owner' };
+  }
+
+  const notificationKey = `action-completed-${String(action.id).slice(0, 120)}`;
+  const insert = await dbExecute(
+    `INSERT IGNORE INTO smartplus_email_deliveries
+      (id, business_id, notification_key, owner_email, status)
+      VALUES (?, ?, ?, ?, 'pending')`,
+    [randomUUID(), business.id, notificationKey, business.owner_email],
+  );
+  const result = Array.isArray(insert) ? insert[0] : insert;
+  if (Number(result?.affectedRows || 0) !== 1) return { skipped: 'already_sent' };
+
+  try {
+    const content = actionCompletionEmailContent({
+      businessName: String(business.name || 'your business'),
+      action,
+    });
+    const providerMessageId = await emailSender({
+      to: business.owner_email,
+      subject: `SmartPlus task completed: ${String(action.title || 'Task')}`,
+      ...content,
+    });
+    await dbExecute(
+      `UPDATE smartplus_email_deliveries
+          SET status = 'sent', provider_message_id = ?, sent_at = CURRENT_TIMESTAMP, error_message = NULL
+        WHERE business_id = ? AND notification_key = ?`,
+      [providerMessageId, business.id, notificationKey],
+    );
+    return { sent: true };
+  } catch (error) {
+    await dbExecute(
+      `UPDATE smartplus_email_deliveries
+          SET status = 'failed', error_message = ?
+        WHERE business_id = ? AND notification_key = ?`,
+      [String(error.message || error).slice(0, 1000), business.id, notificationKey],
+    ).catch(() => undefined);
+    throw error;
+  }
+}
+
 /**
  * Sends one combined email when a new or materially changed important
  * SmartPlus condition is found. The owner email and tenant scope always come
@@ -364,6 +479,8 @@ module.exports = {
   isQuietHour,
   normalizeSuggestions,
   supplierDeliverySuggestions,
+  actionCompletionEmailContent,
+  dispatchOwnerActionCompletion,
   dispatchScheduledOwnerAlerts,
   // Backward-compatible aliases for callers deployed before alert delivery
   // replaced the daily/weekly digest behavior.

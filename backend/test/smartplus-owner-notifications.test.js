@@ -5,6 +5,7 @@ process.env.SMARTPLUS_OWNER_EMAIL_ENABLED = 'true';
 
 const {
   dispatchOwnerAlert,
+  dispatchOwnerActionCompletion,
   dispatchScheduledOwnerAlerts,
   normalizeSuggestions,
 } = require('../services/smartplus_owner_notifications');
@@ -116,4 +117,48 @@ test('scheduled SmartPlus alerts evaluate active businesses only', async () => {
   assert.equal(result.processed, 1);
   assert.equal(result.failed, 0);
   assert.equal(queried.some((call) => call.params.includes('business-b')), false);
+});
+
+test('SmartPlus sends one professional completion email only to the database owner', async () => {
+  const emails = [];
+  let reserved = false;
+  const dependencies = {
+    query: async (sql) => {
+      if (sql.includes('FROM businesses')) {
+        return [{ id: 'business-a', name: 'Store A', owner_email: 'owner-a@example.com' }];
+      }
+      if (sql.includes('smartplus_notification_preferences')) return [];
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    execute: async (sql) => {
+      if (sql.includes('INSERT IGNORE')) {
+        if (reserved) return [{ affectedRows: 0 }];
+        reserved = true;
+        return [{ affectedRows: 1 }];
+      }
+      if (sql.includes('UPDATE smartplus_email_deliveries')) return [{ affectedRows: 1 }];
+      throw new Error(`Unexpected execute: ${sql}`);
+    },
+    sendEmail: async (message) => {
+      emails.push(message);
+      return 'resend-completion-id';
+    },
+  };
+  const action = {
+    id: 'action-a',
+    title: 'Owner follow-up: Check a discount',
+    executedAt: '2026-10-17T04:00:00.000Z',
+    resultMessage: 'The owner marked the guided follow-up complete.',
+  };
+
+  const first = await dispatchOwnerActionCompletion('business-a', action, dependencies);
+  const second = await dispatchOwnerActionCompletion('business-a', action, dependencies);
+
+  assert.equal(first.sent, true);
+  assert.equal(second.skipped, 'already_sent');
+  assert.equal(emails.length, 1);
+  assert.equal(emails[0].to, 'owner-a@example.com');
+  assert.match(emails[0].subject, /task completed/i);
+  assert.match(emails[0].html, /COMPLETED/);
+  assert.match(emails[0].html, /Owner follow-up/);
 });
