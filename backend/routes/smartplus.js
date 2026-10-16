@@ -16,12 +16,10 @@ const FIELDS = [
 ];
 const SETTING_FIELDS = [
   'minimum_severity',
-  'digest_frequency',
   'quiet_hours_start',
   'quiet_hours_end',
 ];
 const SEVERITIES = new Set(['info', 'warning', 'critical']);
-const DIGEST_FREQUENCIES = new Set(['off', 'daily', 'weekly']);
 const FEEDBACK_VERDICTS = new Set(['useful', 'ignored', 'inaccurate']);
 const writeRateWindows = new Map();
 const WRITE_RATE_WINDOW_MS = 5 * 60 * 1000;
@@ -61,7 +59,6 @@ function preferencesFromRow(row = {}) {
   return {
     ...Object.fromEntries(FIELDS.map((field) => [field, Number(row[field] ?? 1) === 1])),
     minimum_severity: SEVERITIES.has(row.minimum_severity) ? row.minimum_severity : 'info',
-    digest_frequency: DIGEST_FREQUENCIES.has(row.digest_frequency) ? row.digest_frequency : 'daily',
     quiet_hours_start: row.quiet_hours_start != null && Number.isInteger(Number(row.quiet_hours_start)) && Number(row.quiet_hours_start) >= 0 && Number(row.quiet_hours_start) <= 23 ? Number(row.quiet_hours_start) : null,
     quiet_hours_end: row.quiet_hours_end != null && Number.isInteger(Number(row.quiet_hours_end)) && Number(row.quiet_hours_end) >= 0 && Number(row.quiet_hours_end) <= 23 ? Number(row.quiet_hours_end) : null,
   };
@@ -171,14 +168,13 @@ router.put('/preferences', async (req, res) => {
     values.push(input[field] ? 1 : 0);
   }
   const minimumSeverity = String(input.minimum_severity || '').trim();
-  const digestFrequency = String(input.digest_frequency || '').trim();
   const quietHoursStart = input.quiet_hours_start;
   const quietHoursEnd = input.quiet_hours_end;
   const validHour = (value) => value === null || (Number.isInteger(value) && value >= 0 && value <= 23);
-  if (!SEVERITIES.has(minimumSeverity) || !DIGEST_FREQUENCIES.has(digestFrequency) ||
+  if (!SEVERITIES.has(minimumSeverity) ||
       !validHour(quietHoursStart) || !validHour(quietHoursEnd) ||
       ((quietHoursStart === null) !== (quietHoursEnd === null))) {
-    return res.status(400).json({ success: false, message: 'Provide a valid severity, digest frequency, and both quiet-hour values or neither.' });
+    return res.status(400).json({ success: false, message: 'Provide a valid severity and both quiet-hour values or neither.' });
   }
   try {
     await execute(
@@ -187,7 +183,7 @@ router.put('/preferences', async (req, res) => {
        VALUES (${Array(FIELDS.length + SETTING_FIELDS.length + 1).fill('?').join(', ')})
        ON DUPLICATE KEY UPDATE
          ${[...FIELDS, ...SETTING_FIELDS].map((field) => `${field} = VALUES(${field})`).join(', ')}`,
-      [req.businessContext.businessId, ...values, minimumSeverity, digestFrequency, quietHoursStart, quietHoursEnd],
+      [req.businessContext.businessId, ...values, minimumSeverity, quietHoursStart, quietHoursEnd],
     );
     return res.json({ success: true, preferences: preferencesFromRow(input) });
   } catch (error) {

@@ -4,8 +4,8 @@ const test = require('node:test');
 process.env.SMARTPLUS_OWNER_EMAIL_ENABLED = 'true';
 
 const {
-  dispatchOwnerDigest,
-  dispatchScheduledOwnerDigests,
+  dispatchOwnerAlert,
+  dispatchScheduledOwnerAlerts,
   normalizeSuggestions,
 } = require('../services/smartplus_owner_notifications');
 
@@ -46,7 +46,7 @@ test('SmartPlus supplier delivery suggestions identify the order, timing, impact
   assert.match(suggestions[0].message, /Confirm delivery status/);
 });
 
-test('SmartPlus emails only the database owner for the verified business and deduplicates the day', async () => {
+test('SmartPlus emails only the database owner for a new important alert and deduplicates repeats', async () => {
   const calls = [];
   const emails = [];
   const dbQuery = async (sql, params = []) => {
@@ -76,29 +76,31 @@ test('SmartPlus emails only the database owner for the verified business and ded
     return 'resend-message-id';
   };
 
-  const first = await dispatchOwnerDigest('business-a', {
+  const first = await dispatchOwnerAlert('business-a', {
     query: dbQuery,
     execute: dbExecute,
     sendEmail: send,
   });
-  const second = await dispatchOwnerDigest('business-a', {
+  const second = await dispatchOwnerAlert('business-a', {
     query: dbQuery,
     execute: dbExecute,
     sendEmail: send,
   });
 
   assert.equal(first.sent, true);
-  assert.equal(second.skipped, 'already_sent_today');
+  assert.equal(second.skipped, 'already_sent');
   assert.equal(emails.length, 1);
   assert.equal(emails[0].to, 'owner-a@example.com');
   assert.match(emails[0].text, /Milk/);
   assert.match(emails[0].text, /Bread/);
+  assert.match(emails[0].html, /Owner review required/);
+  assert.match(emails[0].html, /SMART MONITORING SYSTEM/);
   for (const call of calls) assert.equal(call.params.includes('business-b'), false);
 });
 
-test('scheduled SmartPlus digest evaluates active businesses only', async () => {
+test('scheduled SmartPlus alerts evaluate active businesses only', async () => {
   const queried = [];
-  const result = await dispatchScheduledOwnerDigests({
+  const result = await dispatchScheduledOwnerAlerts({
     query: async (sql, params = []) => {
       queried.push({ sql, params });
       if (sql === 'SELECT id FROM businesses WHERE is_active = 1') {

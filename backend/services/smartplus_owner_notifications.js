@@ -1,4 +1,4 @@
-const { randomUUID } = require('crypto');
+const { createHash, randomUUID } = require('crypto');
 const { query, execute } = require('../db');
 const { escapeHtml, sendEmail } = require('./resend_email');
 
@@ -23,12 +23,6 @@ function manilaHour(now = new Date()) {
   return Number(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Manila', hour: '2-digit', hourCycle: 'h23',
   }).format(now));
-}
-
-function manilaWeekday(now = new Date()) {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Manila', weekday: 'short',
-  }).format(now);
 }
 
 function isQuietHour(preferences, now = new Date()) {
@@ -138,35 +132,58 @@ function normalizeSuggestions({ outOfStock, lowStock, discountReview, supplierDe
 
 function emailContent({ businessName, suggestions }) {
   const textLines = [
-      `SmartPlus update for ${businessName}`,
+    `SmartPlus alert for ${businessName}`,
     '',
     ...suggestions.flatMap((suggestion) => [`${suggestion.title}`, suggestion.message, '']),
-    'Open Smart Monitoring System to review the relevant business records.',
+    'Open Smart Monitoring System to review the relevant business records and decide on the next step.',
     '',
-    'This is an operational suggestion based on recorded business data. It does not make changes or place orders automatically.',
+    'This is an operational suggestion based on recorded business data. SmartPlus does not make changes or place orders automatically.',
   ];
-  const items = suggestions.map((suggestion) => `
-    <li style="margin:0 0 16px">
-      <strong>${escapeHtml(suggestion.title)}</strong><br>
-      <span>${escapeHtml(suggestion.message)}</span>
-    </li>`).join('');
+  const levelColors = { critical: '#b42318', warning: '#b54708', info: '#175cd3' };
+  const items = suggestions.map((suggestion) => {
+    const color = levelColors[suggestion.level] || levelColors.info;
+    const label = String(suggestion.level || 'info').toUpperCase();
+    return `
+      <tr>
+        <td style="padding:0 0 16px">
+          <div style="border:1px solid #e2e8f0;border-left:4px solid ${color};border-radius:10px;background:#ffffff;padding:16px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:${color};margin-bottom:6px">${label} · SMARTPLUS</div>
+            <div style="font-size:16px;line-height:24px;font-weight:700;color:#0f172a;margin-bottom:6px">${escapeHtml(suggestion.title)}</div>
+            <div style="font-size:14px;line-height:21px;color:#475569">${escapeHtml(suggestion.message)}</div>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
   const html = `
-    <div style="font-family:Arial,sans-serif;color:#1e293b;line-height:1.5">
-      <h2 style="margin:0 0 8px;color:#4338ca">SmartPlus update</h2>
-      <p style="margin:0 0 20px">${escapeHtml(businessName)}</p>
-      <ul style="padding-left:20px">${items}</ul>
-      <p>Open Smart Monitoring System to review the relevant business records.</p>
-      <p style="font-size:12px;color:#64748b">This is an operational suggestion based on recorded business data. It does not make changes or place orders automatically.</p>
-    </div>`;
+    <!doctype html>
+    <html lang="en"><body style="margin:0;padding:0;background:#f1f5f9">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f1f5f9;padding:32px 16px;font-family:Inter,Arial,sans-serif">
+        <tr><td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,.08)">
+            <tr><td style="background:linear-gradient(135deg,#312e81,#4f46e5);padding:28px 32px;color:#ffffff">
+              <div style="font-size:12px;font-weight:700;letter-spacing:.1em;opacity:.8">SMART MONITORING SYSTEM</div>
+              <div style="font-size:26px;line-height:34px;font-weight:800;margin-top:8px">SmartPlus needs your review</div>
+              <div style="font-size:14px;line-height:21px;opacity:.9;margin-top:8px">${escapeHtml(businessName)}</div>
+            </td></tr>
+            <tr><td style="padding:28px 32px 12px">
+              <p style="margin:0 0 20px;font-size:15px;line-height:23px;color:#334155">SmartPlus found ${suggestions.length} important ${suggestions.length === 1 ? 'item' : 'items'} in your current business records. Review the details below before taking action.</p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${items}</table>
+              <div style="margin:8px 0 20px;padding:14px 16px;border-radius:10px;background:#eef2ff;color:#3730a3;font-size:13px;line-height:20px"><strong>Owner review required.</strong> SmartPlus never changes stock, orders, prices, discounts, or sales automatically.</div>
+            </td></tr>
+            <tr><td style="padding:20px 32px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px;line-height:18px">You received this because SmartPlus email notifications are enabled for your owner account. You can change this in SmartPlus notification preferences.</td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body></html>`;
   return { text: textLines.join('\n'), html };
 }
 
 /**
- * Sends, at most, one non-sensitive SmartPlus digest per business per
- * Philippines business day. The owner email and tenant scope always come
+ * Sends one combined email when a new or materially changed important
+ * SmartPlus condition is found. The owner email and tenant scope always come
  * from the database; this service never accepts either from a Flutter client.
  */
-async function dispatchOwnerDigest(businessId, dependencies = {}) {
+async function dispatchOwnerAlert(businessId, dependencies = {}) {
   if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
 
   const dbQuery = dependencies.query || query;
@@ -185,7 +202,7 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
 
   const preferenceRows = await dbQuery(
       `SELECT email_enabled, low_stock_enabled, discount_enabled, supplier_delivery_enabled,
-              minimum_severity, digest_frequency, quiet_hours_start, quiet_hours_end
+              minimum_severity, quiet_hours_start, quiet_hours_end
        FROM smartplus_notification_preferences
       WHERE business_id = ? LIMIT 1`,
     [businessId],
@@ -194,13 +211,6 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
   if (Number(preferences.email_enabled ?? 1) !== 1) {
     return { skipped: 'email_disabled_by_owner' };
   }
-  const digestFrequency = String(preferences.digest_frequency || 'daily');
-  if (digestFrequency === 'off') return { skipped: 'digest_disabled_by_owner' };
-  if (digestFrequency === 'weekly' && manilaWeekday() !== 'Mon') {
-    return { skipped: 'weekly_digest_not_due' };
-  }
-  if (isQuietHour(preferences)) return { skipped: 'quiet_hours' };
-
   const [outOfStock, lowStock, discountRows, supplierDelivery] = await Promise.all([
     dbQuery(
       `SELECT name, quantity
@@ -274,12 +284,22 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
     },
     supplierDelivery,
   });
-  if (!suggestions.length) return { skipped: 'no_actionable_suggestions' };
+  const importantSuggestions = suggestions.filter((suggestion) =>
+    severityRank(suggestion.level) >= severityRank('warning'));
+  if (!importantSuggestions.length) return { skipped: 'no_important_suggestions' };
+  const emailSuggestions = isQuietHour(preferences)
+    ? importantSuggestions.filter((suggestion) => suggestion.level === 'critical')
+    : importantSuggestions;
+  if (!emailSuggestions.length) return { skipped: 'quiet_hours' };
 
-  const notificationKey = digestFrequency === 'weekly'
-    ? `owner-digest-week-${manilaDate()}`
-    : `owner-digest-${manilaDate()}`;
-  // Reserve the daily delivery before contacting Resend. The unique key makes
+  // A stable fingerprint suppresses duplicate sends from repeated syncs, but
+  // a changed alert set produces a fresh, combined owner email immediately.
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(emailSuggestions.map(({ level, title, message }) => ({ level, title, message }))))
+    .digest('hex')
+    .slice(0, 40);
+  const notificationKey = `owner-alert-${fingerprint}`;
+  // Reserve the notification before contacting Resend. The unique key makes
   // concurrent device syncs unable to send duplicate owner messages.
   const insert = await dbExecute(
     `INSERT IGNORE INTO smartplus_email_deliveries
@@ -288,16 +308,16 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
     [randomUUID(), business.id, notificationKey, business.owner_email],
   );
   const result = Array.isArray(insert) ? insert[0] : insert;
-  if (Number(result?.affectedRows || 0) !== 1) return { skipped: 'already_sent_today' };
+  if (Number(result?.affectedRows || 0) !== 1) return { skipped: 'already_sent' };
 
   try {
     const content = emailContent({
       businessName: String(business.name || 'your business'),
-      suggestions,
+      suggestions: emailSuggestions,
     });
     const providerMessageId = await emailSender({
       to: business.owner_email,
-      subject: `SmartPlus update for ${business.name || 'your business'}`,
+      subject: `SmartPlus alert: ${emailSuggestions[0].title}`,
       ...content,
     });
     await dbExecute(
@@ -306,7 +326,7 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
         WHERE business_id = ? AND notification_key = ?`,
       [providerMessageId, business.id, notificationKey],
     );
-    return { sent: true, suggestionCount: suggestions.length };
+    return { sent: true, suggestionCount: emailSuggestions.length };
   } catch (error) {
     await dbExecute(
       `UPDATE smartplus_email_deliveries
@@ -319,15 +339,15 @@ async function dispatchOwnerDigest(businessId, dependencies = {}) {
 }
 
 /// Runs from the backend process as well as after sync. Each individual
-/// business remains protected by the per-day delivery key in dispatchOwnerDigest.
-async function dispatchScheduledOwnerDigests(dependencies = {}) {
+/// business remains protected by its alert fingerprint in dispatchOwnerAlert.
+async function dispatchScheduledOwnerAlerts(dependencies = {}) {
   if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
   const dbQuery = dependencies.query || query;
   const businesses = await dbQuery(
     'SELECT id FROM businesses WHERE is_active = 1',
   );
   const results = await Promise.allSettled(
-    businesses.map((business) => dispatchOwnerDigest(business.id, dependencies)),
+    businesses.map((business) => dispatchOwnerAlert(business.id, dependencies)),
   );
   return {
     processed: businesses.length,
@@ -336,13 +356,16 @@ async function dispatchScheduledOwnerDigests(dependencies = {}) {
 }
 
 module.exports = {
-  dispatchOwnerDigest,
+  dispatchOwnerAlert,
   emailContent,
   manilaDate,
   manilaHour,
-  manilaWeekday,
   isQuietHour,
   normalizeSuggestions,
   supplierDeliverySuggestions,
-  dispatchScheduledOwnerDigests,
+  dispatchScheduledOwnerAlerts,
+  // Backward-compatible aliases for callers deployed before alert delivery
+  // replaced the daily/weekly digest behavior.
+  dispatchOwnerDigest: dispatchOwnerAlert,
+  dispatchScheduledOwnerDigests: dispatchScheduledOwnerAlerts,
 };

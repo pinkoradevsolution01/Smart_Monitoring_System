@@ -18,8 +18,6 @@ import 'supabase_sync_service.dart';
 
 enum SmartPlusNotificationLevel { info, warning, critical }
 
-enum SmartPlusDigestFrequency { off, daily, weekly }
-
 enum SmartPlusInsightKind { rule, forecast }
 
 enum SmartPlusDataQuality { checking, weak, limited, strong }
@@ -113,7 +111,6 @@ class SmartPlusNotificationPreferences {
     this.supplierDeliveryEnabled = true,
     this.customerLoyaltyEnabled = true,
     this.minimumSeverity = SmartPlusNotificationLevel.info,
-    this.digestFrequency = SmartPlusDigestFrequency.daily,
     this.quietHoursStart,
     this.quietHoursEnd,
   });
@@ -127,7 +124,6 @@ class SmartPlusNotificationPreferences {
   final bool supplierDeliveryEnabled;
   final bool customerLoyaltyEnabled;
   final SmartPlusNotificationLevel minimumSeverity;
-  final SmartPlusDigestFrequency digestFrequency;
 
   /// Local-hours 0–23. Null means quiet hours are disabled.
   final int? quietHoursStart;
@@ -143,7 +139,6 @@ class SmartPlusNotificationPreferences {
     'supplier_delivery_enabled': supplierDeliveryEnabled,
     'customer_loyalty_enabled': customerLoyaltyEnabled,
     'minimum_severity': minimumSeverity.name,
-    'digest_frequency': digestFrequency.name,
     'quiet_hours_start': quietHoursStart,
     'quiet_hours_end': quietHoursEnd,
   };
@@ -162,10 +157,6 @@ class SmartPlusNotificationPreferences {
           (value) => value.name == map['minimum_severity'],
           orElse: () => SmartPlusNotificationLevel.info,
         ),
-        digestFrequency: SmartPlusDigestFrequency.values.firstWhere(
-          (value) => value.name == map['digest_frequency'],
-          orElse: () => SmartPlusDigestFrequency.daily,
-        ),
         quietHoursStart: _validHour(map['quiet_hours_start']),
         quietHoursEnd: _validHour(map['quiet_hours_end']),
       );
@@ -180,7 +171,6 @@ class SmartPlusNotificationPreferences {
     bool? supplierDeliveryEnabled,
     bool? customerLoyaltyEnabled,
     SmartPlusNotificationLevel? minimumSeverity,
-    SmartPlusDigestFrequency? digestFrequency,
     int? quietHoursStart,
     int? quietHoursEnd,
     bool clearQuietHours = false,
@@ -196,7 +186,6 @@ class SmartPlusNotificationPreferences {
     customerLoyaltyEnabled:
         customerLoyaltyEnabled ?? this.customerLoyaltyEnabled,
     minimumSeverity: minimumSeverity ?? this.minimumSeverity,
-    digestFrequency: digestFrequency ?? this.digestFrequency,
     quietHoursStart: clearQuietHours
         ? null
         : quietHoursStart ?? this.quietHoursStart,

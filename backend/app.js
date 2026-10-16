@@ -14,7 +14,7 @@ const crudRouter = require('./routes/crud');
 const analyticsRouter = require('./routes/analytics');
 const financialReportsRouter = require('./routes/financial_reports');
 const smartPlusRouter = require('./routes/smartplus');
-const { dispatchScheduledOwnerDigests } = require('./services/smartplus_owner_notifications');
+const { dispatchScheduledOwnerAlerts } = require('./services/smartplus_owner_notifications');
 
 const app = express();
 const allowedOrigins = (process.env.CORS_ORIGINS || '')
@@ -81,23 +81,23 @@ app.use('/api', crudRouter);
 
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || '0.0.0.0';
-const smartPlusDigestIntervalMinutes = Math.max(
+const smartPlusAlertIntervalMinutes = Math.max(
   15,
-  Number(process.env.SMARTPLUS_DIGEST_INTERVAL_MINUTES || 60),
+  Number(process.env.SMARTPLUS_ALERT_INTERVAL_MINUTES || process.env.SMARTPLUS_DIGEST_INTERVAL_MINUTES || 60),
 );
 
-function startSmartPlusDigestScheduler() {
+function startSmartPlusAlertScheduler() {
   const run = () => {
-    void dispatchScheduledOwnerDigests().then((result) => {
+    void dispatchScheduledOwnerAlerts().then((result) => {
       if (result.failed) {
-        console.warn(`SmartPlus owner digest completed with ${result.failed} failure(s).`);
+        console.warn(`SmartPlus owner alerts completed with ${result.failed} failure(s).`);
       }
     }).catch((error) => {
-      console.error('SmartPlus scheduled owner digest error:', error.message);
+      console.error('SmartPlus scheduled owner alert error:', error.message);
     });
   };
   run();
-  const timer = setInterval(run, smartPlusDigestIntervalMinutes * 60 * 1000);
+  const timer = setInterval(run, smartPlusAlertIntervalMinutes * 60 * 1000);
   timer.unref();
 }
 
@@ -129,7 +129,7 @@ if (!process.env.GOOGLE_CALLBACK_URL || !process.env.WEB_ANALYTICS_URL) {
 initDb()
   .then(() => {
     app.listen(port, host, () => {
-      startSmartPlusDigestScheduler();
+startSmartPlusAlertScheduler();
       console.log(`Smart Monitoring backend listening on ${host}:${port}`);
       console.log(`Local health check: http://localhost:${port}/api/health`);
       console.log(`Android emulator: http://10.0.2.2:${port}/api`);

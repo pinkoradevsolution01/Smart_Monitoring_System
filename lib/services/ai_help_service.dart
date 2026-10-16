@@ -564,8 +564,8 @@ On the login screen:
     _messages.add(
       ChatMessage(
         text: isFilipino
-            ? 'Ako ang SmartPlus — ang business assistant mo. Ginagamit ko ang available na sales at inventory records para magbigay ng malinaw na suggestions.\n\nMaaari mong itanong:\n• Top 5 products noong nakaraang buwan\n• Low-stock at reorder suggestions\n• Sales performance nitong linggo\n• Product pairs para sa upsell\n• Unusual discounts na kailangang i-review\n• Paano gamitin ang POS, reports, inventory, settings, at user roles\n\nHindi ako gumagawa ng supplier orders, checkout, o voice commands nang walang hiwalay na approved integration.'
-            : 'I am SmartPlus — your business assistant. I use the available sales and inventory records to provide clear suggestions.\n\nAsk about:\n• Top 5 products last month\n• Low stock and reorder suggestions\n• Sales performance this week\n• Product pairs for upsells\n• Unusual discounts to review\n• How to use POS, reports, inventory, settings, and user roles\n\nI do not place supplier orders, complete checkout, or execute voice commands without a separate approved integration.',
+            ? 'Ako ang SmartPlus — ang business assistant mo. Ginagamit ko ang available na sales, inventory, expense, at loyalty records para magbigay ng malinaw na suggestions.\n\nMaaari mong itanong:\n• Bakit bumaba ang sales ngayong linggo?\n• Ano ang top five products ngayong buwan?\n• Aling low-stock products ang mabilis mabenta?\n• Magkano ang profit ko pagkatapos ng expenses?\n• Aling customers ang may points na malapit mag-expire?\n\nHindi ako gumagawa ng supplier orders, checkout, o pagbabago sa records nang walang owner approval.'
+            : 'I am SmartPlus — your business assistant. I use the available sales, inventory, expense, and loyalty records to provide clear suggestions.\n\nAsk me:\n• Why did sales decrease this week?\n• What are my top five products this month?\n• Which products are low stock and sell fastest?\n• How much profit did I make after expenses?\n• Which customers have points expiring soon?\n\nI do not place supplier orders, complete checkout, or change records without owner approval.',
         isUser: false,
       ),
     );
@@ -852,14 +852,25 @@ On the login screen:
 
     if (query.contains('top') ||
         query.contains('selling') ||
-        query.contains('last month')) {
-      final quantities = _salesQuantities(completedSales, days: 31);
+        query.contains('last month') ||
+        query.contains('this month')) {
+      final now = DateTime.now();
+      final monthStart = DateTime(now.year, now.month);
+      final quantities = <String, int>{};
+      for (final sale in completedSales.where(
+        (sale) => !sale.saleDate.isBefore(monthStart),
+      )) {
+        for (final item in sale.items) {
+          quantities[item.productName] =
+              (quantities[item.productName] ?? 0) + item.quantity;
+        }
+      }
       final ranked = quantities.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       if (ranked.isEmpty) {
-        return 'No completed item-level sales were found in the last 31 days.';
+        return 'No completed item-level sales were found in the current calendar month.';
       }
-      return 'Top selling products from the last 31 days:\n${ranked.take(5).toList().asMap().entries.map((entry) => '${entry.key + 1}. ${entry.value.key} — ${entry.value.value} unit(s)').join('\n')}';
+      return 'Insight: top five products this month\nSource: completed item-level sales\nRange: ${monthStart.toIso8601String().split('T').first} to ${now.toIso8601String().split('T').first}\n\n${ranked.take(5).toList().asMap().entries.map((entry) => '${entry.key + 1}. ${entry.value.key} — ${entry.value.value} unit(s)').join('\n')}\n\nOpen Sales Reports to review the underlying completed transactions.';
     }
 
     if (query.contains('sales') ||
@@ -1056,24 +1067,18 @@ On the login screen:
     final isFilipino = LocaleController.locale.value.languageCode == 'fil';
     return isFilipino
         ? [
-            'Ano ang system?',
-            'Paano gamitin ang POS?',
-            'Ano ang user roles?',
-            'Paano magdagdag ng product?',
-            'Paano mag-report ng damage?',
-            'Palitan ang theme',
-            'Sales reports',
-            'CCTV monitoring',
+            'Bakit bumaba ang sales ngayong linggo?',
+            'Ano ang top five products ngayong buwan?',
+            'Aling products ang low stock at mabilis mabenta?',
+            'Magkano ang profit pagkatapos ng expenses?',
+            'Aling customers ang may points na malapit mag-expire?',
           ]
         : [
-            'What is this system?',
-            'How to use POS?',
-            'What are user roles?',
-            'How to add product?',
-            'How to report damage?',
-            'Change theme',
-            'View sales reports',
-            'CCTV monitoring',
+            'Why did sales decrease this week?',
+            'What are my top five products this month?',
+            'Which products are low stock and sell fastest?',
+            'How much profit did I make after expenses?',
+            'Which customers have points expiring soon?',
           ];
   }
 }

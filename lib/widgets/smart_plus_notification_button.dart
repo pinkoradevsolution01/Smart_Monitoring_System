@@ -483,9 +483,9 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                   onChanged: (value) => setDialogState(
                     () => draft = draft.copyWith(emailEnabled: value),
                   ),
-                  title: const Text('Owner email digest'),
+                  title: const Text('Email notifications'),
                   subtitle: const Text(
-                    'Allow at most one operational email digest per day.',
+                    'Email the registered owner when SmartPlus finds a new important suggestion.',
                   ),
                 ),
                 const Divider(),
@@ -521,7 +521,7 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                   value: draft.supplierDeliveryEnabled,
                   title: 'Supplier and delivery alerts',
                   subtitle:
-                      'In-app and owner email digest: on due date, one day overdue, then every three days overdue.',
+                      'In-app and owner email alerts: on due date, one day overdue, then every three days overdue.',
                   onChanged: (value) => setDialogState(
                     () =>
                         draft = draft.copyWith(supplierDeliveryEnabled: value),
@@ -559,34 +559,6 @@ class _SmartPlusNotificationsSheet extends StatelessWidget {
                     if (value != null) {
                       setDialogState(
                         () => draft = draft.copyWith(minimumSeverity: value),
-                      );
-                    }
-                  },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<SmartPlusDigestFrequency>(
-                  key: ValueKey(draft.digestFrequency),
-                  initialValue: draft.digestFrequency,
-                  decoration: const InputDecoration(
-                    labelText: 'Owner email digest',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: SmartPlusDigestFrequency.values
-                      .map(
-                        (frequency) => DropdownMenuItem(
-                          value: frequency,
-                          child: Text(
-                            frequency == SmartPlusDigestFrequency.off
-                                ? 'Off'
-                                : '${frequency.name[0].toUpperCase()}${frequency.name.substring(1)} digest',
-                          ),
-                        ),
-                      )
-                      .toList(growable: false),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(
-                        () => draft = draft.copyWith(digestFrequency: value),
                       );
                     }
                   },

@@ -437,7 +437,6 @@ async function ensureSmartPlusNotificationPreferencesTable() {
       supplier_delivery_enabled TINYINT(1) NOT NULL DEFAULT 1,
       customer_loyalty_enabled TINYINT(1) NOT NULL DEFAULT 1,
       minimum_severity ENUM('info', 'warning', 'critical') NOT NULL DEFAULT 'info',
-      digest_frequency ENUM('off', 'daily', 'weekly') NOT NULL DEFAULT 'daily',
       quiet_hours_start TINYINT UNSIGNED NULL,
       quiet_hours_end TINYINT UNSIGNED NULL,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -460,11 +459,6 @@ async function ensureSmartPlusNotificationPreferencesTable() {
     'smartplus_notification_preferences',
     'minimum_severity',
     "VARCHAR(16) NOT NULL DEFAULT 'info'",
-  );
-  await ensureColumn(
-    'smartplus_notification_preferences',
-    'digest_frequency',
-    "VARCHAR(16) NOT NULL DEFAULT 'daily'",
   );
   await ensureColumn(
     'smartplus_notification_preferences',
