@@ -452,7 +452,10 @@ class SmartPlusNotificationService extends ChangeNotifier {
       _dataTrust = _assessDataTrust(orders);
       _dailyBrief = await _buildDailyBrief();
       _supplierDeliveryNotifications = _preferences.supplierDeliveryEnabled
-          ? await _evaluateSupplierDeliveryRules()
+          ? [
+              ...await _evaluateSupplierDeliveryRules(),
+              ...await _evaluateDamageReportRules(),
+            ]
           : const [];
       _customerIntelligenceNotifications = _preferences.customerLoyaltyEnabled
           ? await _evaluateCustomerIntelligenceRules()
@@ -656,6 +659,10 @@ class SmartPlusNotificationService extends ChangeNotifier {
             : 'Sync and resolve the listed data-quality issues before relying on forecasts.',
         why:
             'SmartPlus checks freshness before presenting data-dependent guidance.',
+        // Data freshness is an automatic sync status, never an owner task.
+        // The sync service notifies SmartPlus after every successful push or
+        // pull, so this notification updates itself without sign-out/sign-in.
+        requiresOwnerConfirmation: false,
       ),
     );
 
@@ -1307,20 +1314,40 @@ class SmartPlusNotificationService extends ChangeNotifier {
       final impact = _stockImpact(order, productsById);
       final context = _deliveryContext(order, expected, today, impact);
 
-      if (status == 'pending' &&
-          today.difference(_dateOnly(order.orderDate)).inDays >= 2) {
+      if (status == 'pending') {
         final waitDays = today.difference(_dateOnly(order.orderDate)).inDays;
         suggestions.add(
           _supplierRule(
             id: 'supplier-awaiting-confirmation-${order.orderNumber}',
-            title: 'Supplier order awaiting confirmation',
+            title: 'Purchase order needs owner approval',
             message:
-                'Rule: Purchase Order ${order.orderNumber} has been pending for $waitDays day(s). Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+                'Rule: Purchase Order ${order.orderNumber} is pending owner approval${waitDays > 0 ? ' for $waitDays day(s)' : ''}. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
             level: SmartPlusNotificationLevel.warning,
             source: 'Purchase-order status and order date',
             range:
                 'Order date ${_formatDate(order.orderDate)} to ${_formatDate(today)}',
-            action: 'Contact supplier and record approval or cancellation.',
+            action:
+                'Open Supplier Management, review the order, then approve it with the required signature or cancel it.',
+          ),
+        );
+      }
+
+      if (status == 'approved') {
+        suggestions.add(
+          _supplierRule(
+            id: 'supplier-approved-restock-${order.orderNumber}',
+            title: 'Approved delivery needs receiving and restock',
+            message:
+                'Rule: Purchase Order ${order.orderNumber} is approved and ready for delivery receiving. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+            level: impact.isEmpty
+                ? SmartPlusNotificationLevel.info
+                : SmartPlusNotificationLevel.warning,
+            source: 'Purchase-order approval status and current stock',
+            range: expected == null
+                ? 'Current approved purchase order'
+                : 'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            action:
+                'When goods physically arrive, mark the shipment complete, record received quantities, and restock good items. The task is complete after the restock is recorded; the expected delivery date does not block it.',
           ),
         );
       }
@@ -1460,6 +1487,44 @@ class SmartPlusNotificationService extends ChangeNotifier {
     recordTarget: SmartPlusRecordTarget.suppliers,
     requiresOwnerConfirmation: true,
   );
+
+  Future<List<SmartPlusNotification>> _evaluateDamageReportRules() async {
+    final reports = await DatabaseService().getAllDamageReports();
+    final unsettled = reports
+        .where(
+          (report) =>
+              report.returnStatus != 'returned' &&
+              report.paymentStatus != 'paid',
+        )
+        .toList(growable: false);
+    if (unsettled.isEmpty) return const [];
+    final amount = unsettled.fold<double>(
+      0,
+      (total, report) => total + report.totalValue,
+    );
+    final examples = unsettled
+        .take(3)
+        .map((report) => '${report.productName} x${report.quantity}')
+        .join(', ');
+    return [
+      SmartPlusNotification(
+        id: 'damage-reports-unsettled',
+        title: 'Damage reports need settlement',
+        message:
+            'Rule: ${unsettled.length} damage report(s) remain unsettled (${amount.toStringAsFixed(2)} total value), including $examples. Review each report and record either an approved supplier return or responsible-person payment.',
+        level: SmartPlusNotificationLevel.warning,
+        insightKind: SmartPlusInsightKind.rule,
+        sourceData: 'Damage reports, return approvals, and payment status',
+        dataRange: 'Current unresolved damage reports',
+        proposedAction:
+            'Open Supplier Management > Damage Reports. Settle every listed report by recording its approved return or payment, then confirm the SmartPlus task.',
+        why:
+            'A damage report stays open until a supplier return or payment settlement is recorded.',
+        recordTarget: SmartPlusRecordTarget.suppliers,
+        requiresOwnerConfirmation: true,
+      ),
+    ];
+  }
 
   List<SmartPlusNotification> _supplierReliabilityRules(
     List<PurchaseOrder> orders,

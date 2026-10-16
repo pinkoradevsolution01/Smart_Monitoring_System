@@ -11,8 +11,33 @@ import '../shared/inventory_screen.dart';
 
 /// Owner-only, read-only summary of the items that need attention today.
 /// SmartPlus links to records but never changes sales, stock, or orders here.
-class SmartPlusDecisionCenterScreen extends StatelessWidget {
+class SmartPlusDecisionCenterScreen extends StatefulWidget {
   const SmartPlusDecisionCenterScreen({super.key});
+
+  @override
+  State<SmartPlusDecisionCenterScreen> createState() =>
+      _SmartPlusDecisionCenterScreenState();
+}
+
+class _SmartPlusDecisionCenterScreenState
+    extends State<SmartPlusDecisionCenterScreen> {
+  final _actionService = SmartPlusActionService();
+  late Future<List<SmartPlusActionDraft>> _actions = _actionService
+      .listDrafts();
+
+  void _reloadActions() {
+    // `setState` callbacks must be synchronous. Assigning the Future is
+    // synchronous; fetching the server data happens afterward in FutureBuilder.
+    setState(() {
+      _actions = _actionService.listDrafts();
+    });
+  }
+
+  Future<void> _refresh(SmartPlusNotificationService service) {
+    service.refresh(forceSupplierCheck: true);
+    if (mounted) _reloadActions();
+    return Future<void>.value();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +48,7 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Refresh decision center',
-            onPressed: () => service.refresh(forceSupplierCheck: true),
+            onPressed: () => _refresh(service),
             icon: const Icon(Icons.refresh_rounded),
           ),
           IconButton(
@@ -36,7 +61,8 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
                     builder: (_) => const _ActionDraftsSheet(),
                   );
               if (!context.mounted || approvedAction == null) return;
-              _openApprovedWorkflow(context, approvedAction);
+              await _openApprovedWorkflow(context, approvedAction);
+              if (context.mounted) _reloadActions();
             },
             icon: const Icon(Icons.fact_check_outlined),
           ),
@@ -57,49 +83,58 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
           final informational = service.notifications
               .where((item) => item.level == SmartPlusNotificationLevel.info)
               .toList();
-          return RefreshIndicator(
-            onRefresh: () async => service.refresh(forceSupplierCheck: true),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  'Daily brief',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
+          return FutureBuilder<List<SmartPlusActionDraft>>(
+            future: _actions,
+            builder: (context, actionSnapshot) => RefreshIndicator(
+              onRefresh: () => _refresh(service),
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    'Daily brief',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${service.dataTrust.freshnessLabel} • ${service.dataTrust.confidenceLabel}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${service.dataTrust.freshnessLabel} • ${service.dataTrust.confidenceLabel}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                _BriefGrid(brief: brief),
-                const SizedBox(height: 24),
-                _AlertSection(
-                  title: 'Critical',
-                  subtitle: 'Act before normal operations continue.',
-                  icon: Icons.error_outline_rounded,
-                  color: Theme.of(context).colorScheme.error,
-                  alerts: critical,
-                ),
-                _AlertSection(
-                  title: 'Review soon',
-                  subtitle: 'Important items that need an owner decision.',
-                  icon: Icons.warning_amber_rounded,
-                  color: Colors.orange.shade800,
-                  alerts: reviewSoon,
-                ),
-                _AlertSection(
-                  title: 'Informational',
-                  subtitle: 'Useful context for planning and follow-up.',
-                  icon: Icons.lightbulb_outline_rounded,
-                  color: Theme.of(context).colorScheme.tertiary,
-                  alerts: informational,
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  _BriefGrid(brief: brief),
+                  const SizedBox(height: 24),
+                  _AlertSection(
+                    title: 'Critical',
+                    subtitle: 'Act before normal operations continue.',
+                    icon: Icons.error_outline_rounded,
+                    color: Theme.of(context).colorScheme.error,
+                    alerts: critical,
+                    actions: actionSnapshot.data ?? const [],
+                    onActionSaved: _reloadActions,
+                  ),
+                  _AlertSection(
+                    title: 'Review soon',
+                    subtitle: 'Important items that need an owner decision.',
+                    icon: Icons.warning_amber_rounded,
+                    color: Colors.orange.shade800,
+                    alerts: reviewSoon,
+                    actions: actionSnapshot.data ?? const [],
+                    onActionSaved: _reloadActions,
+                  ),
+                  _AlertSection(
+                    title: 'Informational',
+                    subtitle: 'Useful context for planning and follow-up.',
+                    icon: Icons.lightbulb_outline_rounded,
+                    color: Theme.of(context).colorScheme.tertiary,
+                    alerts: informational,
+                    actions: actionSnapshot.data ?? const [],
+                    onActionSaved: _reloadActions,
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -107,7 +142,7 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
     );
   }
 
-  void _openApprovedWorkflow(
+  Future<void> _openApprovedWorkflow(
     BuildContext context,
     SmartPlusActionDraft action,
   ) {
@@ -122,9 +157,9 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
             ),
           ),
         );
-        return;
+        return Future<void>.value();
       }
-      Navigator.of(context).push(
+      return Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => InventoryScreen(
             smartPlusReorderProductId: productId,
@@ -133,7 +168,6 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
           ),
         ),
       );
-      return;
     }
 
     final targetName = action.proposal['recordTarget']?.toString();
@@ -148,9 +182,9 @@ class SmartPlusDecisionCenterScreen extends StatelessWidget {
           ),
         ),
       );
-      return;
+      return Future<void>.value();
     }
-    Navigator.of(context).push(
+    return Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
             _GuidedSmartPlusTaskScreen(action: action, target: targets.first),
@@ -197,6 +231,23 @@ class _GuidedSmartPlusTaskScreenState
   String get _nextStep => widget.proposalText.isEmpty
       ? 'Review the related records and complete the required follow-up.'
       : widget.proposalText;
+
+  String get _workspaceInstruction {
+    final title = widget.action.title.toLowerCase();
+    if (widget.target == SmartPlusRecordTarget.suppliers &&
+        title.contains('approval')) {
+      return 'In Purchase Orders, open the pending order, review its supplier, items, amount, and delivery details, then approve it with the required owner signature or cancel it if it should not proceed.';
+    }
+    if (widget.target == SmartPlusRecordTarget.suppliers &&
+        (title.contains('restock') || title.contains('delivery'))) {
+      return 'In Purchase Orders, open the approved or completed order. Only after goods physically arrive, record the delivery receipt and received quantities, then restock the good items. The expected delivery date does not prevent recording a real early delivery.';
+    }
+    if (widget.target == SmartPlusRecordTarget.suppliers &&
+        title.contains('damage')) {
+      return 'Open the Damage Reports tab. Review every unsettled report and record either an approved supplier return or responsible-person payment before confirming completion.';
+    }
+    return 'Open the related workspace, review the relevant records, and make the required owner-approved change.';
+  }
 
   Future<void> _openWorkspace() async {
     final screen = switch (widget.target) {
@@ -306,8 +357,7 @@ class _GuidedSmartPlusTaskScreenState
           _GuideStep(
             number: 2,
             title: 'Complete the follow-up in $_workspaceLabel',
-            detail:
-                'Open the related workspace, review the relevant records, and make the required owner-approved change.',
+            detail: _workspaceInstruction,
             complete: _workspaceOpened,
             action: FilledButton.icon(
               onPressed: _openWorkspace,
@@ -815,6 +865,8 @@ class _AlertSection extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.alerts,
+    required this.actions,
+    required this.onActionSaved,
   });
 
   final String title;
@@ -822,6 +874,8 @@ class _AlertSection extends StatelessWidget {
   final IconData icon;
   final Color color;
   final List<SmartPlusNotification> alerts;
+  final List<SmartPlusActionDraft> actions;
+  final VoidCallback onActionSaved;
 
   @override
   Widget build(BuildContext context) {
@@ -861,8 +915,9 @@ class _AlertSection extends StatelessWidget {
               ),
             )
           else
-            ...alerts.map(
-              (alert) => Card(
+            ...alerts.map((alert) {
+              final action = _actionForAlert(alert);
+              return Card(
                 child: Column(
                   children: [
                     ListTile(
@@ -886,17 +941,110 @@ class _AlertSection extends StatelessWidget {
                       alignment: Alignment.centerRight,
                       child: Padding(
                         padding: const EdgeInsets.only(right: 8, bottom: 6),
-                        child: TextButton.icon(
-                          onPressed: () => _draftAction(context, alert),
-                          icon: const Icon(Icons.edit_note_rounded, size: 18),
-                          label: const Text('Save for owner review'),
-                        ),
+                        child: _actionStatusControl(context, alert, action),
                       ),
                     ),
                   ],
                 ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  SmartPlusActionDraft? _actionForAlert(SmartPlusNotification alert) {
+    for (final action in actions) {
+      if (action.proposal['sourceNotificationId']?.toString() == alert.id) {
+        return action;
+      }
+    }
+    // Drafts created before sourceNotificationId was introduced still map by
+    // their owner-facing title. New drafts always use the stronger ID link.
+    final titleSuffix = ': ${alert.title}';
+    for (final action in actions) {
+      if (action.title.endsWith(titleSuffix)) return action;
+    }
+    return null;
+  }
+
+  Widget _actionStatusControl(
+    BuildContext context,
+    SmartPlusNotification alert,
+    SmartPlusActionDraft? action,
+  ) {
+    if (!alert.requiresOwnerConfirmation) {
+      final syncComplete =
+          alert.id == 'smartplus-data-freshness' &&
+          alert.message.startsWith('Last synced');
+      return Tooltip(
+        message: syncComplete
+            ? 'A successful cloud sync was recorded automatically.'
+            : 'Waiting for the first successful cloud sync.',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              syncComplete
+                  ? Icons.check_circle_rounded
+                  : Icons.sync_problem_rounded,
+              size: 20,
+              color: syncComplete ? Colors.green : Colors.orange.shade800,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              syncComplete ? 'Sync complete' : 'Sync pending',
+              style: TextStyle(
+                color: syncComplete ? Colors.green : Colors.orange.shade800,
+                fontWeight: FontWeight.w700,
               ),
             ),
+          ],
+        ),
+      );
+    }
+    if (action == null) {
+      return TextButton.icon(
+        onPressed: () => _draftAction(context, alert),
+        icon: const Icon(Icons.edit_note_rounded, size: 18),
+        label: const Text('Save for owner review'),
+      );
+    }
+    if (action.status == 'executed') {
+      return const Tooltip(
+        message: 'Task completed',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_rounded, size: 20, color: Colors.green),
+            SizedBox(width: 6),
+            Text(
+              'Task completed',
+              style: TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    final isApproved = action.status == 'approved';
+    return Tooltip(
+      message: isApproved
+          ? 'Continue this task in Action review center.'
+          : 'This recommendation is saved for owner review.',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isApproved
+                ? Icons.pending_actions_rounded
+                : Icons.bookmark_added_rounded,
+            size: 20,
+          ),
+          const SizedBox(width: 6),
+          Text(isApproved ? 'Task in progress' : 'Saved for review'),
         ],
       ),
     );
@@ -925,6 +1073,7 @@ class _AlertSection extends StatelessWidget {
         actionType: actionType,
       );
       if (!context.mounted) return;
+      onActionSaved();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Recommendation saved in the Action review center.'),

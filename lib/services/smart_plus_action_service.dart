@@ -47,12 +47,16 @@ class SmartPlusActionService {
       body: {
         'actionType': actionType,
         'title': '${_actionLabel(actionType)}: ${notification.title}',
-        'proposal': isBoundReorder
-            ? notification.draftProposal!
-            : {
-                'recommendedNextStep': notification.proposedAction,
-                'recordTarget': notification.recordTarget?.name,
-              },
+        'proposal': {
+          if (isBoundReorder) ...notification.draftProposal!,
+          if (!isBoundReorder) ...{
+            'recommendedNextStep': notification.proposedAction,
+            'recordTarget': notification.recordTarget?.name,
+          },
+          // This stable link lets What needs attention today show the actual
+          // server-recorded task state rather than offering duplicate drafts.
+          'sourceNotificationId': notification.id,
+        },
         'evidence': {
           'label': notification.insightKind.name,
           'sourceData': notification.sourceData,
