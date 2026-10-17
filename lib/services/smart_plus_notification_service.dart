@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/product.dart';
 import '../models/purchase_order.dart';
+import '../models/restock_record.dart';
 import '../models/sale.dart';
 import '../models/expense_record.dart';
 import 'backend_api_service.dart';
@@ -23,6 +24,37 @@ enum SmartPlusInsightKind { rule, forecast }
 enum SmartPlusDataQuality { checking, weak, limited, strong }
 
 enum SmartPlusRecordTarget { inventory, sales, customers, suppliers }
+
+/// A stale order status is not evidence of an outstanding delivery when all
+/// ordered units have matching, order-linked receipt and restock records.
+bool isPurchaseOrderFullyRestocked(
+  PurchaseOrder order,
+  List<RestockRecord> restocks,
+) {
+  if (order.items.isEmpty ||
+      order.items.any(
+        (item) => item.quantity <= 0 || item.receivedQuantity < item.quantity,
+      )) {
+    return false;
+  }
+  final quantities = <int, int>{};
+  for (final item in order.items) {
+    quantities[item.productId] =
+        (quantities[item.productId] ?? 0) + item.receivedQuantity;
+  }
+  final reference = 'purchase order ${order.orderNumber}'.toLowerCase();
+  for (final entry in quantities.entries) {
+    final recorded = restocks
+        .where(
+          (record) =>
+              record.productId == entry.key &&
+              record.referencedBy.toLowerCase() == reference,
+        )
+        .fold<int>(0, (sum, record) => sum + record.quantity);
+    if (recorded < entry.value) return false;
+  }
+  return true;
+}
 
 /// A transparent summary of whether the local business records are suitable
 /// for a SmartPlus insight. Forecasts are deliberately blocked when this is
@@ -1307,6 +1339,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
     for (final order in orders) {
       final status = order.status.trim().toLowerCase();
       if (status == 'cancelled') continue;
+      if (isPurchaseOrderFullyRestocked(order, restocks)) continue;
       final expected = order.expectedDeliveryDate == null
           ? null
           : _dateOnly(order.expectedDeliveryDate!);
@@ -1356,18 +1389,19 @@ class SmartPlusNotificationService extends ChangeNotifier {
         );
       }
 
-      if (status == 'completed') {
+      if (status == 'completed' &&
+          expected != null &&
+          expected.isBefore(today)) {
         suggestions.add(
           _supplierRule(
             id: 'supplier-in-transit-not-received-${order.orderNumber}',
-            title: 'Shipment marked complete but not received',
+            title: 'Delivery awaiting receipt',
             message:
-                'Rule: Purchase Order ${order.orderNumber} is marked completed but has not been received into inventory. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+                'Rule: Purchase Order ${order.orderNumber} is marked completed, but delivery has not been fully recorded and is past the expected date. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
             level: SmartPlusNotificationLevel.warning,
             source: 'Purchase-order status and delivery receipt records',
-            range: expected == null
-                ? 'Current purchase-order status'
-                : 'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
+            range:
+                'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
             action: 'Check the shipment, then record the delivery quantities.',
           ),
         );
@@ -1465,7 +1499,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
       }
     }
 
-    suggestions.addAll(_supplierReliabilityRules(orders, today));
+    suggestions.addAll(_supplierReliabilityRules(orders, restocks, today));
     return suggestions;
   }
 
@@ -1534,6 +1568,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
 
   List<SmartPlusNotification> _supplierReliabilityRules(
     List<PurchaseOrder> orders,
+    List<RestockRecord> restocks,
     DateTime today,
   ) {
     final bySupplier = <int, List<PurchaseOrder>>{};
@@ -1548,7 +1583,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
       final delayed = supplierOrders.where((order) {
         final expected = order.expectedDeliveryDate;
         final closed =
-            order.status == 'received' || order.status == 'cancelled';
+            order.status == 'received' ||
+            order.status == 'cancelled' ||
+            isPurchaseOrderFullyRestocked(order, restocks);
         return !closed &&
             expected != null &&
             _dateOnly(expected).isBefore(today);

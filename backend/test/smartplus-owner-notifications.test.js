@@ -8,6 +8,7 @@ const {
   dispatchOwnerActionCompletion,
   dispatchScheduledOwnerAlerts,
   normalizeSuggestions,
+  supplierDeliverySuggestions,
 } = require('../services/smartplus_owner_notifications');
 
 test('SmartPlus creates owner-safe actionable suggestions only', () => {
@@ -45,6 +46,60 @@ test('SmartPlus supplier delivery suggestions identify the order, timing, impact
   assert.match(suggestions[0].message, /2 day\(s\) overdue/);
   assert.match(suggestions[0].message, /3 affected/);
   assert.match(suggestions[0].message, /Confirm delivery status/);
+});
+
+test('received and fully restocked orders do not fall through to overdue emails', () => {
+  const received = {
+    order_number: 'PO-20261016-4154015', status: 'received',
+    expected_delivery: '2026-10-16', overdue_days: 1, missing_inventory: 0,
+  };
+  const staleCompleted = {
+    order_number: 'PO-20261016-6744672', status: 'completed',
+    expected_delivery: '2026-10-16', overdue_days: 1, fully_restocked: 1,
+  };
+  assert.deepEqual(supplierDeliverySuggestions([received, staleCompleted]), []);
+  assert.deepEqual(supplierDeliverySuggestions([{ ...received, status: 'cancelled' }]), []);
+});
+
+test('future completed orders are not described as overdue or missing deliveries', () => {
+  const order = { order_number: 'PO-20261017-4192420', status: 'completed', expected_delivery: '2026-10-18', overdue_days: -1 };
+  assert.deepEqual(supplierDeliverySuggestions([order]), []);
+  assert.deepEqual(supplierDeliverySuggestions([{ ...order, overdue_days: 0 }]), []);
+  assert.deepEqual(supplierDeliverySuggestions([{ ...order, expected_delivery: null, overdue_days: null }]), []);
+  const overdue = supplierDeliverySuggestions([{ ...order, overdue_days: 1 }]);
+  assert.equal(overdue.length, 1);
+  assert.equal(overdue[0].title, 'Delivery awaiting receipt');
+});
+
+test('genuine missing-restock and partial-delivery warnings remain visible', () => {
+  const alerts = supplierDeliverySuggestions([
+    { order_number: 'PO-MISSING', status: 'received', missing_inventory: 1 },
+    { order_number: 'PO-PARTIAL', status: 'partial', fully_restocked: 0 },
+  ]);
+  assert.equal(alerts.length, 2);
+  assert.match(alerts[0].title, /not been added/);
+  assert.match(alerts[1].title, /partial/i);
+});
+
+test('owner email is skipped when only received orders remain', async () => {
+  const dbQuery = async (sql) => {
+    if (sql.includes('FROM businesses')) return [{ id: 'business-a', name: 'Store A', owner_email: 'owner@example.com' }];
+    if (sql.includes('smartplus_notification_preferences')) return [];
+    if (sql.includes('FROM purchase_orders po')) {
+      assert.match(sql, /AS fully_restocked/);
+      return [{ order_number: 'PO-20261016-4154015', status: 'received', expected_delivery: '2026-10-16', overdue_days: 1, missing_inventory: 0 }];
+    }
+    if (sql.includes('discount / subtotal')) return [{ count: 0 }];
+    return [];
+  };
+  let sent = false;
+  const result = await dispatchOwnerAlert('business-a', {
+    query: dbQuery,
+    execute: async () => { throw new Error('No alert should be queued'); },
+    sendEmail: async () => { sent = true; },
+  });
+  assert.equal(result.skipped, 'no_important_suggestions');
+  assert.equal(sent, false);
 });
 
 test('SmartPlus emails only the database owner for a new important alert and deduplicates repeats', async () => {

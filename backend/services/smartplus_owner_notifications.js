@@ -56,13 +56,19 @@ function supplierDeliverySuggestions(rows = []) {
     const prefix = `Rule: Purchase Order ${orderNumber}. Supplier: ${supplier}. Ordered: ${items}. Expected delivery: ${expected}.`;
     const impactText = impact > 0 ? ` Impact: ${impact} affected low-stock or out-of-stock product(s).` : '';
     const status = String(row.status || '').toLowerCase();
-    if (Number(row.missing_inventory || 0) === 1) {
+    if (status === 'received' && Number(row.missing_inventory || 0) === 1) {
       return {
         level: 'critical',
         title: 'Delivered stock has not been added to inventory',
         message: `${prefix} Delivery is marked received, but no linked restock record was found.${impactText} Suggested next step: Verify the delivery and record stock.`,
       };
     }
+    // Received orders with no missing-restock evidence are closed. Without
+    // this guard they fall through to the due/overdue rules below.
+    if (status === 'received' || status === 'cancelled') return null;
+    // A status can lag behind a fully synced receipt. Verified item and
+    // restock quantities take precedence over that stale status.
+    if (Number(row.fully_restocked || 0) === 1) return null;
     if (status === 'partial') {
       return {
         level: 'warning',
@@ -71,10 +77,13 @@ function supplierDeliverySuggestions(rows = []) {
       };
     }
     if (status === 'completed') {
+      // "Completed" is an order-processing stage, not proof the shipment
+      // arrived. Do not claim an expected future or undated delivery is late.
+      if (!row.expected_delivery || overdueDays === 0) return null;
       return {
         level: 'warning',
-        title: 'Shipment marked complete but not received',
-        message: `${prefix} Shipment is marked completed but has not been received into inventory.${impactText} Suggested next step: Check shipment and record delivery quantities.`,
+        title: 'Delivery awaiting receipt',
+        message: `${prefix} The order is marked completed, but delivery has not been fully recorded and is ${overdueDays} day(s) past the expected date.${impactText} Suggested next step: Check the shipment and record quantities when it arrives.`,
       };
     }
     if (status === 'pending' && Number(row.pending_days || 0) >= 2 && !row.expected_delivery) {
@@ -96,7 +105,7 @@ function supplierDeliverySuggestions(rows = []) {
       title: 'Supplier delivery is due today',
       message: `${prefix} Status: due today.${impactText} Suggested next step: Confirm the delivery schedule with supplier.`,
     };
-  });
+  }).filter(Boolean);
 }
 
 function normalizeSuggestions({ outOfStock, lowStock, discountReview, supplierDelivery = [], preferences = {} }) {
@@ -361,6 +370,21 @@ async function dispatchOwnerAlert(businessId, dependencies = {}) {
               SUM(CASE WHEN p.quantity <= p.low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
               MAX(CASE WHEN po.status = 'received' AND poi.received_quantity > 0
                 AND rr.id IS NULL THEN 1 ELSE 0 END) AS missing_inventory,
+              CASE WHEN EXISTS (
+                SELECT 1 FROM purchase_order_items line
+                 WHERE line.business_id = po.business_id AND line.order_id = po.id
+              ) AND NOT EXISTS (
+                SELECT 1 FROM purchase_order_items line
+                 WHERE line.business_id = po.business_id AND line.order_id = po.id
+                   AND (line.quantity <= 0 OR line.received_quantity < line.quantity
+                     OR COALESCE((SELECT SUM(stock.quantity) FROM restock_records stock
+                       WHERE stock.business_id = po.business_id
+                         AND stock.product_id = line.product_id
+                         AND LOWER(stock.referenced_by) = LOWER(CONCAT('Purchase Order ', po.order_number))), 0)
+                       < (SELECT SUM(same_product.received_quantity) FROM purchase_order_items same_product
+                         WHERE same_product.business_id = po.business_id AND same_product.order_id = po.id
+                           AND same_product.product_id = line.product_id))
+              ) THEN 1 ELSE 0 END AS fully_restocked,
               DATEDIFF(CURDATE(), DATE(po.expected_delivery)) AS overdue_days,
               DATEDIFF(CURDATE(), DATE(po.order_date)) AS pending_days
          FROM purchase_orders po
@@ -385,7 +409,10 @@ async function dispatchOwnerAlert(businessId, dependencies = {}) {
           )
         GROUP BY po.id, po.order_number, po.status, po.order_date, po.expected_delivery, s.name`,
       [businessId],
-    ).catch(() => []),
+    ).catch((error) => {
+      console.error('SmartPlus supplier delivery query failed:', error.message);
+      return [];
+    }),
   ]);
   const suggestions = normalizeSuggestions({
     outOfStock,
