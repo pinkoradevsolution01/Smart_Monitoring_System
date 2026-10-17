@@ -3,7 +3,9 @@ import '../../services/backend_api_service.dart';
 
 /// Quick test screen to verify the Droplet backend API and MySQL connection.
 class BackendConnectionTest extends StatefulWidget {
-  const BackendConnectionTest({super.key});
+  const BackendConnectionTest({super.key, this.apiClient});
+
+  final ApiClient? apiClient;
 
   @override
   State<BackendConnectionTest> createState() => _BackendConnectionTestState();
@@ -13,8 +15,8 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
   String _status = 'Ready to test...';
   bool _isTesting = false;
   Color _statusColor = Colors.grey;
-  final List<String> _testResults = [];
-  final ApiClient _api = ApiClient();
+  final List<({bool success, String message})> _testResults = [];
+  late final ApiClient _api = widget.apiClient ?? ApiClient();
 
   @override
   Widget build(BuildContext context) {
@@ -89,20 +91,21 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
                     itemCount: _testResults.length,
                     itemBuilder: (context, index) {
                       final result = _testResults[index];
-                      final isError = result.startsWith('❌');
+                      final isError = !result.success;
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              result.substring(0, 2),
-                              style: const TextStyle(fontSize: 16),
+                            Icon(
+                              isError ? Icons.cancel : Icons.check_circle,
+                              color: isError ? Colors.red : Colors.green,
+                              size: 20,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                result.substring(3),
+                                result.message,
                                 style: TextStyle(
                                   color: isError ? Colors.red : Colors.green,
                                   fontFamily: 'monospace',
@@ -142,6 +145,7 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
       _testResults.clear();
     });
 
+    var phase = 'backend';
     try {
       // Test 1: Check the backend API itself.
       setState(() => _status = 'Checking backend API...');
@@ -151,8 +155,10 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
       }
       _addResult(true, 'Backend API is reachable');
       await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
 
       // Test 2: Verify the backend can query MySQL.
+      phase = 'database';
       setState(() => _status = 'Checking MySQL database connection...');
       final database = await _api.getJson('health/db');
       if (database is! Map<String, dynamic> || database['status'] != 'ok') {
@@ -163,11 +169,14 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
         _addResult(true, 'Database: ${database['database']}');
       }
       await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
 
       // Test 3: Developer-only operational status. This endpoint exposes
       // aggregate platform telemetry only; it never returns tenant records.
+      phase = 'developer';
       setState(() => _status = 'Loading system health and sync status...');
       final operational = await _api.get('developer/system-health');
+      if (!mounted) return;
       final data = operational['data'];
       if (data is! Map) {
         throw Exception('System health response was incomplete');
@@ -199,7 +208,7 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
       );
 
       // Final result
-      final failedTests = _testResults.where((r) => r.startsWith('❌')).length;
+      final failedTests = _testResults.where((r) => !r.success).length;
       if (failedTests == 0) {
         setState(() {
           _status = '✅ All tests passed! Backend is connected.';
@@ -212,19 +221,41 @@ class _BackendConnectionTestState extends State<BackendConnectionTest> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
+      if (phase == 'developer' &&
+          e is ApiException &&
+          (e.statusCode == 401 || e.statusCode == 403)) {
+        setState(() {
+          _status =
+              'Backend and database are healthy; Developer access is required.';
+          _statusColor = Colors.orange;
+        });
+        _addResult(
+          false,
+          e.statusCode == 401
+              ? 'Developer session is missing or expired. Sign in again as Developer.'
+              : 'The current session is not authorized for Developer system health. Sign in as Developer.',
+        );
+        return;
+      }
       setState(() {
-        _status = '❌ Connection failed!';
+        _status = phase == 'developer'
+            ? 'System health could not be loaded.'
+            : phase == 'database'
+            ? 'Database health check failed.'
+            : 'Backend connection check failed.';
         _statusColor = Colors.red;
       });
-      _addResult(false, 'General error: $e');
+      _addResult(false, safeApiError(e));
     } finally {
-      setState(() => _isTesting = false);
+      if (mounted) setState(() => _isTesting = false);
     }
   }
 
   void _addResult(bool success, String message) {
+    if (!mounted) return;
     setState(() {
-      _testResults.add('${success ? '✅' : '❌'} $message');
+      _testResults.add((success: success, message: message));
     });
   }
 }

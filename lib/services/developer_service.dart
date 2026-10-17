@@ -44,11 +44,14 @@ class DeveloperService extends ChangeNotifier {
   static const String _sessionTokenKey = 'backend_access_token';
   static final DeveloperService _instance = DeveloperService._internal();
   factory DeveloperService() => _instance;
-  DeveloperService._internal() {
+  DeveloperService._internal() : _api = ApiClient() {
     _loadAccount();
   }
 
-  final ApiClient _api = ApiClient();
+  @visibleForTesting
+  DeveloperService.forTesting(this._api);
+
+  final ApiClient _api;
 
   DeveloperAccount? _account;
   bool _isLoading = false;
@@ -153,10 +156,14 @@ class DeveloperService extends ChangeNotifier {
 
       if (response is Map<String, dynamic> && response['success'] == true) {
         final token = response['token']?.toString();
-        if (token != null && token.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_sessionTokenKey, token);
+        if (token == null || token.isEmpty) {
+          debugPrint(
+            'DeveloperService: Google authorization returned no developer session.',
+          );
+          return false;
         }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_sessionTokenKey, token);
         if (response['account'] is Map) {
           _account = DeveloperAccount.fromMap(
             Map<String, dynamic>.from(response['account'] as Map),

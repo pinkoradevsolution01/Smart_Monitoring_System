@@ -11,7 +11,9 @@ import '../../models/admin_account.dart';
 import '../../models/user.dart' show UserRole;
 
 class DeveloperAuthScreen extends StatefulWidget {
-  const DeveloperAuthScreen({super.key});
+  const DeveloperAuthScreen({super.key, this.googleAuth});
+
+  final GoogleAuthService? googleAuth;
 
   static const String _devAuthKey = 'developer_authenticated';
 
@@ -32,7 +34,8 @@ class DeveloperAuthScreen extends StatefulWidget {
 class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final GoogleAuthService _googleAuth = GoogleAuthService();
+  late final GoogleAuthService _googleAuth =
+      widget.googleAuth ?? GoogleAuthService();
   bool _obscurePassword = true;
   bool _isLoading = false;
   bool _isGoogleLoading = false;
@@ -217,7 +220,9 @@ class _DeveloperAuthScreenState extends State<DeveloperAuthScreen> {
       // Save authentication status
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(DeveloperAuthScreen._devAuthKey, true);
-      await _googleAuth.storeSession();
+      // The Google identity session was already saved during OAuth. The
+      // developer authorization above replaces its token with a developer
+      // token; saving the older Google session again would overwrite it.
 
       if (mounted) {
         setState(() => _isGoogleLoading = false);
