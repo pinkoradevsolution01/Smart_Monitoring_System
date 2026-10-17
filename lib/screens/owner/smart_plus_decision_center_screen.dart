@@ -60,9 +60,14 @@ class _SmartPlusDecisionCenterScreenState
                     isScrollControlled: true,
                     builder: (_) => const _ActionDraftsSheet(),
                   );
-              if (!context.mounted || approvedAction == null) return;
-              await _openApprovedWorkflow(context, approvedAction);
-              if (context.mounted) _reloadActions();
+              if (!context.mounted) return;
+              if (approvedAction != null) {
+                await _openApprovedWorkflow(context, approvedAction);
+              }
+              if (context.mounted) {
+                service.refresh(forceSupplierCheck: true);
+                _reloadActions();
+              }
             },
             icon: const Icon(Icons.fact_check_outlined),
           ),
@@ -72,70 +77,105 @@ class _SmartPlusDecisionCenterScreenState
         listenable: service,
         builder: (context, _) {
           final brief = service.dailyBrief;
-          final critical = service.notifications
-              .where(
-                (item) => item.level == SmartPlusNotificationLevel.critical,
-              )
-              .toList();
-          final reviewSoon = service.notifications
-              .where((item) => item.level == SmartPlusNotificationLevel.warning)
-              .toList();
-          final informational = service.notifications
-              .where((item) => item.level == SmartPlusNotificationLevel.info)
-              .toList();
           return FutureBuilder<List<SmartPlusActionDraft>>(
             future: _actions,
-            builder: (context, actionSnapshot) => RefreshIndicator(
-              onRefresh: () => _refresh(service),
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Text(
-                    'Daily brief',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
+            builder: (context, actionSnapshot) {
+              if (actionSnapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (actionSnapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Could not load review status. Please try again.',
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: () => _refresh(service),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final actions =
+                  actionSnapshot.data ?? const <SmartPlusActionDraft>[];
+              final attention = service.notifications.where((item) {
+                // Completion confirmations belong in the notification inbox,
+                // not among outstanding items requiring attention.
+                if (item.id.startsWith('action-completed-')) return false;
+                return actionForSmartPlusNotification(item, actions)?.status !=
+                    'executed';
+              }).toList();
+              final critical = attention
+                  .where(
+                    (item) => item.level == SmartPlusNotificationLevel.critical,
+                  )
+                  .toList();
+              final reviewSoon = attention
+                  .where(
+                    (item) => item.level == SmartPlusNotificationLevel.warning,
+                  )
+                  .toList();
+              final informational = attention
+                  .where(
+                    (item) => item.level == SmartPlusNotificationLevel.info,
+                  )
+                  .toList();
+              return RefreshIndicator(
+                onRefresh: () => _refresh(service),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Text(
+                      'Daily brief',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${service.dataTrust.freshnessLabel} • ${service.dataTrust.confidenceLabel}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    const SizedBox(height: 4),
+                    Text(
+                      '${service.dataTrust.freshnessLabel} • ${service.dataTrust.confidenceLabel}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  _BriefGrid(brief: brief),
-                  const SizedBox(height: 24),
-                  _AlertSection(
-                    title: 'Critical',
-                    subtitle: 'Act before normal operations continue.',
-                    icon: Icons.error_outline_rounded,
-                    color: Theme.of(context).colorScheme.error,
-                    alerts: critical,
-                    actions: actionSnapshot.data ?? const [],
-                    onActionSaved: _reloadActions,
-                  ),
-                  _AlertSection(
-                    title: 'Review soon',
-                    subtitle: 'Important items that need an owner decision.',
-                    icon: Icons.warning_amber_rounded,
-                    color: Colors.orange.shade800,
-                    alerts: reviewSoon,
-                    actions: actionSnapshot.data ?? const [],
-                    onActionSaved: _reloadActions,
-                  ),
-                  _AlertSection(
-                    title: 'Informational',
-                    subtitle: 'Useful context for planning and follow-up.',
-                    icon: Icons.lightbulb_outline_rounded,
-                    color: Theme.of(context).colorScheme.tertiary,
-                    alerts: informational,
-                    actions: actionSnapshot.data ?? const [],
-                    onActionSaved: _reloadActions,
-                  ),
-                ],
-              ),
-            ),
+                    const SizedBox(height: 14),
+                    _BriefGrid(brief: brief),
+                    const SizedBox(height: 24),
+                    _AlertSection(
+                      title: 'Critical',
+                      subtitle: 'Act before normal operations continue.',
+                      icon: Icons.error_outline_rounded,
+                      color: Theme.of(context).colorScheme.error,
+                      alerts: critical,
+                      actions: actions,
+                      onActionSaved: _reloadActions,
+                    ),
+                    _AlertSection(
+                      title: 'Review soon',
+                      subtitle: 'Important items that need an owner decision.',
+                      icon: Icons.warning_amber_rounded,
+                      color: Colors.orange.shade800,
+                      alerts: reviewSoon,
+                      actions: actions,
+                      onActionSaved: _reloadActions,
+                    ),
+                    _AlertSection(
+                      title: 'Informational',
+                      subtitle: 'Useful context for planning and follow-up.',
+                      icon: Icons.lightbulb_outline_rounded,
+                      color: Theme.of(context).colorScheme.tertiary,
+                      alerts: informational,
+                      actions: actions,
+                      onActionSaved: _reloadActions,
+                    ),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),
@@ -1011,18 +1051,7 @@ class _AlertSection extends StatelessWidget {
   }
 
   SmartPlusActionDraft? _actionForAlert(SmartPlusNotification alert) {
-    for (final action in actions) {
-      if (action.proposal['sourceNotificationId']?.toString() == alert.id) {
-        return action;
-      }
-    }
-    // Drafts created before sourceNotificationId was introduced still map by
-    // their owner-facing title. New drafts always use the stronger ID link.
-    final titleSuffix = ': ${alert.title}';
-    for (final action in actions) {
-      if (action.title.endsWith(titleSuffix)) return action;
-    }
-    return null;
+    return actionForSmartPlusNotification(alert, actions);
   }
 
   Widget _actionStatusControl(
@@ -1107,14 +1136,20 @@ class _AlertSection extends StatelessWidget {
     );
   }
 
-  void _openRecords(BuildContext context, SmartPlusRecordTarget target) {
+  Future<void> _openRecords(
+    BuildContext context,
+    SmartPlusRecordTarget target,
+  ) async {
     final screen = switch (target) {
       SmartPlusRecordTarget.inventory => const InventoryScreen(),
       SmartPlusRecordTarget.sales => const SalesReportScreen(),
       SmartPlusRecordTarget.customers => const CustomerManagementScreen(),
       SmartPlusRecordTarget.suppliers => const SupplierManagementScreen(),
     };
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+    if (!context.mounted) return;
+    GetIt.I<SmartPlusNotificationService>().refresh(forceSupplierCheck: true);
+    onActionSaved();
   }
 
   Future<void> _draftAction(

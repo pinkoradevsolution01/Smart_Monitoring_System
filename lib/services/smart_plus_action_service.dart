@@ -104,6 +104,19 @@ class SmartPlusActionDraft {
   final DateTime? approvedAt;
   final DateTime? executedAt;
 
+  /// Match the particular recommendation reviewed, not just its category.
+  /// Several alerts reuse an ID as their underlying business data changes.
+  bool matchesNotification(SmartPlusNotification notification) {
+    final sourceId = proposal['sourceNotificationId']?.toString();
+    if (sourceId != null && sourceId.isNotEmpty) {
+      if (sourceId != notification.id) return false;
+    } else if (!title.endsWith(': ${notification.title}')) {
+      return false;
+    }
+    final reviewedMessage = evidence['message']?.toString();
+    return reviewedMessage != null && reviewedMessage == notification.message;
+  }
+
   factory SmartPlusActionDraft.fromMap(Map<String, dynamic> map) =>
       SmartPlusActionDraft(
         id: '${map['id'] ?? ''}',
@@ -129,4 +142,16 @@ class SmartPlusActionDraft {
 
   static String _ownerFacingTitle(String value) =>
       value.replaceFirst('Staff follow-up:', 'Owner follow-up:');
+}
+
+/// The action list is returned newest first; a newer active review takes
+/// precedence over an older completed review of the same recommendation.
+SmartPlusActionDraft? actionForSmartPlusNotification(
+  SmartPlusNotification notification,
+  Iterable<SmartPlusActionDraft> actions,
+) {
+  for (final action in actions) {
+    if (action.matchesNotification(notification)) return action;
+  }
+  return null;
 }

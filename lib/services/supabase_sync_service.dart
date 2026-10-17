@@ -751,6 +751,7 @@ class SupabaseSyncService extends ChangeNotifier {
   Future<void> _pushProducts() async {
     try {
       final db = DatabaseService();
+      final pendingVersions = await db.pendingProductVersions();
       final products = await db.getAllProducts();
 
       if (products.isEmpty) {
@@ -787,6 +788,7 @@ class SupabaseSyncService extends ChangeNotifier {
         'sync/push',
         body: {'businessId': _businessId, 'products': productData},
       );
+      await db.acknowledgeProductVersions(pendingVersions);
       _syncStats['products_pushed'] = products.length;
       debugPrint('✅ Pushed ${products.length} products');
     } catch (e) {
@@ -1606,9 +1608,15 @@ class SupabaseSyncService extends ChangeNotifier {
         );
       }).toList();
 
-      // Clear and re-insert (simple sync strategy)
+      var preserved = 0;
       for (final product in products) {
-        await db.insertOrUpdateProduct(product);
+        if (!await db.mergeSyncedProduct(product)) preserved++;
+      }
+
+      if (preserved > 0) {
+        debugPrint(
+          'Preserved $preserved product(s) with unsynced local sales.',
+        );
       }
 
       _syncStats['products_pulled'] = products.length;
@@ -1752,7 +1760,8 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('✅ Pulled ${response.length} inventory movements');
     } catch (e) {
       debugPrint('❌ Error pulling inventory movements: $e');
-      // Don't rethrow - continue with other syncs
+      // Do not report a successful restore or push conflicting local IDs.
+      rethrow;
     }
   }
 

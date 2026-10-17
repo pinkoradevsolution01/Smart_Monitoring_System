@@ -302,153 +302,22 @@ class POSService extends ChangeNotifier {
     );
 
     try {
-      if (customerId != null &&
-          sale.status == SaleStatus.completed &&
-          loyaltyPointsRedeemed > 0) {
-        final redeemed = await CustomerService().redeemPoints(
-          customerId: customerId,
-          points: loyaltyPointsRedeemed,
-          notes: sale.saleNumber,
-        );
-        if (!redeemed) {
-          throw Exception('Unable to redeem loyalty points for this customer.');
-        }
+      if (loyaltyPointsRedeemed > 0 &&
+          loyaltyPointsRedeemed < CustomerService.minRedeemPoints) {
+        throw StateError('The loyalty redemption is below the minimum.');
       }
+      await _databaseService.commitPosSale(sale);
 
-      // Insert sale to database
-      final saleId = await _databaseService.insertSale(sale);
-
-      if (customerId != null &&
-          sale.status == SaleStatus.completed &&
-          loyaltyPointsEarned > 0) {
-        await CustomerService().awardPoints(
-          customerId: customerId,
-          saleId: saleId,
-          points: loyaltyPointsEarned,
-          notes: sale.saleNumber,
-        );
-      }
-
-      // Update inventory for each item
-      for (final item in _cart) {
-        debugPrint('\n🛒 Processing cart item:');
-        debugPrint('   Product: ${item.product.name}');
-        debugPrint('   Product ID: ${item.product.id}');
-        debugPrint('   Has shoe variants: ${item.product.hasShoeVariants}');
-        debugPrint(
-          '   Selected shoe size: ${item.selectedShoeSize?.usSize ?? "null"}',
-        );
-        debugPrint('   Quantity: ${item.quantity}');
-
-        // Get fresh product data from database to ensure we have latest shoeSizes
-        final freshProduct = await _databaseService.getProductById(
-          item.product.id!,
-        );
-        if (freshProduct == null) {
-          throw Exception('Product not found: ${item.product.id}');
-        }
-
-        debugPrint(
-          '   Fresh product has shoe variants: ${freshProduct.hasShoeVariants}',
-        );
-        debugPrint(
-          '   Fresh product shoeSizes count: ${freshProduct.shoeSizes?.length ?? 0}',
-        );
-
-        int newQuantity;
-        Product updatedProduct;
-
-        // Handle shoe products with size variants
-        if (freshProduct.hasShoeVariants && item.selectedShoeSize != null) {
-          debugPrint('🔍 Updating shoe product: ${freshProduct.name}');
-          debugPrint('   Selected size: ${item.selectedShoeSize!.usSize}');
-          debugPrint('   Quantity to deduct: ${item.quantity}');
-
-          // Update specific shoe size quantity
-          final updatedShoeSizes = freshProduct.shoeSizes!.map((size) {
-            if (size.usSize == item.selectedShoeSize!.usSize) {
-              final oldQty = size.quantity;
-              final newQty = size.quantity - item.quantity;
-              debugPrint('   Size ${size.usSize}: $oldQty → $newQty');
-              return ShoeSize(
-                usSize: size.usSize,
-                ukSize: size.ukSize,
-                euSize: size.euSize,
-                cmSize: size.cmSize,
-                quantity: newQty,
-              );
-            }
-            return size;
-          }).toList();
-
-          // Calculate new total quantity
-          newQuantity = updatedShoeSizes.fold(
-            0,
-            (sum, size) => sum + size.quantity,
-          );
-
-          debugPrint('   New total quantity: $newQuantity');
-
-          updatedProduct = Product(
-            id: freshProduct.id,
-            barcode: freshProduct.barcode,
-            name: freshProduct.name,
-            description: freshProduct.description,
-            buyingPrice: freshProduct.buyingPrice,
-            sellingPrice: freshProduct.sellingPrice,
-            quantity: newQuantity,
-            reorderLevel: freshProduct.reorderLevel,
-            category: freshProduct.category,
-            imagePath: freshProduct.imagePath,
-            createdAt: freshProduct.createdAt,
-            shoeSizes: updatedShoeSizes,
-            sizeType: freshProduct.sizeType,
-          );
-        } else {
-          // Regular product - just decrement quantity
-          newQuantity = freshProduct.quantity - item.quantity;
-          updatedProduct = Product(
-            id: freshProduct.id,
-            barcode: freshProduct.barcode,
-            name: freshProduct.name,
-            description: freshProduct.description,
-            buyingPrice: freshProduct.buyingPrice,
-            sellingPrice: freshProduct.sellingPrice,
-            quantity: newQuantity,
-            reorderLevel: freshProduct.reorderLevel,
-            category: freshProduct.category,
-            imagePath: freshProduct.imagePath,
-            createdAt: freshProduct.createdAt,
-            shoeSizes: freshProduct.shoeSizes,
-            sizeType: freshProduct.sizeType,
-          );
-        }
-
-        // Update product
-        await _databaseService.updateProduct(updatedProduct);
-
-        // Record inventory movement
-        await _databaseService.recordInventoryMovement(
-          InventoryMovement(
-            productId: freshProduct.id!,
-            quantityBefore: freshProduct.quantity,
-            quantityAfter: newQuantity,
-            quantityChanged: -item.quantity,
-            movementType: 'sale',
-            reference: saleNumber,
-            reason: item.selectedShoeSize != null
-                ? 'Sold via POS (Size: ${item.selectedShoeSize!.usSize})'
-                : 'Sold via POS',
-            movementDate: DateTime.now(),
-          ),
-        );
-      }
-
-      // Clear cart and reload products
+      // Once the transaction commits, a refresh failure must not cause a
+      // cashier to repeat a payment that was already recorded.
       _cart.clear();
-      await loadProducts();
-      await loadRecentSales();
-      _queueCloudSync();
+      try {
+        await loadProducts();
+        await loadRecentSales();
+        _queueCloudSync();
+      } catch (error) {
+        debugPrint('Sale saved, but refresh/sync scheduling failed: $error');
+      }
       notifyListeners();
       debugPrint('✅ Sale completed successfully');
       return true;

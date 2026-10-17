@@ -16,6 +16,8 @@ import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'supabase_sync_service.dart';
 import 'demo_session_service.dart';
+import 'inventory_movement_merge.dart';
+import 'sale_stock_calculation.dart';
 
 /// A lightweight web-backed DatabaseService that persists to window.localStorage.
 /// This provides a compatible API for web builds when sqflite is not available.
@@ -200,6 +202,15 @@ class DatabaseService {
 
   // -------------------- Product Operations --------------------
 
+  void _markProductPending(int id) {
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_products'] as Map?) ?? {},
+    );
+    final key = '$id';
+    pending[key] = ((pending[key] as num?)?.toInt() ?? 0) + 1;
+    _store['sync_pending_products'] = pending;
+  }
+
   Future<int> insertProduct(Product product) async {
     await _load();
     final id = _nextId('product');
@@ -207,6 +218,7 @@ class DatabaseService {
     final List products = List.from(_store['products'] as List);
     products.add(map);
     _store['products'] = products;
+    if (!_suppressCloudSync) _markProductPending(id);
     await _save();
     _queueCloudSync();
     return id;
@@ -271,6 +283,9 @@ class DatabaseService {
     if (idx == -1) return 0;
     products[idx] = product.toMap();
     _store['products'] = products;
+    if (!_suppressCloudSync && product.id != null) {
+      _markProductPending(product.id!);
+    }
     await _save();
     _queueCloudSync();
     return 1;
@@ -542,6 +557,156 @@ class DatabaseService {
   }
 
   // -------------------- Sale Operations --------------------
+
+  /// Commit POS sale, stock, movements and loyalty in one browser-store write.
+  Future<int> commitPosSale(Sale sale) async {
+    await _load();
+    final original = Map<String, dynamic>.from(
+      jsonDecode(jsonEncode(_store)) as Map,
+    );
+    try {
+      final products = List<Map<String, dynamic>>.from(
+        (_store['products'] as List).map(
+          (e) => Map<String, dynamic>.from(e as Map),
+        ),
+      );
+      final movements = List<dynamic>.from(
+        _store['inventory_movements'] as List,
+      );
+      final pending = Map<String, dynamic>.from(
+        (_store['sync_pending_products'] as Map?) ?? {},
+      );
+      for (final item in sale.items) {
+        final index = products.indexWhere((p) => p['id'] == item.productId);
+        if (index < 0) {
+          throw StateError('Product not found: ${item.productName}');
+        }
+        final before = Product.fromMap(products[index]);
+        final after = productAfterSale(before, item);
+        products[index] = after.toMap();
+        final key = '${item.productId}';
+        pending[key] = ((pending[key] as num?)?.toInt() ?? 0) + 1;
+        movements.add(
+          InventoryMovement(
+            id: _nextId('movement'),
+            productId: item.productId,
+            quantityBefore: before.quantity,
+            quantityAfter: after.quantity,
+            quantityChanged: -item.quantity,
+            movementType: 'sale',
+            reference: sale.saleNumber,
+            reason: item.shoeSize == null
+                ? 'Sold via POS'
+                : 'Sold via POS (Size: ${item.shoeSize})',
+            movementDate: sale.saleDate,
+          ).toMap(),
+        );
+      }
+      final saleId = _nextId('sale');
+      if (sale.status == SaleStatus.completed &&
+          sale.customerId != null &&
+          (sale.loyaltyPointsRedeemed > 0 || sale.loyaltyPointsEarned > 0)) {
+        final customers = List<Map<String, dynamic>>.from(
+          (_store['customers'] as List).map(
+            (e) => Map<String, dynamic>.from(e as Map),
+          ),
+        );
+        final index = customers.indexWhere((c) => c['id'] == sale.customerId);
+        if (index < 0) throw StateError('Customer not found.');
+        final customer = Customer.fromMap(customers[index]);
+        if (customer.pointsBalance < sale.loyaltyPointsRedeemed) {
+          throw StateError('Insufficient customer loyalty points.');
+        }
+        var balance = customer.pointsBalance;
+        final entries = List<dynamic>.from(_store['loyalty_ledger'] as List);
+        for (final entry in [
+          (LoyaltyEntryType.redeem, -sale.loyaltyPointsRedeemed),
+          (LoyaltyEntryType.earn, sale.loyaltyPointsEarned),
+        ]) {
+          if (entry.$2 == 0) continue;
+          balance += entry.$2;
+          entries.add(
+            LoyaltyLedgerEntry(
+              id: _nextId('ledger'),
+              customerId: sale.customerId!,
+              saleId: saleId,
+              entryType: entry.$1,
+              points: entry.$2,
+              balanceAfter: balance,
+              notes: sale.saleNumber,
+            ).toMap(),
+          );
+        }
+        customers[index] = customer
+            .copyWith(
+              pointsBalance: balance,
+              lifetimePoints:
+                  customer.lifetimePoints + sale.loyaltyPointsEarned,
+              updatedAt: DateTime.now(),
+            )
+            .toMap();
+        _store['customers'] = customers;
+        _store['loyalty_ledger'] = entries;
+      }
+      _store['products'] = products;
+      _store['sync_pending_products'] = pending;
+      _store['inventory_movements'] = movements;
+      _store['sales'] = [
+        ...(_store['sales'] as List),
+        sale.toMap()..['id'] = saleId,
+      ];
+      await _save();
+      _queueCloudSync();
+      return saleId;
+    } catch (_) {
+      _store = original;
+      rethrow;
+    }
+  }
+
+  Future<Map<int, int>> pendingProductVersions() async {
+    await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_products'] as Map?) ?? {},
+    );
+    return {
+      for (final entry in pending.entries)
+        int.parse(entry.key): (entry.value as num).toInt(),
+    };
+  }
+
+  Future<void> acknowledgeProductVersions(Map<int, int> versions) async {
+    await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_products'] as Map?) ?? {},
+    );
+    for (final entry in versions.entries) {
+      if (pending['${entry.key}'] == entry.value) {
+        pending.remove('${entry.key}');
+      }
+    }
+    _store['sync_pending_products'] = pending;
+    await _save();
+  }
+
+  Future<bool> mergeSyncedProduct(Product product) async {
+    await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_products'] as Map?) ?? {},
+    );
+    if (pending.containsKey('${product.id}')) return false;
+    final products = List<dynamic>.from(_store['products'] as List);
+    final index = products.indexWhere((p) => p['id'] == product.id);
+    if (index < 0) {
+      products.add(product.toMap());
+      if (product.id != null) _bumpCounter('product', product.id!);
+    } else {
+      products[index] = product.toMap();
+    }
+    _store['products'] = products;
+    await _save();
+    return true;
+  }
 
   Future<int> insertSale(Sale sale) async {
     await _load();
@@ -1002,16 +1167,17 @@ class DatabaseService {
     return results;
   }
 
-  /// Replace all inventory movements with a restored set from cloud sync.
-  /// The cloud backend stores a reduced movement payload, so quantityBefore
-  /// and quantityAfter are approximated from the available quantity change.
+  /// Merge cloud movements without discarding unsynced local movements.
   Future<void> replaceInventoryMovements(
     List<Map<String, dynamic>> movements,
   ) async {
     await _load();
-    _store['inventory_movements'] = List<Map<String, dynamic>>.from(
-      movements.map((movement) => Map<String, dynamic>.from(movement)),
+    final local = List<Map<String, dynamic>>.from(
+      (_store['inventory_movements'] as List).map(
+        (movement) => Map<String, dynamic>.from(movement as Map),
+      ),
     );
+    _store['inventory_movements'] = mergeInventoryMovements(local, movements);
     await _save();
   }
 

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, debugPrint, visibleForTesting;
 import 'package:get_it/get_it.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
@@ -21,6 +22,8 @@ import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'supabase_sync_service.dart';
 import 'demo_session_service.dart';
+import 'inventory_movement_merge.dart';
+import 'sale_stock_calculation.dart';
 
 /// DatabaseService provides a singleton pattern for database operations.
 /// Handles all CRUD operations for products, sales, inventory movements,
@@ -36,6 +39,11 @@ class DatabaseService {
   }
 
   DatabaseService._internal();
+
+  @visibleForTesting
+  static void setDatabaseForTesting(Database? database) {
+    _database = database;
+  }
 
   SupabaseSyncService? _maybeSyncService() {
     try {
@@ -1111,7 +1119,11 @@ class DatabaseService {
   /// Insert a new product into the database
   Future<int> insertProduct(Product product) async {
     final db = await database;
-    final id = await db.insert('products', product.toMap());
+    final id = await db.transaction((txn) async {
+      final id = await txn.insert('products', product.toMap());
+      if (!_suppressCloudSync) await _markProductPending(txn, id);
+      return id;
+    });
     _queueCloudSync();
     return id;
   }
@@ -1169,12 +1181,18 @@ class DatabaseService {
       debugPrint('   ShoeSizes JSON: ${map['shoeSizes']}');
     }
 
-    final rows = await db.update(
-      'products',
-      map,
-      where: 'id = ?',
-      whereArgs: [product.id],
-    );
+    final rows = await db.transaction((txn) async {
+      final rows = await txn.update(
+        'products',
+        map,
+        where: 'id = ?',
+        whereArgs: [product.id],
+      );
+      if (rows > 0 && !_suppressCloudSync && product.id != null) {
+        await _markProductPending(txn, product.id!);
+      }
+      return rows;
+    });
     _queueCloudSync();
     return rows;
   }
@@ -1471,6 +1489,171 @@ class DatabaseService {
   }
 
   // ======================== SALE OPERATIONS ========================
+
+  Future<void> _markProductPending(DatabaseExecutor txn, int id) async {
+    await txn.execute(
+      'CREATE TABLE IF NOT EXISTS sync_pending_products (productId INTEGER PRIMARY KEY, revision INTEGER NOT NULL)',
+    );
+    await txn.rawInsert(
+      'INSERT INTO sync_pending_products (productId, revision) VALUES (?, 1) ON CONFLICT(productId) DO UPDATE SET revision = revision + 1',
+      [id],
+    );
+  }
+
+  /// Commit a POS sale, stock movements and loyalty updates together.
+  Future<int> commitPosSale(Sale sale) async {
+    final db = await database;
+    final saleId = await db.transaction((txn) async {
+      final saleMap = Map<String, dynamic>.from(sale.toMap())
+        ..remove('items')
+        ..remove('id');
+      final id = await txn.insert('sales', saleMap);
+      await _insertSaleItems(txn, id, sale.items);
+      for (final item in sale.items) {
+        final rows = await txn.query(
+          'products',
+          where: 'id = ?',
+          whereArgs: [item.productId],
+          limit: 1,
+        );
+        if (rows.isEmpty) {
+          throw StateError('Product not found: ${item.productName}');
+        }
+        final before = Product.fromMap(rows.single);
+        final after = productAfterSale(before, item);
+        await txn.update(
+          'products',
+          after.toMap(),
+          where: 'id = ?',
+          whereArgs: [item.productId],
+        );
+        await _markProductPending(txn, item.productId);
+        await txn.insert(
+          'inventory_movements',
+          InventoryMovement(
+            productId: item.productId,
+            quantityBefore: before.quantity,
+            quantityAfter: after.quantity,
+            quantityChanged: -item.quantity,
+            movementType: 'sale',
+            reference: sale.saleNumber,
+            reason: item.shoeSize == null
+                ? 'Sold via POS'
+                : 'Sold via POS (Size: ${item.shoeSize})',
+            movementDate: sale.saleDate,
+          ).toMap()..remove('id'),
+        );
+      }
+      if (sale.status == SaleStatus.completed &&
+          sale.customerId != null &&
+          (sale.loyaltyPointsRedeemed > 0 || sale.loyaltyPointsEarned > 0)) {
+        final rows = await txn.query(
+          'customers',
+          where: 'id = ?',
+          whereArgs: [sale.customerId],
+          limit: 1,
+        );
+        if (rows.isEmpty) throw StateError('Customer not found.');
+        final customer = Customer.fromMap(rows.single);
+        if (customer.pointsBalance < sale.loyaltyPointsRedeemed) {
+          throw StateError('Insufficient customer loyalty points.');
+        }
+        var balance = customer.pointsBalance;
+        for (final entry in [
+          ('redeem', -sale.loyaltyPointsRedeemed),
+          ('earn', sale.loyaltyPointsEarned),
+        ]) {
+          if (entry.$2 == 0) continue;
+          balance += entry.$2;
+          await txn.insert('loyalty_ledger', {
+            'syncId': const Uuid().v4(),
+            'customerId': sale.customerId,
+            'saleId': id,
+            'entryType': entry.$1,
+            'points': entry.$2,
+            'balanceAfter': balance,
+            'notes': sale.saleNumber,
+            'createdAt': DateTime.now().toIso8601String(),
+          });
+        }
+        await txn.update(
+          'customers',
+          customer
+              .copyWith(
+                pointsBalance: balance,
+                lifetimePoints:
+                    customer.lifetimePoints + sale.loyaltyPointsEarned,
+                updatedAt: DateTime.now(),
+              )
+              .toMap(),
+          where: 'id = ?',
+          whereArgs: [sale.customerId],
+        );
+      }
+      return id;
+    });
+    _queueCloudSync();
+    return saleId;
+  }
+
+  Future<Map<int, int>> pendingProductVersions() async {
+    final db = await database;
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS sync_pending_products (productId INTEGER PRIMARY KEY, revision INTEGER NOT NULL)',
+    );
+    final rows = await db.query('sync_pending_products');
+    return {
+      for (final row in rows) row['productId'] as int: row['revision'] as int,
+    };
+  }
+
+  Future<void> acknowledgeProductVersions(Map<int, int> versions) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final entry in versions.entries) {
+        await txn.delete(
+          'sync_pending_products',
+          where: 'productId = ? AND revision = ?',
+          whereArgs: [entry.key, entry.value],
+        );
+      }
+    });
+  }
+
+  /// Do not let a cloud snapshot replace a sale that has not been uploaded.
+  Future<bool> mergeSyncedProduct(Product product) async {
+    final db = await database;
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS sync_pending_products (productId INTEGER PRIMARY KEY, revision INTEGER NOT NULL)',
+    );
+    return db.transaction((txn) async {
+      final pending = await txn.query(
+        'sync_pending_products',
+        where: 'productId = ?',
+        whereArgs: [product.id],
+        limit: 1,
+      );
+      if (pending.isNotEmpty) return false;
+      final existing = await txn.query(
+        'products',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [product.id],
+        limit: 1,
+      );
+      if (existing.isEmpty) {
+        await txn.insert('products', product.toMap());
+      } else {
+        await txn.update(
+          'products',
+          product.toMap(),
+          where: 'id = ?',
+          whereArgs: [product.id],
+        );
+      }
+      return true;
+    });
+  }
 
   /// Insert a new sale with all its items
   Future<int> insertSale(Sale sale) async {
@@ -1862,16 +2045,15 @@ class DatabaseService {
     return maps.map((map) => InventoryMovement.fromMap(map)).toList();
   }
 
-  /// Replace all inventory movements with a restored set from cloud sync.
-  /// The cloud backend stores a reduced movement payload, so quantityBefore
-  /// and quantityAfter are approximated from the available quantity change.
+  /// Merge cloud movements without discarding unsynced local movements.
   Future<void> replaceInventoryMovements(
     List<Map<String, dynamic>> movements,
   ) async {
     final db = await database;
     await db.transaction((txn) async {
-      await txn.delete('inventory_movements');
-      for (final movement in movements) {
+      final local = await txn.query('inventory_movements');
+      final merged = mergeInventoryMovements(local, movements);
+      for (final movement in merged.skip(local.length)) {
         await txn.insert('inventory_movements', movement);
       }
     });
