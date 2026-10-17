@@ -925,6 +925,40 @@ class DatabaseService {
     return 'PO-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-$timestamp';
   }
 
+  void _markPurchaseOrderPending(String number) {
+    if (_suppressCloudSync) return;
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_orders'] as Map?) ?? {},
+    );
+    pending[number] = ((pending[number] as num?)?.toInt() ?? 0) + 1;
+    _store['sync_pending_orders'] = pending;
+  }
+
+  Future<Map<String, int>> pendingPurchaseOrderVersions() async {
+    await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_orders'] as Map?) ?? {},
+    );
+    return {
+      for (final entry in pending.entries)
+        entry.key: (entry.value as num).toInt(),
+    };
+  }
+
+  Future<void> acknowledgePurchaseOrderVersions(
+    Map<String, int> versions,
+  ) async {
+    await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_orders'] as Map?) ?? {},
+    );
+    for (final entry in versions.entries) {
+      if (pending[entry.key] == entry.value) pending.remove(entry.key);
+    }
+    _store['sync_pending_orders'] = pending;
+    await _save();
+  }
+
   Future<int> insertPurchaseOrder(PurchaseOrder order) async {
     await _load();
     final orderId = _nextId('purchase_order');
@@ -940,6 +974,7 @@ class DatabaseService {
       items.add(itemMap);
     }
     _store['purchase_order_items'] = items;
+    _markPurchaseOrderPending(order.orderNumber);
     await _save();
     _queueCloudSync();
     return orderId;
@@ -947,6 +982,10 @@ class DatabaseService {
 
   Future<int> insertOrUpdatePurchaseOrder(PurchaseOrder order) async {
     await _load();
+    final pending = Map<String, dynamic>.from(
+      (_store['sync_pending_orders'] as Map?) ?? {},
+    );
+    if (pending.containsKey(order.orderNumber)) return 0;
     final orders = List.from(_store['purchase_orders'] as List<dynamic>);
     final idx = orders.indexWhere((m) => m['orderNumber'] == order.orderNumber);
     if (idx >= 0) {
@@ -1045,6 +1084,7 @@ class DatabaseService {
     }
     _store['purchase_orders'] = orders;
     _store['purchase_order_items'] = items;
+    _markPurchaseOrderPending(order.orderNumber);
     await _save();
     _queueCloudSync();
     return order.id!;
@@ -1066,6 +1106,7 @@ class DatabaseService {
       ..['approvalDate'] = DateTime.now().toIso8601String();
     orders[idx] = updated;
     _store['purchase_orders'] = orders;
+    _markPurchaseOrderPending(updated['orderNumber'] as String);
     await _save();
     _queueCloudSync();
     return orderId;
@@ -1080,6 +1121,7 @@ class DatabaseService {
       ..['status'] = status;
     orders[idx] = updated;
     _store['purchase_orders'] = orders;
+    _markPurchaseOrderPending(updated['orderNumber'] as String);
     await _save();
     _queueCloudSync();
     return orderId;

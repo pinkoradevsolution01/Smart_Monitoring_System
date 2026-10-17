@@ -1015,6 +1015,7 @@ class SupabaseSyncService extends ChangeNotifier {
   Future<void> _pushPurchaseOrders() async {
     try {
       final db = DatabaseService();
+      final pendingVersions = await db.pendingPurchaseOrderVersions();
       final orders = await db.getAllPurchaseOrders();
 
       if (orders.isEmpty) {
@@ -1068,6 +1069,7 @@ class SupabaseSyncService extends ChangeNotifier {
           'purchaseOrderItems': orderItems,
         },
       );
+      await db.acknowledgePurchaseOrderVersions(pendingVersions);
       _syncStats['purchase_orders_pushed'] = orders.length;
       _syncStats['purchase_order_items_pushed'] = orderItems.length;
       debugPrint('✅ Pushed ${orders.length} purchase orders');

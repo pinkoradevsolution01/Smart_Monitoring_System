@@ -1332,13 +1332,16 @@ class SmartPlusNotificationService extends ChangeNotifier {
         );
       }
 
-      if (status == 'approved') {
+      if (['approved', 'completed', 'partial'].contains(status) &&
+          (status == 'partial' ||
+              expected == null ||
+              !expected.isAfter(today))) {
         suggestions.add(
           _supplierRule(
             id: 'supplier-approved-restock-${order.orderNumber}',
-            title: 'Approved delivery needs receiving and restock',
+            title: 'Receiving of Delivery Today',
             message:
-                'Rule: Purchase Order ${order.orderNumber} is approved and ready for delivery receiving. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context',
+                'Rule: Purchase Order ${order.orderNumber} is ${order.status}. Supplier: ${order.supplierName}. Ordered: $orderedItems. $context Receive and restock only when the goods physically arrive.',
             level: impact.isEmpty
                 ? SmartPlusNotificationLevel.info
                 : SmartPlusNotificationLevel.warning,
@@ -1347,7 +1350,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
                 ? 'Current approved purchase order'
                 : 'Expected ${_formatDate(expected)}; current ${_formatDate(today)}',
             action:
-                'When goods physically arrive, mark the shipment complete, record received quantities, and restock good items. The task is complete after the restock is recorded; the expected delivery date does not block it.',
+                'When the goods arrive, open the linked purchase order, mark it completed if needed, record received and damaged quantities, and restock good items. A partial delivery remains open until the remainder is received.',
+            draftProposal: {'receivingOrderNumber': order.orderNumber},
           ),
         );
       }
@@ -1473,6 +1477,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
     required String source,
     required String range,
     required String action,
+    Map<String, dynamic>? draftProposal,
   }) => SmartPlusNotification(
     id: id,
     title: title,
@@ -1485,6 +1490,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
     why:
         'The purchase-order status, expected delivery date, and recorded receipt data meet this delivery review rule.',
     recordTarget: SmartPlusRecordTarget.suppliers,
+    draftProposal: draftProposal,
     requiresOwnerConfirmation: true,
   );
 

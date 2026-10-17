@@ -142,6 +142,16 @@ async function recheckActionData(action, businessId) {
   return { ok: true, message: 'Current tenant, owner session, subscription, and proposal data were rechecked.' };
 }
 
+async function recheckApprovedReorder(action, businessId) {
+  return require('../services/smartplus_order_checks').checkApprovedReorder(
+    query, businessId, action.id, Number(parseJson(action.proposal_json).productId),
+  );
+}
+
+async function recheckReceivedDelivery(orderNumber, businessId) {
+  return require('../services/smartplus_order_checks').checkReceivedDelivery(query, businessId, orderNumber);
+}
+
 router.use(requireActiveBusiness, requireOwner);
 
 router.get('/preferences', async (req, res) => {
@@ -306,7 +316,12 @@ router.post('/actions/:id/execute', requireCurrentSubscription, async (req, res)
     const action = await loadTenantAction(req.params.id, req.businessContext.businessId);
     if (!action) return res.status(404).json({ success: false, message: 'SmartPlus action draft not found.' });
     if (action.status !== 'approved') return res.status(409).json({ success: false, message: 'Only an owner-approved action can be executed.' });
-    const recheck = await recheckActionData(action, req.businessContext.businessId);
+    const receivingOrderNumber = parseJson(action.proposal_json).receivingOrderNumber;
+    const recheck = receivingOrderNumber != null
+      ? await recheckReceivedDelivery(receivingOrderNumber, req.businessContext.businessId)
+      : action.action_type === 'reorder'
+      ? await recheckApprovedReorder(action, req.businessContext.businessId)
+      : await recheckActionData(action, req.businessContext.businessId);
     if (!recheck.ok) return res.status(409).json({ success: false, message: recheck.message });
     const result = `${recheck.message} The owner marked the guided follow-up complete. SmartPlus did not change any business record automatically.`;
     await execute(

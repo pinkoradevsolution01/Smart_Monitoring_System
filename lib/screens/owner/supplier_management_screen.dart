@@ -7,6 +7,7 @@ import '../../models/purchase_order.dart';
 import '../../models/product.dart';
 import '../../models/damage_report.dart';
 import '../../services/database_service.dart';
+import '../../services/backend_api_service.dart';
 import '../../services/purchase_order_pdf_service.dart';
 import '../../services/smart_plus_action_service.dart';
 import '../../services/damage_return_pdf_service.dart';
@@ -19,6 +20,7 @@ class SupplierManagementScreen extends StatefulWidget {
   final Product? preselectedProduct;
   final int? preselectedQuantity;
   final String? smartPlusActionId;
+  final String? initialOrderNumber;
 
   const SupplierManagementScreen({
     super.key,
@@ -27,6 +29,7 @@ class SupplierManagementScreen extends StatefulWidget {
     this.preselectedProduct,
     this.preselectedQuantity,
     this.smartPlusActionId,
+    this.initialOrderNumber,
   });
 
   @override
@@ -67,10 +70,32 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
   String _damageQuery = '';
   String _orderStatusFilter = 'all';
   bool _loading = true;
+  bool _finishingSmartPlus = false;
+
+  String? get _smartPlusMarker => widget.smartPlusActionId == null
+      ? null
+      : '[SmartPlus action:${widget.smartPlusActionId}]';
+
+  PurchaseOrder? get _guidedOrder {
+    final marker = _smartPlusMarker;
+    if (marker == null) return null;
+    for (final order in _purchaseOrders) {
+      if (order.notes.contains(marker) && order.status != 'cancelled') {
+        return order;
+      }
+    }
+    return null;
+  }
+
+  bool _loadFailed = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialOrderNumber != null) {
+      _orderSearchController.text = widget.initialOrderNumber!;
+      _orderQuery = widget.initialOrderNumber!;
+    }
     _tabController = TabController(
       length: 4,
       vsync: this,
@@ -81,16 +106,67 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
     });
     _loadData().then((_) {
       // Auto-open create order dialog if requested
-      if (widget.autoCreateOrder == true && widget.preselectedProduct != null) {
+      if (!_loadFailed &&
+          widget.autoCreateOrder == true &&
+          widget.preselectedProduct != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _showCreateOrderDialog(
-              preselectedProduct: widget.preselectedProduct,
-            );
+            final existing = _guidedOrder;
+            if (existing == null) {
+              _showCreateOrderDialog(
+                preselectedProduct: widget.preselectedProduct,
+              );
+            } else if (existing.status == 'pending') {
+              _showApproveOrderDialog(existing);
+            } else {
+              _finishGuidedReorder(existing);
+            }
           }
         });
       }
     });
+  }
+
+  Future<void> _finishGuidedReorder(PurchaseOrder order) async {
+    final actionId = widget.smartPlusActionId;
+    if (actionId == null ||
+        _finishingSmartPlus ||
+        ![
+          'approved',
+          'completed',
+          'partial',
+          'received',
+        ].contains(order.status)) {
+      return;
+    }
+    setState(() => _finishingSmartPlus = true);
+    try {
+      await SmartPlusActionService().execute(actionId);
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        const SmartPlusOrderCreationResult(
+          orderCreated: true,
+          actionCompleted: true,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Order approved; the SmartPlus task is not complete yet. ${safeApiError(error)} Sync the order, then retry.',
+          ),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () => _finishGuidedReorder(order),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _finishingSmartPlus = false);
+    }
   }
 
   @override
@@ -104,6 +180,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
   }
 
   Future<void> _loadData() async {
+    _loadFailed = false;
     setState(() => _loading = true);
     try {
       final suppliers = await db.getAllSuppliers();
@@ -124,6 +201,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
         });
       }
     } catch (e) {
+      _loadFailed = true;
       if (mounted) {
         setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -252,6 +330,25 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
           AppLocalizations.t('supplier_management'),
           style: const TextStyle(color: Colors.white),
         ),
+        actions: [
+          if (_guidedOrder != null)
+            IconButton(
+              tooltip: _guidedOrder!.status == 'pending'
+                  ? 'Continue order approval'
+                  : 'Retry SmartPlus completion',
+              onPressed: _finishingSmartPlus
+                  ? null
+                  : () {
+                      final order = _guidedOrder!;
+                      if (order.status == 'pending') {
+                        _showApproveOrderDialog(order);
+                      } else {
+                        _finishGuidedReorder(order);
+                      }
+                    },
+              icon: const Icon(Icons.assignment_turned_in_outlined),
+            ),
+        ],
         iconTheme: const IconThemeData(color: Colors.white),
         bottom: TabBar(
           controller: _tabController,
@@ -2111,6 +2208,19 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     );
                     return;
                   }
+                  if (widget.smartPlusActionId != null &&
+                      !orderItems.any(
+                        (item) => item.productId == preselectedProduct?.id,
+                      )) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Keep the suggested product in this order to complete the reorder task.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
 
                   final orderNumber = db.generateOrderNumber();
                   final order = PurchaseOrder(
@@ -2122,37 +2232,22 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                     status: 'pending',
                     items: orderItems,
                     totalAmount: total,
-                    notes: notesController.text,
+                    notes: [
+                      notesController.text.trim(),
+                      ?_smartPlusMarker,
+                    ].where((part) => part.isNotEmpty).join('\n'),
                   );
 
-                  await db.insertPurchaseOrder(order);
+                  final orderId = await db.insertPurchaseOrder(order);
                   await _loadData();
-
-                  var actionCompleted = false;
-                  String? actionError;
                   final actionId = widget.smartPlusActionId;
-                  if (actionId != null && actionId.isNotEmpty) {
-                    try {
-                      await SmartPlusActionService().execute(actionId);
-                      actionCompleted = true;
-                    } catch (error) {
-                      actionError = error.toString();
-                    }
-                  }
 
                   if (mounted) {
                     Navigator.pop(ctx);
                     // Return true if this was an auto-created order from inventory
                     if (preselectedProduct != null) {
                       if (actionId != null && actionId.isNotEmpty) {
-                        Navigator.pop(
-                          context,
-                          SmartPlusOrderCreationResult(
-                            orderCreated: true,
-                            actionCompleted: actionCompleted,
-                            actionError: actionError,
-                          ),
-                        );
+                        _showApproveOrderDialog(order.copyWith(id: orderId));
                       } else {
                         Navigator.pop(context, true);
                       }
@@ -2168,7 +2263,7 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                 child: Text(
                   widget.smartPlusActionId == null
                       ? AppLocalizations.t('create_order')
-                      : 'Create order and complete SmartPlus action',
+                      : 'Create pending order',
                 ),
               ),
             ],
@@ -2506,7 +2601,12 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text(AppLocalizations.t('approve_order')),
+          title: Text(
+            widget.smartPlusActionId != null &&
+                    order.notes.contains(_smartPlusMarker ?? '')
+                ? 'Step 3 of 3: Approve the order'
+                : AppLocalizations.t('approve_order'),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2547,8 +2647,28 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                   return;
                 }
 
-                await db.approvePurchaseOrder(order.id!, 'Owner', signature);
-                await _loadData();
+                try {
+                  final changed = await db.approvePurchaseOrder(
+                    order.id!,
+                    'Owner',
+                    signature,
+                  );
+                  if (changed == 0) {
+                    throw StateError('Purchase order no longer exists');
+                  }
+                  await _loadData();
+                } catch (_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'The order could not be approved. Check the order and try again.',
+                        ),
+                      ),
+                    );
+                  }
+                  return;
+                }
 
                 if (mounted) {
                   Navigator.pop(ctx);
@@ -2558,6 +2678,13 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                       backgroundColor: Colors.green,
                     ),
                   );
+                  if (widget.smartPlusActionId != null &&
+                      order.notes.contains(_smartPlusMarker ?? '')) {
+                    final approved = await db.getPurchaseOrderById(order.id!);
+                    if (mounted && approved != null) {
+                      await _finishGuidedReorder(approved);
+                    }
+                  }
                 }
               },
               child: Text(AppLocalizations.t('approve_order')),

@@ -133,7 +133,7 @@ class _InventoryScreenState extends State<InventoryScreen>
           actionId: widget.smartPlusActionId ?? 'reorder-${product.id}',
           title: 'Reorder action completed',
           message:
-              'You created a supplier order for ${product.name} with $quantity suggested unit(s). Review the purchase order delivery status in Supplier Management.',
+              'Your supplier order for ${product.name} was created and approved. Receiving and restocking are a separate task when the delivery arrives.',
         );
       }
       await showDialog<void>(
@@ -143,7 +143,7 @@ class _InventoryScreenState extends State<InventoryScreen>
           icon: const Icon(Icons.celebration_rounded, color: Colors.green),
           title: const Text('Congratulations! You completed the task.'),
           content: Text(
-            'The supplier order for ${product.name} was created. SmartPlus recorded the completed reorder task and added an in-app notification. A completion email is also sent to the registered owner when SmartPlus email notifications are enabled.',
+            'The supplier order for ${product.name} was created and approved. When the delivery arrives, complete the separate receiving and restock task. SmartPlus recorded this reorder and added an in-app notification.',
           ),
           actions: [
             FilledButton(

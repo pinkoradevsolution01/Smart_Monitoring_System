@@ -3163,7 +3163,7 @@ class DatabaseService {
   Future<int> insertPurchaseOrder(PurchaseOrder order) async {
     final db = await database;
 
-    return await db.transaction((txn) async {
+    final result = await db.transaction((txn) async {
       // Insert order
       final orderId = await txn.insert('purchase_orders', order.toMap());
 
@@ -3175,7 +3175,51 @@ class DatabaseService {
         );
       }
 
+      await _markPurchaseOrderPending(txn, order.orderNumber);
       return orderId;
+    });
+    _queueCloudSync();
+    return result;
+  }
+
+  Future<void> _markPurchaseOrderPending(
+    DatabaseExecutor txn,
+    String number,
+  ) async {
+    if (_suppressCloudSync) return;
+    await txn.execute(
+      'CREATE TABLE IF NOT EXISTS sync_pending_orders (orderNumber TEXT PRIMARY KEY, revision INTEGER NOT NULL)',
+    );
+    await txn.rawInsert(
+      'INSERT INTO sync_pending_orders (orderNumber, revision) VALUES (?, 1) ON CONFLICT(orderNumber) DO UPDATE SET revision = revision + 1',
+      [number],
+    );
+  }
+
+  Future<Map<String, int>> pendingPurchaseOrderVersions() async {
+    final db = await database;
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS sync_pending_orders (orderNumber TEXT PRIMARY KEY, revision INTEGER NOT NULL)',
+    );
+    final rows = await db.query('sync_pending_orders');
+    return {
+      for (final row in rows)
+        row['orderNumber'] as String: row['revision'] as int,
+    };
+  }
+
+  Future<void> acknowledgePurchaseOrderVersions(
+    Map<String, int> versions,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final entry in versions.entries) {
+        await txn.delete(
+          'sync_pending_orders',
+          where: 'orderNumber = ? AND revision = ?',
+          whereArgs: [entry.key, entry.value],
+        );
+      }
     });
   }
 
@@ -3185,6 +3229,16 @@ class DatabaseService {
     final db = await database;
 
     return await db.transaction((txn) async {
+      await txn.execute(
+        'CREATE TABLE IF NOT EXISTS sync_pending_orders (orderNumber TEXT PRIMARY KEY, revision INTEGER NOT NULL)',
+      );
+      final pending = await txn.query(
+        'sync_pending_orders',
+        where: 'orderNumber = ?',
+        whereArgs: [order.orderNumber],
+        limit: 1,
+      );
+      if (pending.isNotEmpty) return 0;
       final existingRows = await txn.query(
         'purchase_orders',
         columns: ['id'],
@@ -3326,7 +3380,7 @@ class DatabaseService {
   Future<int> updatePurchaseOrder(PurchaseOrder order) async {
     final db = await database;
 
-    return await db.transaction((txn) async {
+    final result = await db.transaction((txn) async {
       // Update order
       await txn.update(
         'purchase_orders',
@@ -3350,8 +3404,11 @@ class DatabaseService {
         );
       }
 
+      await _markPurchaseOrderPending(txn, order.orderNumber);
       return order.id!;
     });
+    _queueCloudSync();
+    return result;
   }
 
   /// Approve purchase order with signature
@@ -3361,28 +3418,64 @@ class DatabaseService {
     String signatureData,
   ) async {
     final db = await database;
-    return db.update(
-      'purchase_orders',
-      {
-        'status': 'approved',
-        'approvedBy': approvedBy,
-        'signatureData': signatureData,
-        'approvalDate': DateTime.now().toIso8601String(),
-      },
-      where: 'id = ?',
-      whereArgs: [orderId],
-    );
+    final result = await db.transaction((txn) async {
+      final rows = await txn.update(
+        'purchase_orders',
+        {
+          'status': 'approved',
+          'approvedBy': approvedBy,
+          'signatureData': signatureData,
+          'approvalDate': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [orderId],
+      );
+      if (rows > 0) {
+        final orders = await txn.query(
+          'purchase_orders',
+          columns: ['orderNumber'],
+          where: 'id = ?',
+          whereArgs: [orderId],
+          limit: 1,
+        );
+        await _markPurchaseOrderPending(
+          txn,
+          orders.first['orderNumber'] as String,
+        );
+      }
+      return rows;
+    });
+    if (result > 0) _queueCloudSync();
+    return result;
   }
 
   /// Update purchase order status
   Future<int> updatePurchaseOrderStatus(int orderId, String status) async {
     final db = await database;
-    return db.update(
-      'purchase_orders',
-      {'status': status},
-      where: 'id = ?',
-      whereArgs: [orderId],
-    );
+    final result = await db.transaction((txn) async {
+      final rows = await txn.update(
+        'purchase_orders',
+        {'status': status},
+        where: 'id = ?',
+        whereArgs: [orderId],
+      );
+      if (rows > 0) {
+        final orders = await txn.query(
+          'purchase_orders',
+          columns: ['orderNumber'],
+          where: 'id = ?',
+          whereArgs: [orderId],
+          limit: 1,
+        );
+        await _markPurchaseOrderPending(
+          txn,
+          orders.first['orderNumber'] as String,
+        );
+      }
+      return rows;
+    });
+    if (result > 0) _queueCloudSync();
+    return result;
   }
 
   /// Delete purchase order

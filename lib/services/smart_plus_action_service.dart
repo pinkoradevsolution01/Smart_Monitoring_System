@@ -52,6 +52,7 @@ class SmartPlusActionService {
           if (!isBoundReorder) ...{
             'recommendedNextStep': notification.proposedAction,
             'recordTarget': notification.recordTarget?.name,
+            ...?notification.draftProposal,
           },
           // This stable link lets What needs attention today show the actual
           // server-recorded task state rather than offering duplicate drafts.

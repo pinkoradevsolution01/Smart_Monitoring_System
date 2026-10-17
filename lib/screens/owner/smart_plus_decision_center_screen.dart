@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import '../../services/smart_plus_notification_service.dart';
 import '../../services/smart_plus_action_service.dart';
 import '../../services/backend_api_service.dart';
+import '../../services/database_service.dart';
 import '../owner/customer_management_screen.dart';
 import '../owner/sales_report_screen.dart';
 import '../owner/supplier_management_screen.dart';
@@ -308,6 +309,7 @@ class _GuidedSmartPlusTaskScreenState
     extends State<_GuidedSmartPlusTaskScreen> {
   final _service = SmartPlusActionService();
   bool _workspaceOpened = false;
+  bool _receivingDone = false;
   bool _completing = false;
 
   String get _workspaceLabel => switch (widget.target) {
@@ -342,6 +344,37 @@ class _GuidedSmartPlusTaskScreenState
       widget.action.title.toLowerCase().contains('damage') ||
       widget.action.proposal['workflow'] == 'damage_settlement';
 
+  String? get _receivingOrderNumber =>
+      widget.action.proposal['receivingOrderNumber']?.toString();
+
+  Future<bool> _deliveryRecorded() async {
+    final number = _receivingOrderNumber;
+    if (number == null || number.isEmpty) return false;
+    final db = DatabaseService();
+    final order = await db.getPurchaseOrderByNumber(number);
+    if (order == null ||
+        order.status != 'received' ||
+        order.items.isEmpty ||
+        order.items.any((item) => item.receivedQuantity < item.quantity)) {
+      return false;
+    }
+    final restocks = await db.getAllRestockRecords();
+    for (final item in order.items) {
+      final recorded = restocks
+          .where(
+            (record) =>
+                record.productId == item.productId &&
+                record.referencedBy == 'Purchase Order $number',
+          )
+          .fold<int>(0, (sum, record) => sum + record.quantity);
+      final totalReceived = order.items
+          .where((line) => line.productId == item.productId)
+          .fold<int>(0, (sum, line) => sum + line.receivedQuantity);
+      if (recorded < totalReceived) return false;
+    }
+    return true;
+  }
+
   Future<void> _openWorkspace() async {
     final screen = switch (widget.target) {
       SmartPlusRecordTarget.inventory => InventoryScreen(
@@ -350,14 +383,62 @@ class _GuidedSmartPlusTaskScreenState
       SmartPlusRecordTarget.sales => const SalesReportScreen(),
       SmartPlusRecordTarget.customers => const CustomerManagementScreen(),
       SmartPlusRecordTarget.suppliers => SupplierManagementScreen(
-        initialTab: _isDamageSettlement ? 3 : null,
+        initialTab: _isDamageSettlement
+            ? 3
+            : _receivingOrderNumber != null
+            ? 2
+            : null,
+        initialOrderNumber: _receivingOrderNumber,
       ),
     };
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
-    if (mounted) setState(() => _workspaceOpened = true);
+    if (!mounted) return;
+    setState(() => _workspaceOpened = true);
+    if (_receivingOrderNumber != null) {
+      try {
+        final recorded = await _deliveryRecorded();
+        if (!mounted) return;
+        setState(() => _receivingDone = recorded);
+        if (recorded) await _completeTask();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Unable to verify this delivery. Please retry.'),
+            ),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _completeTask() async {
+    bool recorded = true;
+    try {
+      if (_receivingOrderNumber != null) recorded = await _deliveryRecorded();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to verify this delivery. Please retry.'),
+          ),
+        );
+      }
+      return;
+    }
+    if (!recorded) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This delivery is not fully received and restocked yet. Partial deliveries remain open.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
     final confirmed =
         await showDialog<bool>(
           context: context,
@@ -455,7 +536,9 @@ class _GuidedSmartPlusTaskScreenState
             number: 2,
             title: 'Complete the follow-up in $_workspaceLabel',
             detail: _workspaceInstruction,
-            complete: _workspaceOpened,
+            complete: _receivingOrderNumber == null
+                ? _workspaceOpened
+                : _receivingDone,
             action: FilledButton.icon(
               onPressed: _openWorkspace,
               icon: const Icon(Icons.open_in_new_rounded),
