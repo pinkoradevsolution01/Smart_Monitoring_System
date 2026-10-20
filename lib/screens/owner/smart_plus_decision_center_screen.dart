@@ -803,10 +803,11 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
         await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Cancel this review?'),
-            content: Text(
-              '“${draft.title}” stays saved in Action review center. '
-              'No approval, business data, or SmartPlus recommendation changes.',
+            title: const Text('Remove this task?'),
+            content: const Text(
+              'This task will be removed from your active Action Review Center. '
+              'It will not cancel a supplier order or change stock, prices, sales, or payments. '
+              'SmartPlus retains an audit record of your decision.',
             ),
             actions: [
               TextButton(
@@ -815,20 +816,27 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
               ),
               FilledButton.tonal(
                 onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Cancel review'),
+                child: const Text('Remove task'),
               ),
             ],
           ),
         ) ??
         false;
-    if (!close || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Review closed. The saved recommendation remains available for later.',
-        ),
-      ),
-    );
+    if (!close) return;
+    try {
+      await _service.dismiss(draft.id);
+      if (!mounted) return;
+      _reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task removed from Action Review Center.')),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
+      }
+    }
   }
 
   Future<void> _showDetails(SmartPlusActionDraft draft) async {

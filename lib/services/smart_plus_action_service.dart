@@ -36,6 +36,15 @@ class SmartPlusActionService {
     );
   }
 
+  /// Removes an incomplete action from the active owner queue. The backend
+  /// retains an audit record and never changes business data as a result.
+  Future<SmartPlusActionDraft> dismiss(String id) async {
+    final response = await _api.post('smartplus/actions/$id/dismiss');
+    return SmartPlusActionDraft.fromMap(
+      Map<String, dynamic>.from(response['action'] as Map),
+    );
+  }
+
   Future<void> draftAction(
     SmartPlusNotification notification, {
     required String actionType,

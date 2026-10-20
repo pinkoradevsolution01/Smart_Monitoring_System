@@ -227,7 +227,8 @@ router.get('/actions', async (req, res) => {
   try {
     const rows = await query(
       `SELECT * FROM smartplus_action_drafts
-        WHERE business_id = ? ORDER BY created_at DESC LIMIT 100`,
+        WHERE business_id = ? AND status <> 'rejected'
+        ORDER BY created_at DESC LIMIT 100`,
       [req.businessContext.businessId],
     );
     return res.json({ success: true, actions: rows.map(actionFromRow) });
@@ -287,6 +288,62 @@ router.get('/actions/:id/audit', async (req, res) => {
   } catch (error) {
     console.error('SmartPlus action audit read error:', error.message);
     return res.status(500).json({ success: false, message: 'Unable to load SmartPlus action audit trail.' });
+  }
+});
+
+// Removing an item from the active queue is not a physical delete. Retaining
+// it as rejected preserves the owner decision and audit trail, while avoiding
+// any change to supplier orders, inventory, sales, prices, or payments.
+router.post('/actions/:id/dismiss', limitOwnerWrites, async (req, res) => {
+  try {
+    const action = await loadTenantAction(
+      req.params.id,
+      req.businessContext.businessId,
+    );
+    if (!action) {
+      return res.status(404).json({
+        success: false,
+        message: 'SmartPlus action draft not found.',
+      });
+    }
+
+    const dismissibleStatuses = new Set(['draft', 'pending', 'approved']);
+    if (!dismissibleStatuses.has(action.status)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Only an incomplete SmartPlus review can be removed.',
+      });
+    }
+
+    const result =
+      'Removed from the active Action Review Center by the owner. No business record was changed.';
+    await execute(
+      `UPDATE smartplus_action_drafts
+          SET status = 'rejected', result_message = ?
+        WHERE id = ? AND business_id = ?
+          AND status IN ('draft', 'pending', 'approved')`,
+      [result, action.id, req.businessContext.businessId],
+    );
+    await auditAction({
+      actionId: action.id,
+      businessId: req.businessContext.businessId,
+      actorId: req.businessContext.userId,
+      eventType: 'owner_dismissed',
+      details: { previousStatus: action.status },
+    });
+    return res.json({
+      success: true,
+      message: result,
+      action: actionFromRow(
+        await loadTenantAction(action.id, req.businessContext.businessId),
+      ),
+    });
+  } catch (error) {
+    console.error('SmartPlus action dismissal error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to remove the SmartPlus action from review.',
+    });
   }
 });
 
