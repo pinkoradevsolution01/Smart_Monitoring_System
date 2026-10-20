@@ -430,6 +430,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
   }
 
   List<IconData> get _sectionIcons => [
+    Icons.play_circle_outline_rounded,
     Icons.download,
     Icons.rocket_launch,
     Icons.people,
