@@ -614,13 +614,13 @@ class AppLocalizations {
       // About System
       'about': 'About',
       'about_system': 'About the System',
-      'system_subtitle': 'Integrated POS and CCTV Monitoring',
+      'system_subtitle': 'Integrated POS, inventory, and SmartPlus insights',
       'developed_by': 'Developed By',
       'brand': 'Brand',
       'version': 'Version',
       'release_date': 'Release Date',
       'about_description':
-          'A comprehensive retail management solution combining Point-of-Sale operations with advanced CCTV monitoring capabilities. Designed to streamline business operations and enhance security.',
+          'A unified retail management system for Point-of-Sale, inventory, customers, reports, and SmartPlus guidance—built to support clear, confident business decisions.',
       // Financial Monitoring
       'financial_monitoring': 'Financial Monitoring',
       'financial_monitoring_desc':
@@ -2142,13 +2142,14 @@ Visit: www.pinkoradev.com''',
       // About System
       'about': 'Tungkol',
       'about_system': 'Tungkol sa Sistema',
-      'system_subtitle': 'Integrated POS at CCTV Monitoring',
+      'system_subtitle':
+          'Pinagsamang POS, imbentaryo, at mga insight ng SmartPlus',
       'developed_by': 'Ginawa Ni',
       'brand': 'Brand',
       'version': 'Bersyon',
       'release_date': 'Petsa ng Release',
       'about_description':
-          'Isang komprehensibong retail management solution na pinagsasama ang Point-of-Sale operations at advanced CCTV monitoring capabilities. Dinisenyo upang gawing mas simple ang mga operasyon ng negosyo at pahusayin ang seguridad.',
+          'Isang pinag-isang retail management system para sa Point-of-Sale, imbentaryo, customers, reports, at gabay ng SmartPlus—upang masuportahan ang malinaw at may kumpiyansang pagpapasya sa negosyo.',
       // Financial Monitoring
       'financial_monitoring': 'Pagsubaybay sa Pananalapi',
       'financial_monitoring_desc':

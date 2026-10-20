@@ -961,19 +961,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // System Icon
+                // Official Smart Monitoring System brand logo.
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  width: 112,
+                  height: 112,
+                  padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
                     ).colorScheme.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.store,
-                    size: 64,
-                    color: Theme.of(context).colorScheme.primary,
+                  child: Image.asset(
+                    'assets/branding/smart_logo.png',
+                    fit: BoxFit.contain,
+                    semanticLabel: 'Smart Monitoring System logo',
+                    errorBuilder: (_, _, _) => Icon(
+                      Icons.store_rounded,
+                      size: 56,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -1007,21 +1014,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   Icons.business,
                   AppLocalizations.t('brand'),
-                  'Pinkora Dev',
+                  'JVerse',
                 ),
                 const SizedBox(height: 16),
                 _buildInfoRow(
                   context,
                   Icons.code,
                   AppLocalizations.t('version'),
-                  '1.0.0',
+                  '1.1.0',
                 ),
                 const SizedBox(height: 16),
                 _buildInfoRow(
                   context,
                   Icons.calendar_today,
                   AppLocalizations.t('release_date'),
-                  'December 2025',
+                  'October 21, 2026',
                 ),
                 const SizedBox(height: 24),
                 const Divider(),
@@ -1033,7 +1040,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '© 2025 Pinkora Dev. All rights reserved.',
+                  '© 2026 JVerse. All rights reserved.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[500],
                     fontStyle: FontStyle.italic,
