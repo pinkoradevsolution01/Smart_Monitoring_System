@@ -650,6 +650,8 @@ class _ActionDraftsSheet extends StatefulWidget {
 class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
   final _service = SmartPlusActionService();
   late Future<List<SmartPlusActionDraft>> _drafts = _service.listDrafts();
+  final Set<String> _removingTaskIds = <String>{};
+  final Set<String> _removedTaskIds = <String>{};
 
   void _reload() => setState(() => _drafts = _service.listDrafts());
 
@@ -695,6 +697,10 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                         itemCount: drafts.length,
                         itemBuilder: (context, index) {
                           final draft = drafts[index];
+                          final isRemoving = _removingTaskIds.contains(
+                            draft.id,
+                          );
+                          final isRemoved = _removedTaskIds.contains(draft.id);
                           final card = Card(
                             key: ValueKey('action-review-${draft.id}'),
                             child: ListTile(
@@ -746,12 +752,31 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                             'pending',
                             'approved',
                           }.contains(draft.status.toLowerCase());
-                          return canCancelReview
+                          final swipeableCard = canCancelReview
                               ? _SwipeToCancelReview(
                                   onCancel: () => _closeReview(draft),
                                   child: card,
                                 )
                               : card;
+                          // Start the exit instantly after confirmation. If
+                          // the tenant-protected backend rejects dismissal,
+                          // the card is restored instead of being lost.
+                          return AnimatedSize(
+                            key: ValueKey('action-review-size-${draft.id}'),
+                            duration: const Duration(milliseconds: 160),
+                            curve: Curves.easeInOut,
+                            alignment: Alignment.topCenter,
+                            child: isRemoved
+                                ? const SizedBox.shrink()
+                                : AnimatedSlide(
+                                    duration: const Duration(milliseconds: 180),
+                                    curve: Curves.easeInCubic,
+                                    offset: isRemoving
+                                        ? const Offset(1, 0)
+                                        : Offset.zero,
+                                    child: swipeableCard,
+                                  ),
+                          );
                         },
                       ),
               ),
@@ -823,20 +848,42 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
         ) ??
         false;
     if (!close) return;
+    final dismissal = _service.dismiss(draft.id);
+    setState(() => _removingTaskIds.add(draft.id));
     try {
-      await _service.dismiss(draft.id);
+      // Let the owner see a fast, clear exit before waiting for a slow
+      // network. The task will return if the server refuses the change.
+      await Future<void>.delayed(const Duration(milliseconds: 180));
       if (!mounted) return;
-      _reload();
+      setState(() {
+        _removingTaskIds.remove(draft.id);
+        _removedTaskIds.add(draft.id);
+      });
+      await dismissal;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task removed from Action Review Center.')),
+        const SnackBar(
+          content: Text('Task removed from Action Review Center.'),
+        ),
       );
     } catch (error) {
       if (mounted) {
+        setState(() {
+          _removingTaskIds.remove(draft.id);
+          _removedTaskIds.remove(draft.id);
+        });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
+        ).showSnackBar(SnackBar(content: Text(_dismissError(error))));
       }
     }
+  }
+
+  String _dismissError(Object error) {
+    if (error is ApiException && error.statusCode == 404) {
+      return 'Task removal is not available on the server yet. Deploy the latest backend update, then try again.';
+    }
+    return safeApiError(error);
   }
 
   Future<void> _showDetails(SmartPlusActionDraft draft) async {
