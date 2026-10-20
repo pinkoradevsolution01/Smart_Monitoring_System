@@ -690,6 +690,25 @@ class AppLocalizations {
       'agreement_termination_content':
           'This agreement remains in effect until terminated. Your access may be terminated immediately without notice if you violate any terms of this agreement. Upon termination, you must cease all use of the system. Data may be retained as required by law or business needs. Administrators have the right to deactivate user accounts at any time.',
       // User Manual Sections
+      'manual_start_here': 'Start Here: Set Up Your Business',
+      'manual_start_here_content': '''Use this sequence for every new business:
+
+1. Sign in with the Google account that will own the business.
+2. Create the owner account and enter accurate business details.
+3. Select and activate the subscription package that fits the business.
+4. Complete the setup checklist: add products, add a cashier if needed, and review the first-sale flow.
+5. Add products with a barcode, selling price, current stock, and low-stock level.
+6. Add suppliers before creating purchase orders or receiving deliveries.
+7. Complete a small test sale, confirm the receipt, and check the inventory movement.
+8. Review SmartPlus suggestions. Treat every suggestion as guidance: open the source records and approve only the actions you want to complete.
+
+Use the links below to open the exact feature for the next step.''',
+      'manual_open_smartplus': 'Open SmartPlus',
+      'manual_open_inventory': 'Open Inventory',
+      'manual_open_suppliers': 'Open Supplier Management',
+      'manual_open_customers': 'Open Customer Management',
+      'manual_open_sales_reports': 'Open Sales Reports',
+      'manual_open_backup': 'Open Backup & Restore',
       'manual_installation': 'Installation Instructions',
       'manual_installation_content': '''System Requirements:
 
@@ -2222,6 +2241,26 @@ Visit: www.pinkoradev.com''',
           'Ang kasunduang ito ay nananatiling epektibo hanggang sa wakasan. Ang iyong access ay maaaring wakasan kaagad nang walang paunawa kung lumabag ka sa anumang tuntunin ng kasunduang ito. Sa pagtatapos, dapat mong ihinto ang lahat ng paggamit ng sistema. Ang datos ay maaaring panatilihin ayon sa kinakailangan ng batas o pangangailangan ng negosyo. Ang mga administrator ay may karapatang mag-deactivate ng mga user account anumang oras.',
 
       // User Manual Sections (Filipino)
+      'manual_start_here': 'Magsimula: I-set Up ang Iyong Negosyo',
+      'manual_start_here_content':
+          '''Gamitin ang pagkakasunod na ito para sa bawat bagong negosyo:
+
+1. Mag-sign in gamit ang Google account na magiging may-ari ng negosyo.
+2. Gumawa ng owner account at ilagay ang wastong detalye ng negosyo.
+3. Piliin at i-activate ang subscription package na angkop sa negosyo.
+4. Kumpletuhin ang setup checklist: magdagdag ng produkto, magdagdag ng cashier kung kailangan, at suriin ang unang sale flow.
+5. Magdagdag ng mga produkto na may barcode, selling price, kasalukuyang stock, at low-stock level.
+6. Magdagdag muna ng suppliers bago gumawa ng purchase order o tumanggap ng delivery.
+7. Gumawa ng maliit na test sale, kumpirmahin ang receipt, at tingnan ang inventory movement.
+8. Suriin ang mga mungkahi ng SmartPlus. Gabay lamang ang bawat mungkahi: buksan ang source records at aprubahan lamang ang mga action na gusto mong tapusin.
+
+Gamitin ang mga link sa ibaba upang buksan ang eksaktong feature para sa susunod na hakbang.''',
+      'manual_open_smartplus': 'Buksan ang SmartPlus',
+      'manual_open_inventory': 'Buksan ang Imbentaryo',
+      'manual_open_suppliers': 'Buksan ang Supplier Management',
+      'manual_open_customers': 'Buksan ang Customer Management',
+      'manual_open_sales_reports': 'Buksan ang Sales Reports',
+      'manual_open_backup': 'Buksan ang Backup at Restore',
       'manual_installation': 'Mga Tagubilin sa Pag-install',
       'manual_installation_content': '''Mga Kinakailangan ng Sistema:
 

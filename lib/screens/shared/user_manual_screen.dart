@@ -10,6 +10,12 @@ import 'package:path_provider/path_provider.dart';
 // 'dart:typed_data' not required; provided by other imports
 import '../../utils/app_localizations.dart';
 import '../../services/setup_progress_service.dart';
+import '../owner/backup_restore_screen.dart';
+import '../owner/customer_management_screen.dart';
+import '../owner/sales_report_screen.dart';
+import '../owner/smart_plus_decision_center_screen.dart';
+import '../owner/supplier_management_screen.dart';
+import 'inventory_screen.dart';
 
 class UserManualScreen extends StatefulWidget {
   const UserManualScreen({super.key});
@@ -28,7 +34,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
   void initState() {
     super.initState();
     _sectionKeys = List.generate(
-      11, // Updated to 11 sections
+      12,
       (index) => GlobalKey(debugLabel: 'section_$index'),
     );
   }
@@ -66,6 +72,15 @@ class _UserManualScreenState extends State<UserManualScreen> {
 
   List<ManualSection> get _sections => [
     ManualSection(
+      title: AppLocalizations.t('manual_start_here'),
+      content: AppLocalizations.t('manual_start_here_content'),
+      links: const [
+        ManualLink('manual_open_smartplus', ManualDestination.smartPlus),
+        ManualLink('manual_open_inventory', ManualDestination.inventory),
+        ManualLink('manual_open_suppliers', ManualDestination.suppliers),
+      ],
+    ),
+    ManualSection(
       title: AppLocalizations.t('manual_installation'),
       content: AppLocalizations.t('manual_installation_content'),
     ),
@@ -84,10 +99,20 @@ class _UserManualScreenState extends State<UserManualScreen> {
     ManualSection(
       title: AppLocalizations.t('manual_admin_features'),
       content: AppLocalizations.t('manual_admin_features_content'),
+      links: const [
+        ManualLink('manual_open_inventory', ManualDestination.inventory),
+      ],
     ),
     ManualSection(
       title: AppLocalizations.t('manual_owner_features'),
       content: AppLocalizations.t('manual_owner_features_content'),
+      links: const [
+        ManualLink('manual_open_smartplus', ManualDestination.smartPlus),
+        ManualLink('manual_open_sales_reports', ManualDestination.salesReports),
+        ManualLink('manual_open_inventory', ManualDestination.inventory),
+        ManualLink('manual_open_customers', ManualDestination.customers),
+        ManualLink('manual_open_suppliers', ManualDestination.suppliers),
+      ],
     ),
     ManualSection(
       title: AppLocalizations.t('manual_cashier_features'),
@@ -96,10 +121,15 @@ class _UserManualScreenState extends State<UserManualScreen> {
     ManualSection(
       title: AppLocalizations.t('manual_backup'),
       content: AppLocalizations.t('manual_backup_content'),
+      links: const [ManualLink('manual_open_backup', ManualDestination.backup)],
     ),
     ManualSection(
       title: AppLocalizations.t('manual_quick_start'),
       content: AppLocalizations.t('manual_quick_start_content'),
+      links: const [
+        ManualLink('manual_open_inventory', ManualDestination.inventory),
+        ManualLink('manual_open_customers', ManualDestination.customers),
+      ],
     ),
     ManualSection(
       title: AppLocalizations.t('manual_troubleshooting'),
@@ -164,7 +194,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
             // Title page
             content.addAll([
               pw.Text(
-                'Smart Store Monitoring System',
+                'Smart Monitoring System',
                 style: titleStyle,
                 textAlign: pw.TextAlign.center,
               ),
@@ -176,7 +206,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
               ),
               pw.SizedBox(height: 3),
               pw.Text(
-                'Version 1.0 - December 19, 2025',
+                'Version 1.1.0 - October 21, 2026',
                 style: normalStyle,
                 textAlign: pw.TextAlign.center,
               ),
@@ -229,7 +259,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
               pw.Divider(thickness: 1),
               pw.SizedBox(height: 5),
               pw.Text(
-                'Copyright © 2025 Pinkora Dev. All rights reserved.',
+                'Copyright © 2026 JVerse. All rights reserved.',
                 style: smallStyle,
                 textAlign: pw.TextAlign.center,
               ),
@@ -433,9 +463,9 @@ class _UserManualScreenState extends State<UserManualScreen> {
                 const SizedBox(height: 16),
                 Text(
                   'User Manual is locked',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -601,13 +631,41 @@ class _UserManualScreenState extends State<UserManualScreen> {
                           // Content
                           Padding(
                             padding: EdgeInsets.all(isMobile ? 16 : 24),
-                            child: SelectableText(
-                              section.content,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    height: 1.6,
-                                    fontSize: isMobile ? 13 : 14,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SelectableText(
+                                  section.content,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        height: 1.6,
+                                        fontSize: isMobile ? 13 : 14,
+                                      ),
+                                ),
+                                if (section.links.isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      for (final link in section.links)
+                                        OutlinedButton.icon(
+                                          onPressed: () =>
+                                              _openManualDestination(
+                                                link.destination,
+                                              ),
+                                          icon: const Icon(
+                                            Icons.open_in_new_rounded,
+                                            size: 18,
+                                          ),
+                                          label: Text(
+                                            AppLocalizations.t(link.labelKey),
+                                          ),
+                                        ),
+                                    ],
                                   ),
+                                ],
+                              ],
                             ),
                           ),
                         ],
@@ -621,6 +679,18 @@ class _UserManualScreenState extends State<UserManualScreen> {
         ],
       ),
     );
+  }
+
+  void _openManualDestination(ManualDestination destination) {
+    final Widget screen = switch (destination) {
+      ManualDestination.smartPlus => const SmartPlusDecisionCenterScreen(),
+      ManualDestination.inventory => const InventoryScreen(),
+      ManualDestination.suppliers => const SupplierManagementScreen(),
+      ManualDestination.customers => const CustomerManagementScreen(),
+      ManualDestination.salesReports => const SalesReportScreen(),
+      ManualDestination.backup => const BackupRestoreScreen(),
+    };
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _buildNavigationMenu(bool isDark) {
@@ -894,6 +964,27 @@ class _UserManualScreenState extends State<UserManualScreen> {
 class ManualSection {
   final String title;
   final String content;
+  final List<ManualLink> links;
 
-  ManualSection({required this.title, required this.content});
+  ManualSection({
+    required this.title,
+    required this.content,
+    this.links = const [],
+  });
+}
+
+class ManualLink {
+  const ManualLink(this.labelKey, this.destination);
+
+  final String labelKey;
+  final ManualDestination destination;
+}
+
+enum ManualDestination {
+  smartPlus,
+  inventory,
+  suppliers,
+  customers,
+  salesReports,
+  backup,
 }
