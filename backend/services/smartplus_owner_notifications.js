@@ -101,7 +101,10 @@ function supplierDeliverySuggestions(rows = []) {
       };
     }
     return {
-      level: 'info',
+      // Due-today delivery reminders are owner-actionable. Marking this as a
+      // warning makes it eligible for the existing preference-controlled,
+      // deduplicated Resend owner email flow.
+      level: 'warning',
       title: 'Supplier delivery is due today',
       message: `${prefix} Status: due today.${impactText} Suggested next step: Confirm the delivery schedule with supplier.`,
     };

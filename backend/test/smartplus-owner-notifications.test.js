@@ -48,6 +48,20 @@ test('SmartPlus supplier delivery suggestions identify the order, timing, impact
   assert.match(suggestions[0].message, /Confirm delivery status/);
 });
 
+test('due-today delivery is an owner email reminder', () => {
+  const suggestions = supplierDeliverySuggestions([{
+    order_number: 'PO-DUE-TODAY',
+    supplier_name: 'ABC Supplies',
+    ordered_items: 'Milk x12',
+    expected_delivery: '2026-10-21',
+    overdue_days: 0,
+    status: 'approved',
+  }]);
+  assert.equal(suggestions.length, 1);
+  assert.equal(suggestions[0].title, 'Supplier delivery is due today');
+  assert.equal(suggestions[0].level, 'warning');
+});
+
 test('received and fully restocked orders do not fall through to overdue emails', () => {
   const received = {
     order_number: 'PO-20261016-4154015', status: 'received',

@@ -695,7 +695,8 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                         itemCount: drafts.length,
                         itemBuilder: (context, index) {
                           final draft = drafts[index];
-                          return Card(
+                          final card = Card(
+                            key: ValueKey('action-review-${draft.id}'),
                             child: ListTile(
                               leading: _ActionStatusIcon(status: draft.status),
                               onTap: () => _showDetails(draft),
@@ -734,6 +735,12 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                                   : null,
                             ),
                           );
+                          return draft.status == 'draft'
+                              ? _SwipeToCancelReview(
+                                  onCancel: () => _closeReview(draft),
+                                  child: card,
+                                )
+                              : card;
                         },
                       ),
               ),
@@ -778,6 +785,39 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
         ).showSnackBar(SnackBar(content: Text(safeApiError(error))));
       }
     }
+  }
+
+  Future<void> _closeReview(SmartPlusActionDraft draft) async {
+    final close =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Cancel this review?'),
+            content: Text(
+              '“${draft.title}” stays saved in Action review center. '
+              'No approval, business data, or SmartPlus recommendation changes.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Keep reviewing'),
+              ),
+              FilledButton.tonal(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Cancel review'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!close || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Review closed. The saved recommendation remains available for later.',
+        ),
+      ),
+    );
   }
 
   Future<void> _showDetails(SmartPlusActionDraft draft) async {
@@ -872,6 +912,91 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
     'staff_follow_up' => 'Owner follow-up',
     _ => 'Owner follow-up',
   };
+}
+
+/// A visual control only: cancelling does not change a draft or business data.
+class _SwipeToCancelReview extends StatefulWidget {
+  const _SwipeToCancelReview({required this.child, required this.onCancel});
+
+  final Widget child;
+  final VoidCallback onCancel;
+
+  @override
+  State<_SwipeToCancelReview> createState() => _SwipeToCancelReviewState();
+}
+
+class _SwipeToCancelReviewState extends State<_SwipeToCancelReview> {
+  double _progress = 0;
+
+  void _reset() => setState(() => _progress = 0);
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    final scheme = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, constraints) => Semantics(
+        label: 'Swipe left to cancel review',
+        child: Stack(
+          alignment: Alignment.centerRight,
+          children: [
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.error,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 20),
+                    child: TextButton.icon(
+                      onPressed: widget.onCancel,
+                      icon: Icon(Icons.close_rounded, color: scheme.onError),
+                      label: Text(
+                        'Cancel review',
+                        style: TextStyle(color: scheme.onError),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragUpdate: (details) {
+                final delta = details.primaryDelta;
+                if (delta == null || delta >= 0 || constraints.maxWidth <= 0) {
+                  return;
+                }
+                setState(() {
+                  _progress = (_progress + (-delta / constraints.maxWidth))
+                      .clamp(0, .42);
+                });
+              },
+              onHorizontalDragEnd: (details) {
+                if (_progress >= .25 || (details.primaryVelocity ?? 0) < -700) {
+                  _reset();
+                  widget.onCancel();
+                } else {
+                  _reset();
+                }
+              },
+              child: AnimatedSlide(
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                offset: Offset(-_progress, 0),
+                child: widget.child,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ActionSafetyNotice extends StatelessWidget {
