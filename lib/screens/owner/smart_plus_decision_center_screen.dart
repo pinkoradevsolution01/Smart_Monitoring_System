@@ -735,7 +735,18 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
                                   : null,
                             ),
                           );
-                          return draft.status == 'draft'
+                          // Older guided tasks may be returned as `pending`,
+                          // while a reorder can be awaiting delivery after
+                          // its SmartPlus review was approved. Both are still
+                          // incomplete review work, so preserve the same
+                          // visual, UI-only cancel affordance. Completed and
+                          // terminal tasks deliberately remain protected.
+                          final canCancelReview = const {
+                            'draft',
+                            'pending',
+                            'approved',
+                          }.contains(draft.status.toLowerCase());
+                          return canCancelReview
                               ? _SwipeToCancelReview(
                                   onCancel: () => _closeReview(draft),
                                   child: card,
