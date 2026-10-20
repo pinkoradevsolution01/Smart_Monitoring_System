@@ -941,28 +941,43 @@ class _SwipeToCancelReviewState extends State<_SwipeToCancelReview> {
         child: Stack(
           alignment: Alignment.centerRight,
           children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.error,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 20),
-                    child: TextButton.icon(
-                      onPressed: widget.onCancel,
-                      icon: Icon(Icons.close_rounded, color: scheme.onError),
-                      label: Text(
-                        'Cancel review',
-                        style: TextStyle(color: scheme.onError),
+            // Do not keep the destructive-action colour behind the card.
+            // Cards have rounded edges and a small default margin, which
+            // would otherwise expose a red outline before the user swipes.
+            if (_progress > 0)
+              Positioned(
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: constraints.maxWidth * _progress,
+                child: ClipRect(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.error,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: OverflowBox(
+                      alignment: Alignment.centerRight,
+                      minWidth: 0,
+                      maxWidth: 168,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 20),
+                        child: TextButton.icon(
+                          onPressed: widget.onCancel,
+                          icon: Icon(
+                            Icons.close_rounded,
+                            color: scheme.onError,
+                          ),
+                          label: Text(
+                            'Cancel review',
+                            style: TextStyle(color: scheme.onError),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
             GestureDetector(
               behavior: HitTestBehavior.translucent,
               onHorizontalDragUpdate: (details) {
