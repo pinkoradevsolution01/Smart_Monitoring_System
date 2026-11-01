@@ -171,7 +171,25 @@ router.get('/suppliers', async (req, res) => {
          COUNT(po.id) purchase_order_count,
          COALESCE(SUM(po.total_amount), 0) total_ordered,
          COALESCE(SUM(po.status NOT IN ('received', 'cancelled')), 0) open_order_count,
-         MAX(po.order_date) last_order_date
+         MAX(po.order_date) last_order_date,
+         (
+           SELECT latest_po.status
+           FROM purchase_orders latest_po
+           WHERE latest_po.business_id = s.business_id
+             AND latest_po.supplier_id = s.id
+             AND latest_po.order_date >= ? AND latest_po.order_date < ?
+           ORDER BY latest_po.order_date DESC, latest_po.created_at DESC
+           LIMIT 1
+         ) delivery_status,
+         (
+           SELECT latest_po.expected_delivery
+           FROM purchase_orders latest_po
+           WHERE latest_po.business_id = s.business_id
+             AND latest_po.supplier_id = s.id
+             AND latest_po.order_date >= ? AND latest_po.order_date < ?
+           ORDER BY latest_po.order_date DESC, latest_po.created_at DESC
+           LIMIT 1
+         ) expected_delivery
        FROM suppliers s
        LEFT JOIN purchase_orders po
          ON po.supplier_id = s.id
@@ -180,7 +198,7 @@ router.get('/suppliers', async (req, res) => {
        WHERE s.business_id = ?
        GROUP BY s.id, s.name, s.contact_person, s.email, s.phone, s.address, s.is_active, s.created_at
        ORDER BY s.is_active DESC, last_order_date DESC, s.name ASC`,
-      [from, toExclusive, businessId],
+      [from, toExclusive, from, toExclusive, from, toExclusive, businessId],
     );
     return res.json({ success: true, data: { summary: { ...summary, ...orderSummary }, suppliers }, meta: meta(req) });
   } catch (error) {

@@ -77,8 +77,8 @@ function analyticsDb(calls) {
         return [{ purchaseOrders: 1, openPurchaseOrders: 1, totalOrdered: 420 }];
       }
       if (sql.includes('FROM suppliers s')) {
-        assert.deepEqual(params, ['2026-08-01', '2026-08-31', 'business-a']);
-        return [{ id: 'supplier-a', name: 'Supplier A', is_active: 1, purchase_order_count: 1, total_ordered: 420, open_order_count: 1, last_order_date: '2026-08-20 10:00:00' }];
+        assert.deepEqual(params, ['2026-08-01', '2026-08-31', '2026-08-01', '2026-08-31', '2026-08-01', '2026-08-31', 'business-a']);
+        return [{ id: 'supplier-a', name: 'Supplier A', is_active: 1, purchase_order_count: 1, total_ordered: 420, open_order_count: 1, last_order_date: '2026-08-20 10:00:00', delivery_status: 'pending', expected_delivery: '2026-08-25 10:00:00' }];
       }
       if (sql.includes('FROM smartplus_action_drafts')) {
         assert.deepEqual(params, ['business-a']);
@@ -175,6 +175,7 @@ test('analytics supplies and SmartPlus notifications are tenant-scoped and owner
       const supplierBody = await suppliers.json();
       assert.equal(supplierBody.meta.businessId, 'business-a');
       assert.equal(supplierBody.data.suppliers[0].id, 'supplier-a');
+      assert.equal(supplierBody.data.suppliers[0].delivery_status, 'pending');
 
       const notifications = await fetch(`${base}/api/analytics/notifications?businessId=business-b`, {
         headers: { Authorization: `Bearer ${ownerToken}` },
