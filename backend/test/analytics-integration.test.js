@@ -68,6 +68,22 @@ function analyticsDb(calls) {
       if (sql.includes('SUM(subtotal)')) return [{ grossSales: 120, discounts: 5, netSales: 115, transactions: 1, averageOrderValue: 115, itemsSold: 2 }];
       if (sql.includes('COUNT(*) activeCustomers')) return [{ activeCustomers: 4 }];
       if (sql.includes('COUNT(*) lowStockCount')) return [{ lowStockCount: 1 }];
+      if (sql.includes('COUNT(*) totalSuppliers')) {
+        assert.deepEqual(params, ['business-a']);
+        return [{ totalSuppliers: 2, activeSuppliers: 2 }];
+      }
+      if (sql.includes('COUNT(*) purchaseOrders')) {
+        assert.deepEqual(params, ['business-a', '2026-08-01', '2026-08-31']);
+        return [{ purchaseOrders: 1, openPurchaseOrders: 1, totalOrdered: 420 }];
+      }
+      if (sql.includes('FROM suppliers s')) {
+        assert.deepEqual(params, ['2026-08-01', '2026-08-31', 'business-a']);
+        return [{ id: 'supplier-a', name: 'Supplier A', is_active: 1, purchase_order_count: 1, total_ordered: 420, open_order_count: 1, last_order_date: '2026-08-20 10:00:00' }];
+      }
+      if (sql.includes('FROM smartplus_action_drafts')) {
+        assert.deepEqual(params, ['business-a']);
+        return [{ id: 'draft-a', action_type: 'reorder', title: 'Reorder coffee beans', status: 'draft', created_at: '2026-08-20 10:00:00', updated_at: '2026-08-20 10:00:00' }];
+      }
       if (sql.includes('MAX(CASE WHEN event_type')) return [{ lastSuccessfulSync: '2026-08-30 09:30:00', lastFailedSync: null }];
       if (sql.includes('FROM operational_events')) return [{ event_type: 'sync_success', severity: 'info', message: 'Business synchronization completed.', created_at: '2026-08-30 09:30:00' }];
       if (sql.includes('GROUP BY DATE(datetime)')) return [];
@@ -138,6 +154,42 @@ test('analytics rejects missing tokens and roles outside the analytics allow-lis
       });
       assert.equal(wrongAudience.status, 401);
       assert.equal(calls.length, 0);
+    });
+  } finally {
+    loaded.restore();
+  }
+});
+
+test('analytics supplies and SmartPlus notifications are tenant-scoped and owner-safe', async () => {
+  const calls = [];
+  const loaded = loadRouter('analytics', analyticsDb(calls));
+  const ownerToken = signTestSession({ userId: 'owner-a', role: 'owner', businessId: 'business-a' });
+  const managerToken = signTestSession({ userId: 'owner-a', role: 'manager', businessId: 'business-a' });
+
+  try {
+    await withServer(loaded.router, '/api/analytics', async (base) => {
+      const suppliers = await fetch(`${base}/api/analytics/suppliers?from=2026-08-01&to=2026-08-30&businessId=business-b`, {
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+      assert.equal(suppliers.status, 200);
+      const supplierBody = await suppliers.json();
+      assert.equal(supplierBody.meta.businessId, 'business-a');
+      assert.equal(supplierBody.data.suppliers[0].id, 'supplier-a');
+
+      const notifications = await fetch(`${base}/api/analytics/notifications?businessId=business-b`, {
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+      assert.equal(notifications.status, 200);
+      const notificationBody = await notifications.json();
+      assert.equal(notificationBody.data.notifications[0].title, 'Reorder coffee beans');
+      assert.equal(notificationBody.data.notifications[0].proposal, undefined);
+
+      const managerNotifications = await fetch(`${base}/api/analytics/notifications`, {
+        headers: { Authorization: `Bearer ${managerToken}` },
+      });
+      assert.equal(managerNotifications.status, 403);
+
+      for (const call of calls) assert.equal(call.params.includes('business-b'), false);
     });
   } finally {
     loaded.restore();

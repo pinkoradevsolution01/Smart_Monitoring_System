@@ -145,6 +145,87 @@ router.get('/inventory', async (req, res) => { const { businessId } = req.analyt
 
 router.get('/customers', async (req, res) => { const { businessId } = req.analytics; const { from, toExclusive } = req.analyticsRange; const { value, pageSize, offset } = page(req); try { const [total] = await query(`SELECT COUNT(*) total FROM customers WHERE business_id = ?`, [businessId]); const [summary] = await query(`SELECT COUNT(*) activeCustomers, SUM(created_at >= ? AND created_at < ?) newCustomers FROM customers WHERE business_id = ? AND is_active = 1`, [from, toExclusive, businessId]); const rows = await query(`SELECT id, customer_code, full_name, phone_number, email, address, points_balance, lifetime_points, created_at, is_active FROM customers WHERE business_id = ? ORDER BY created_at DESC LIMIT ${pageSize} OFFSET ${offset}`, [businessId]); res.json({ success: true, data: { summary, customers: rows }, pagination: { page: value, pageSize, total: total.total }, meta: meta(req) }); } catch (error) { console.error('Analytics customers error:', error); res.status(500).json({ success: false, message: 'Failed to load customer analytics.' }); } });
 
+router.get('/suppliers', async (req, res) => {
+  const { businessId } = req.analytics;
+  const { from, toExclusive } = req.analyticsRange;
+  try {
+    const [summary] = await query(
+      `SELECT
+         COUNT(*) totalSuppliers,
+         COALESCE(SUM(is_active = 1), 0) activeSuppliers
+       FROM suppliers WHERE business_id = ?`,
+      [businessId],
+    );
+    const [orderSummary] = await query(
+      `SELECT
+         COUNT(*) purchaseOrders,
+         COALESCE(SUM(status NOT IN ('received', 'cancelled')), 0) openPurchaseOrders,
+         COALESCE(SUM(total_amount), 0) totalOrdered
+       FROM purchase_orders
+       WHERE business_id = ? AND order_date >= ? AND order_date < ?`,
+      [businessId, from, toExclusive],
+    );
+    const suppliers = await query(
+      `SELECT
+         s.id, s.name, s.contact_person, s.email, s.phone, s.address, s.is_active, s.created_at,
+         COUNT(po.id) purchase_order_count,
+         COALESCE(SUM(po.total_amount), 0) total_ordered,
+         COALESCE(SUM(po.status NOT IN ('received', 'cancelled')), 0) open_order_count,
+         MAX(po.order_date) last_order_date
+       FROM suppliers s
+       LEFT JOIN purchase_orders po
+         ON po.supplier_id = s.id
+        AND po.business_id = s.business_id
+        AND po.order_date >= ? AND po.order_date < ?
+       WHERE s.business_id = ?
+       GROUP BY s.id, s.name, s.contact_person, s.email, s.phone, s.address, s.is_active, s.created_at
+       ORDER BY s.is_active DESC, last_order_date DESC, s.name ASC`,
+      [from, toExclusive, businessId],
+    );
+    return res.json({ success: true, data: { summary: { ...summary, ...orderSummary }, suppliers }, meta: meta(req) });
+  } catch (error) {
+    console.error('Analytics suppliers error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load supplier analytics.' });
+  }
+});
+
+// SmartPlus is intentionally owner-only in Smart Monitoring. Analytics exposes
+// only the owner queue's notification-safe fields, never a proposal/evidence
+// payload, and derives the business scope exclusively from the signed session.
+router.get('/notifications', async (req, res) => {
+  if (req.analytics.role !== 'owner') {
+    return res.json({ success: true, data: { notifications: [], unreadCount: 0 }, meta: meta(req) });
+  }
+  try {
+    const notifications = await query(
+      `SELECT id, action_type, title, status, created_at, updated_at
+       FROM smartplus_action_drafts
+       WHERE business_id = ? AND status IN ('draft', 'approved')
+       ORDER BY created_at DESC LIMIT 20`,
+      [req.analytics.businessId],
+    );
+    return res.json({
+      success: true,
+      data: {
+        notifications: notifications.map((notification) => ({
+          id: notification.id,
+          source: 'SmartPlus',
+          actionType: notification.action_type,
+          title: notification.title,
+          status: notification.status,
+          createdAt: notification.created_at,
+          updatedAt: notification.updated_at,
+        })),
+        unreadCount: notifications.length,
+      },
+      meta: meta(req),
+    });
+  } catch (error) {
+    console.error('Analytics SmartPlus notification error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load SmartPlus notifications.' });
+  }
+});
+
 router.get('/operations', async (req, res) => {
   const { businessId } = req.analytics;
   const { from, toExclusive } = req.analyticsRange;
@@ -165,7 +246,7 @@ router.get('/cctv-events', async (req, res) => { const { businessId } = req.anal
 
 router.get('/export', async (req, res) => {
   const report = String(req.query.report || 'overview');
-  const supportedReports = new Set(['overview', 'sales', 'inventory', 'customers', 'operations', 'cctv-events']);
+  const supportedReports = new Set(['overview', 'sales', 'inventory', 'customers', 'suppliers', 'operations', 'cctv-events']);
   if (!supportedReports.has(report)) {
     return res.status(400).json({ success: false, message: 'Invalid export report.' });
   }
@@ -214,6 +295,24 @@ router.get('/export', async (req, res) => {
       );
       return sendCsv(res, `customers-${from}-to-${to}`,
         ['Customer', 'Points balance', 'Lifetime points', 'Created at', 'Active'], rows.map(Object.values));
+    }
+
+    if (report === 'suppliers') {
+      const rows = await query(
+        `SELECT s.name, s.contact_person, s.email, s.phone, s.is_active,
+          COUNT(po.id) purchase_orders, COALESCE(SUM(po.total_amount), 0) total_ordered,
+          MAX(po.order_date) last_order_date
+         FROM suppliers s
+         LEFT JOIN purchase_orders po
+           ON po.supplier_id = s.id AND po.business_id = s.business_id
+          AND po.order_date >= ? AND po.order_date < ?
+         WHERE s.business_id = ?
+         GROUP BY s.id, s.name, s.contact_person, s.email, s.phone, s.is_active
+         ORDER BY s.name`,
+        [from, toExclusive, businessId],
+      );
+      return sendCsv(res, `suppliers-${from}-to-${to}`,
+        ['Supplier', 'Contact person', 'Email', 'Phone', 'Active', 'Purchase orders', 'Total ordered', 'Last order date'], rows.map(Object.values));
     }
 
     if (report === 'cctv-events') {
