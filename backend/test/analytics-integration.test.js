@@ -68,6 +68,8 @@ function analyticsDb(calls) {
       if (sql.includes('SUM(subtotal)')) return [{ grossSales: 120, discounts: 5, netSales: 115, transactions: 1, averageOrderValue: 115, itemsSold: 2 }];
       if (sql.includes('COUNT(*) activeCustomers')) return [{ activeCustomers: 4 }];
       if (sql.includes('COUNT(*) lowStockCount')) return [{ lowStockCount: 1 }];
+      if (sql.includes('MAX(CASE WHEN event_type')) return [{ lastSuccessfulSync: '2026-08-30 09:30:00', lastFailedSync: null }];
+      if (sql.includes('FROM operational_events')) return [{ event_type: 'sync_success', severity: 'info', message: 'Business synchronization completed.', created_at: '2026-08-30 09:30:00' }];
       if (sql.includes('GROUP BY DATE(datetime)')) return [];
       if (sql.includes('GROUP BY payment_method')) return [];
       if (sql.includes('FROM sale_items')) return [];
@@ -95,6 +97,9 @@ test('analytics ignores a browser-supplied businessId and scopes overview and CS
       const overviewBody = await overview.json();
       assert.equal(overviewBody.meta.businessId, 'business-a');
       assert.equal(overviewBody.meta.businessName, 'Business A');
+      assert.equal(overviewBody.data.comparisons.netSales, 0);
+      assert.equal(overviewBody.data.dataHealth.status, 'synced');
+      assert.equal(overviewBody.data.dataHealth.lastSuccessfulSync, '2026-08-30 09:30:00');
 
       const csv = await fetch(`${base}/api/analytics/export?report=sales&from=2026-08-01&to=2026-08-30&businessId=business-b`, {
         headers: { Authorization: `Bearer ${ownerToken}` },

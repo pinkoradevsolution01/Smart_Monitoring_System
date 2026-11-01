@@ -4,7 +4,7 @@ const { tokenFromRequest, verifySession } = require('../security/session_tokens'
 
 const router = express.Router();
 const BUSINESS_ROLES = new Set(['owner', 'admin', 'manager']);
-const MAX_RANGE_DAYS = 366;
+const MAX_RANGE_DAYS = 3653;
 const MAX_PAGE_SIZE = 100;
 function tenantScopeFromToken(auth) { return auth?.businessId || null; }
 
@@ -38,6 +38,30 @@ async function requireBusinessAnalytics(req, res, next) {
 }
 
 function meta(req) { return { businessId: req.analytics.businessId, from: req.analyticsRange.from, to: req.analyticsRange.to, timezone: 'Asia/Manila', generatedAt: new Date().toISOString() }; }
+function percentageChange(current, previous) {
+  const currentValue = Number(current || 0);
+  const previousValue = Number(previous || 0);
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue)) return null;
+  if (previousValue === 0) return currentValue === 0 ? 0 : null;
+  return Number((((currentValue - previousValue) / Math.abs(previousValue)) * 100).toFixed(1));
+}
+function priorRange(from, to) {
+  const dayMs = 86400000;
+  const fromMs = Date.parse(`${from}T00:00:00Z`);
+  const toMs = Date.parse(`${to}T00:00:00Z`);
+  const periodDays = Math.round((toMs - fromMs) / dayMs) + 1;
+  return {
+    from: new Date(fromMs - periodDays * dayMs).toISOString().slice(0, 10),
+    toExclusive: from,
+  };
+}
+function activityIcon(eventType, severity) {
+  if (severity === 'error') return '⚠';
+  if (eventType === 'sync_success') return '↻';
+  if (eventType === 'sale_completed') return '↗';
+  if (eventType === 'inventory_low') return '□';
+  return '•';
+}
 function page(req) { const value = Math.max(1, Number.parseInt(req.query.page, 10) || 1); const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 25)); return { value, pageSize, offset: (value - 1) * pageSize }; }
 function sendCsv(res, filename, headers, rows) {
   // Excel and similar spreadsheet programs evaluate cells beginning with one
@@ -66,16 +90,49 @@ router.get('/developer/subscriptions', dateRange, async (req, res) => {
 router.use(requireBusinessAnalytics, dateRange);
 
 router.get('/overview', async (req, res) => {
-  const { businessId } = req.analytics; const { from, toExclusive } = req.analyticsRange;
+  const { businessId } = req.analytics;
+  const { from, to, toExclusive } = req.analyticsRange;
+  const previous = priorRange(from, to);
   try {
     const [kpi] = await query(`SELECT COALESCE(SUM(subtotal),0) grossSales, COALESCE(SUM(discount),0) discounts, COALESCE(SUM(total_amount),0) netSales, COUNT(*) transactions, COALESCE(SUM(total_amount) / NULLIF(COUNT(*), 0), 0) averageOrderValue, COALESCE(SUM(item_count),0) itemsSold FROM sales WHERE business_id = ? AND status = 'completed' AND datetime >= ? AND datetime < ?`, [businessId, from, toExclusive]);
+    const [previousKpi] = await query(`SELECT COALESCE(SUM(subtotal),0) grossSales, COALESCE(SUM(discount),0) discounts, COALESCE(SUM(total_amount),0) netSales, COUNT(*) transactions, COALESCE(SUM(total_amount) / NULLIF(COUNT(*), 0), 0) averageOrderValue, COALESCE(SUM(item_count),0) itemsSold FROM sales WHERE business_id = ? AND status = 'completed' AND datetime >= ? AND datetime < ?`, [businessId, previous.from, previous.toExclusive]);
     const [customers] = await query(`SELECT COUNT(*) activeCustomers FROM customers WHERE business_id = ? AND is_active = 1`, [businessId]);
     const [low] = await query(`SELECT COUNT(*) lowStockCount FROM products WHERE business_id = ? AND quantity > 0 AND quantity <= low_stock_threshold`, [businessId]);
     const salesSeries = await query(`SELECT DATE(datetime) date, COALESCE(SUM(subtotal),0) gross, COALESCE(SUM(total_amount),0) net, COUNT(*) orders FROM sales WHERE business_id = ? AND status = 'completed' AND datetime >= ? AND datetime < ? GROUP BY DATE(datetime) ORDER BY date`, [businessId, from, toExclusive]);
     const payments = await query(`SELECT payment_method name, COALESCE(SUM(total_amount),0) value FROM sales WHERE business_id = ? AND status = 'completed' AND datetime >= ? AND datetime < ? GROUP BY payment_method ORDER BY value DESC`, [businessId, from, toExclusive]);
     const topProducts = await query(`SELECT si.product_name name, SUM(si.quantity) sold, SUM(si.subtotal) revenue FROM sale_items si INNER JOIN sales s ON s.id = si.sale_id AND s.business_id = si.business_id WHERE s.business_id = ? AND s.status = 'completed' AND s.datetime >= ? AND s.datetime < ? GROUP BY si.product_id, si.product_name ORDER BY sold DESC, revenue DESC LIMIT 10`, [businessId, from, toExclusive]);
     const lowStock = await query(`SELECT name, quantity, low_stock_threshold threshold, CASE WHEN quantity <= 0 THEN 'Out of stock' ELSE 'Low' END status FROM products WHERE business_id = ? AND quantity <= low_stock_threshold ORDER BY quantity ASC LIMIT 10`, [businessId]);
-    res.json({ success: true, data: { kpis: { ...kpi, activeCustomers: customers.activeCustomers, lowStockCount: low.lowStockCount }, salesSeries, payments, topProducts, lowStock, recentActivity: [] }, meta: { ...meta(req), businessName: req.analytics.businessName } });
+    const [syncHealth] = await query(`SELECT MAX(CASE WHEN event_type = 'sync_success' THEN created_at END) lastSuccessfulSync, MAX(CASE WHEN event_type = 'sync_failed' THEN created_at END) lastFailedSync FROM operational_events WHERE business_id = ?`, [businessId]);
+    const events = await query(`SELECT event_type, severity, message, created_at FROM operational_events WHERE business_id = ? ORDER BY created_at DESC LIMIT 6`, [businessId]);
+    res.json({
+      success: true,
+      data: {
+        kpis: { ...kpi, activeCustomers: customers.activeCustomers, lowStockCount: low.lowStockCount },
+        comparisons: {
+          previousPeriod: { from: previous.from, to: new Date(Date.parse(`${from}T00:00:00Z`) - 86400000).toISOString().slice(0, 10) },
+          netSales: percentageChange(kpi.netSales, previousKpi.netSales),
+          transactions: percentageChange(kpi.transactions, previousKpi.transactions),
+          averageOrderValue: percentageChange(kpi.averageOrderValue, previousKpi.averageOrderValue),
+        },
+        dataHealth: {
+          lastSuccessfulSync: syncHealth?.lastSuccessfulSync || null,
+          lastFailedSync: syncHealth?.lastFailedSync || null,
+          status: syncHealth?.lastSuccessfulSync ? 'synced' : 'awaiting_sync',
+        },
+        salesSeries,
+        payments,
+        topProducts,
+        lowStock,
+        recentActivity: events.map((event) => ({
+          type: event.event_type,
+          title: event.message,
+          time: event.created_at,
+          icon: activityIcon(event.event_type, event.severity),
+          severity: event.severity,
+        })),
+      },
+      meta: { ...meta(req), businessName: req.analytics.businessName },
+    });
   } catch (error) { console.error('Analytics overview error:', error); res.status(500).json({ success: false, message: 'Failed to build analytics overview.' }); }
 });
 
