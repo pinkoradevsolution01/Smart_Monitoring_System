@@ -461,15 +461,18 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
-          if (s.status != 'cancelled')
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _confirmDeactivation(s);
-              },
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Deactivate'),
+          // Revoking a code changes the subscription to cancelled, but it
+          // must not hide the separate subscriber-purge action.
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _confirmDeactivation(s);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(
+              s.status == 'cancelled' ? 'Delete permanently' : 'Deactivate',
             ),
+          ),
         ],
       ),
     );
@@ -497,16 +500,23 @@ class _SubscribersScreenState extends State<SubscribersScreen>
   }
 
   void _confirmDeactivation(Subscriber s) {
+    final wasAlreadyCancelled = s.status == 'cancelled';
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('⚠️ Confirm Deactivation'),
+        title: Text(
+          wasAlreadyCancelled
+              ? 'Permanently Remove Subscriber'
+              : '⚠️ Confirm Deactivation',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Are you sure you want to deactivate ${s.name}?',
+              wasAlreadyCancelled
+                  ? 'Remove ${s.name} and block this email from registering again?'
+                  : 'Are you sure you want to deactivate ${s.name}?',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
@@ -515,9 +525,13 @@ class _SubscribersScreenState extends State<SubscribersScreen>
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
-            const Text('• Mark linked subscription records as inactive'),
+            Text(
+              wasAlreadyCancelled
+                  ? '• Keep the code cancelled and block future registration'
+                  : '• Mark linked subscription records as inactive',
+            ),
             const Text('• Remove the subscriber’s local and business data'),
-            const Text('• Reset the system to an inactive subscriber state'),
+            const Text('• Remove access to the cloud system'),
             const SizedBox(height: 12),
             const Text(
               '⚠️ This action CANNOT be undone!',
@@ -539,7 +553,9 @@ class _SubscribersScreenState extends State<SubscribersScreen>
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Deactivate'),
+            child: Text(
+              wasAlreadyCancelled ? 'Delete permanently' : 'Deactivate',
+            ),
           ),
         ],
       ),
