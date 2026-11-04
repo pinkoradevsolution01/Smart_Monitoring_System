@@ -239,15 +239,14 @@ class SubscriberService extends ChangeNotifier {
 
     await syncFromAllSources();
 
-    final stillActive = _subs.values.any(
+    final stillListed = _subs.values.any(
       (s) =>
-          s.status == 'active' &&
-          (s.id == subscriber.id ||
-              s.email.trim().toLowerCase() == normalizedEmail),
+          s.id == subscriber.id ||
+          s.email.trim().toLowerCase() == normalizedEmail,
     );
-    if (stillActive) {
+    if (stillListed) {
       throw Exception(
-        'Deactivation request sent but subscriber still exists in cloud records. Please sync again.',
+        'The cloud still lists this subscriber. The deletion was not confirmed; please retry.',
       );
     }
 
@@ -374,6 +373,16 @@ class SubscriberService extends ChangeNotifier {
               );
               customerEmail =
                   request['contact_email'] as String? ?? subscriberName;
+              // A permanent subscriber purge retains cancelled subscription
+              // records for audit, but the cancelled request is the
+              // authoritative signal that this tenant must no longer appear
+              // in the active subscriber management list.
+              if (request['status']?.toString().toLowerCase() == 'cancelled') {
+                debugPrint(
+                  '[SubscriberService] Skipping permanently cancelled subscriber: $customerEmail',
+                );
+                continue;
+              }
               debugPrint(
                 '[SubscriberService] ✅ Found email for $subscriberName: $customerEmail',
               );

@@ -15,6 +15,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
     with WidgetsBindingObserver {
   final SubscriberService _svc = SubscriberService();
   bool _isSyncing = false;
+  bool _isDeactivating = false;
   Timer? _refreshTimer;
 
   @override
@@ -464,10 +465,12 @@ class _SubscribersScreenState extends State<SubscribersScreen>
           // Revoking a code changes the subscription to cancelled, but it
           // must not hide the separate subscriber-purge action.
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _confirmDeactivation(s);
-            },
+            onPressed: _isDeactivating
+                ? null
+                : () {
+                    Navigator.pop(context);
+                    _confirmDeactivation(s);
+                  },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: Text(
               s.status == 'cancelled' ? 'Delete permanently' : 'Deactivate',
@@ -545,10 +548,15 @@ class _SubscribersScreenState extends State<SubscribersScreen>
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _deactivateSubscriber(s);
-            },
+            onPressed: _isDeactivating
+                ? null
+                : () async {
+                    // Set the guard before closing the dialog so a fast
+                    // double-tap cannot send a second destructive request.
+                    setState(() => _isDeactivating = true);
+                    Navigator.pop(context);
+                    await _deactivateSubscriber(s);
+                  },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -596,7 +604,7 @@ class _SubscribersScreenState extends State<SubscribersScreen>
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${s.name} has been deactivated successfully'),
+          content: Text('${s.name} was permanently removed from cloud access.'),
           backgroundColor: Colors.green,
         ),
       );
@@ -615,6 +623,10 @@ class _SubscribersScreenState extends State<SubscribersScreen>
           backgroundColor: Colors.red,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() => _isDeactivating = false);
+      }
     }
   }
 }
