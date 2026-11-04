@@ -122,3 +122,62 @@ test('subscriber purge rejects missing and non-developer sessions before any del
     loaded.restore();
   }
 });
+
+test('only a developer can revoke a code and a revoked device is reported inactive', async () => {
+  const calls = [];
+  const db = {
+    async query(sql, params = []) {
+      calls.push({ sql, params });
+      if (sql.includes('FROM developer_accounts WHERE id = ?')) {
+        return [{ id: 'primary', email: 'dev@example.com', is_active: 1 }];
+      }
+      if (sql.includes('SELECT code FROM activation_codes WHERE code = ?')) {
+        return [{ code: 'code-revoked' }];
+      }
+      if (sql.includes('SELECT c.status AS code_status')) {
+        return [{
+          code_status: 'revoked', subscription_status: 'cancelled',
+          package_name: 'Premium', expires_at: null,
+        }];
+      }
+      if (sql.startsWith('UPDATE activation_codes') || sql.startsWith('UPDATE subscriptions')) {
+        return [{ affectedRows: 1 }];
+      }
+      throw new Error(`Unexpected SQL: ${sql}`);
+    },
+  };
+  const loaded = loadRouter('license', db);
+  const owner = session({ userId: 'owner-a', role: 'owner', businessId: 'business-a' });
+  const developer = session({ userId: 'primary', role: 'developer' });
+  try {
+    await withServer('/api/license', loaded.router, async (base) => {
+      const missing = await fetch(`${base}/api/license/codes/code-revoked/revoke`, { method: 'POST' });
+      assert.equal(missing.status, 401);
+
+      const denied = await fetch(`${base}/api/license/codes/code-revoked/revoke`, {
+        method: 'POST', headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'not allowed' }),
+      });
+      assert.equal(denied.status, 403);
+
+      const revoked = await fetch(`${base}/api/license/codes/code-revoked/revoke`, {
+        method: 'POST', headers: { Authorization: `Bearer ${developer}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'cancelled by developer' }),
+      });
+      assert.equal(revoked.status, 200);
+
+      const status = await fetch(`${base}/api/license/status`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: 'code-revoked', deviceId: 'device-a' }),
+      });
+      assert.equal(status.status, 200);
+      const body = await status.json();
+      assert.equal(body.active, false);
+      assert.equal(body.reason, 'revoked');
+    });
+    assert.ok(calls.some((call) => call.sql.startsWith('UPDATE activation_codes')));
+    assert.ok(calls.some((call) => call.sql.startsWith('UPDATE subscriptions')));
+  } finally {
+    loaded.restore();
+  }
+});

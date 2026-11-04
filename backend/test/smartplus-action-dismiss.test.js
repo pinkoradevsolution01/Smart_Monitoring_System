@@ -68,8 +68,11 @@ test('only the owner can dismiss their tenant SmartPlus task, preserving an audi
           id: params[0], business_id: 'business-a',
           role: isCashier ? 'cashier' : 'owner',
           user_active: 1, business_active: 1,
-          subscription_package: 'Premium', subscription_expires_at: null,
+          owner_email: 'owner@example.com', subscription_package: 'Premium', subscription_expires_at: null,
         }];
+      }
+      if (sql.includes('FROM activation_code_requests r')) {
+        return [{ activation_code: 'code-a', package_name: 'Premium', expires_at: null }];
       }
       if (sql.includes('FROM smartplus_action_drafts WHERE id = ?')) {
         if (params[0] !== 'draft-a' || params[1] !== 'business-a') return [];

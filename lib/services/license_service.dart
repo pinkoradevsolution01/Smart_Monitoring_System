@@ -105,6 +105,16 @@ class LicenseService extends ChangeNotifier {
     // Store previous lock state to detect changes
     final wasLocked = _isLocked;
 
+    // A developer revocation is persistent.  Do not allow an old local
+    // preference to unlock the app after it has been checked remotely.
+    if (_subscriptionMode == 'revoked') {
+      _isLocked = true;
+      if (wasLocked != _isLocked) {
+        notifyListeners();
+      }
+      return;
+    }
+
     // MONTHLY RENTAL: Check if subscription has expired
     if (_subscriptionExpires != null &&
         DateTime.now().isAfter(_subscriptionExpires!)) {
@@ -124,6 +134,12 @@ class LicenseService extends ChangeNotifier {
     if (_isActivated &&
         _activationCode != null &&
         _activationCode!.isNotEmpty) {
+      final remoteActive = await _verifyRemoteActivation();
+      if (remoteActive == false) {
+        await _lockRevokedActivation();
+        return;
+      }
+
       // Check if subscription is still valid
       if (_subscriptionExpires == null ||
           DateTime.now().isBefore(_subscriptionExpires!)) {
@@ -178,6 +194,79 @@ class LicenseService extends ChangeNotifier {
       );
       notifyListeners();
     }
+  }
+
+  /// Returns `false` only when the authoritative backend confirms that this
+  /// device's activation is no longer valid. A connectivity failure returns
+  /// null so that a temporary outage cannot erase a legitimate local license;
+  /// protected backend operations remain server-side subscription-gated.
+  Future<bool?> _verifyRemoteActivation() async {
+    if (!BackendConfig.useRestBackend ||
+        _activationCode == null ||
+        _activationCode!.isEmpty) {
+      return null;
+    }
+
+    try {
+      final deviceId = _deviceId ?? await DeviceFingerprint.getDeviceId();
+      final response = await _api.postJson(
+        'license/status',
+        body: {'code': _activationCode, 'deviceId': deviceId},
+      );
+      if (response is! Map<String, dynamic> || response['success'] != true) {
+        debugPrint('LicenseService: License status response was invalid.');
+        return null;
+      }
+
+      final isActive = response['active'] == true;
+      if (!isActive) {
+        debugPrint(
+          'LicenseService: Backend rejected the local activation (${response['reason'] ?? 'inactive'}).',
+        );
+        return false;
+      }
+
+      final expiresAt = response['expiresAt']?.toString();
+      if (expiresAt != null && expiresAt.isNotEmpty) {
+        final parsedExpiry = DateTime.tryParse(expiresAt);
+        if (parsedExpiry != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+            _subscriptionExpiresKey,
+            parsedExpiry.toIso8601String(),
+          );
+          _subscriptionExpires = parsedExpiry;
+        }
+      }
+      return true;
+    } catch (error) {
+      debugPrint(
+        'LicenseService: Remote license status check unavailable: $error',
+      );
+      return null;
+    }
+  }
+
+  /// Removes the cached authorization after a server-confirmed revocation or
+  /// cancellation. The explicit mode keeps the app locked after restart until
+  /// the business activates a new code.
+  Future<void> _lockRevokedActivation() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activationCodeKey);
+    await prefs.setBool(_activationStatusKey, false);
+    await prefs.remove(_activationDateKey);
+    await prefs.remove(_subscriptionExpiresKey);
+    await prefs.setString(_subscriptionModeKey, 'revoked');
+
+    _activationCode = null;
+    _isActivated = false;
+    _subscriptionExpires = null;
+    _subscriptionMode = 'revoked';
+    _isLocked = true;
+    notifyListeners();
+    debugPrint(
+      'LicenseService: Local activation was locked by backend revocation.',
+    );
   }
 
   /// Activate the app with an activation code using Supabase

@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../db');
 const { tokenFromRequest, verifySession } = require('../security/session_tokens');
+const { activeEntitlementForOwner } = require('../security/business_access');
 
 const router = express.Router();
 const BUSINESS_ROLES = new Set(['owner', 'admin', 'manager']);
@@ -26,12 +27,15 @@ async function requireBusinessAnalytics(req, res, next) {
     const auth = verifySession(token);
     const businessId = tenantScopeFromToken(auth);
     if (!businessId || !BUSINESS_ROLES.has(String(auth.role || '').toLowerCase())) return res.status(403).json({ success: false, message: 'Analytics access is not permitted.' });
-    const rows = await query(`SELECT u.id, u.role AS user_role, u.is_active AS user_active, b.id, b.name, b.is_active AS business_active
+    const rows = await query(`SELECT u.id, u.role AS user_role, u.is_active AS user_active, b.id, b.name, b.owner_email, b.is_active AS business_active
       FROM users u INNER JOIN businesses b ON b.id = u.business_id WHERE u.id = ? AND u.business_id = ? LIMIT 1`, [auth.userId, businessId]);
     const user = rows[0];
     const databaseRole = String(user?.user_role || '').toLowerCase();
     if (!user || (user.user_active ?? 1) !== 1 || (user.business_active ?? 1) !== 1) return res.status(403).json({ success: false, message: 'The account or business is inactive.' });
     if (!BUSINESS_ROLES.has(databaseRole) || databaseRole !== String(auth.role || '').toLowerCase()) return res.status(403).json({ success: false, message: 'Analytics access is not permitted.' });
+    if (!await activeEntitlementForOwner(user.owner_email)) {
+      return res.status(403).json({ success: false, code: 'subscription_inactive', message: 'This business subscription is inactive, cancelled, revoked, or expired.' });
+    }
     req.analytics = { businessId, businessName: user.name, userId: auth.userId, role: databaseRole };
     next();
   } catch (_) { return res.status(401).json({ success: false, message: 'Invalid or expired token.' }); }

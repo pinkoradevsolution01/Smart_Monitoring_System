@@ -55,8 +55,9 @@ test('generic business CRUD requires a management session and ignores a supplied
     async query(sql, params = []) {
       calls.push({ sql, params });
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
-        return [{ id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1, business_active: 1 }];
+        return [{ id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1, business_active: 1, owner_email: 'owner@example.com' }];
       }
+      if (sql.includes('FROM activation_code_requests r')) return [{ activation_code: 'code-a', package_name: 'Standard', expires_at: null }];
       if (sql.includes('SELECT * FROM products')) return [];
       throw new Error(`Unexpected SQL: ${sql}`);
     },
@@ -88,6 +89,38 @@ test('generic business CRUD requires a management session and ignores a supplied
   }
 });
 
+test('a revoked or cancelled entitlement blocks protected business CRUD', async () => {
+  const db = {
+    async query(sql) {
+      if (sql.includes('FROM users u INNER JOIN businesses b')) {
+        return [{
+          id: 'owner-a', business_id: 'business-a', role: 'owner',
+          user_active: 1, business_active: 1, owner_email: 'owner@example.com',
+        }];
+      }
+      if (sql.includes('FROM activation_code_requests r')) return [];
+      throw new Error(`Unexpected SQL: ${sql}`);
+    },
+    getConnection: async () => {
+      throw new Error('not expected when entitlement is inactive');
+    },
+  };
+  const loaded = loadCrudRouter(db);
+  const ownerToken = token({ userId: 'owner-a', role: 'owner', businessId: 'business-a' });
+  try {
+    await withServer(loaded.router, async (base) => {
+      const response = await fetch(`${base}/api/products`, {
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      });
+      assert.equal(response.status, 403);
+      const body = await response.json();
+      assert.equal(body.code, 'subscription_inactive');
+    });
+  } finally {
+    loaded.restore();
+  }
+});
+
 test('expense records are package-gated, tenant-scoped, and date-filtered on the server', async () => {
   const calls = [];
   const db = {
@@ -96,9 +129,10 @@ test('expense records are package-gated, tenant-scoped, and date-filtered on the
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
         return [{
           id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1,
-          business_active: 1, subscription_package: 'Standard', subscription_expires_at: null,
+          business_active: 1, owner_email: 'owner@example.com', subscription_package: 'Standard', subscription_expires_at: null,
         }];
       }
+      if (sql.includes('FROM activation_code_requests r')) return [{ activation_code: 'code-a', package_name: 'Standard', expires_at: null }];
       if (sql.includes('SELECT * FROM expenses')) return [];
       throw new Error(`Unexpected SQL: ${sql}`);
     },
@@ -130,8 +164,9 @@ test('customer deletion resolves the durable customer code inside the verified t
     async query(sql, params = []) {
       calls.push({ sql, params });
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
-        return [{ id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1, business_active: 1 }];
+        return [{ id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1, business_active: 1, owner_email: 'owner@example.com' }];
       }
+      if (sql.includes('FROM activation_code_requests r')) return [{ activation_code: 'code-a', package_name: 'Standard', expires_at: null }];
       if (sql.includes('SELECT id FROM customers')) return [{ id: 42 }];
       throw new Error(`Unexpected SQL: ${sql}`);
     },

@@ -3,6 +3,33 @@ const { query } = require('../db');
 const MANAGEMENT_ROLES = new Set(['owner', 'admin', 'manager']);
 
 /**
+ * Resolves the current entitlement from the developer-issued activation code,
+ * not from a package name cached on the device.  A business can have a newer
+ * active code after an older code was revoked, so only an active, unrevoked
+ * subscription for the owner's email is accepted.
+ */
+async function activeEntitlementForOwner(ownerEmail) {
+  const normalizedEmail = String(ownerEmail || '').trim().toLowerCase();
+  if (!normalizedEmail) return null;
+
+  const rows = await query(
+    `SELECT s.activation_code, s.package_name, s.expires_at
+       FROM activation_code_requests r
+       INNER JOIN subscriptions s ON s.activation_code = r.activation_code
+       INNER JOIN activation_codes c ON c.code = s.activation_code
+      WHERE LOWER(r.contact_email) = ?
+        AND r.status = 'fulfilled'
+        AND c.status = 'used'
+        AND s.status = 'active'
+        AND (s.expires_at IS NULL OR s.expires_at >= NOW())
+      ORDER BY s.activated_at DESC
+      LIMIT 1`,
+    [normalizedEmail],
+  );
+  return rows[0] || null;
+}
+
+/**
  * Resolves the business context from a verified session. Client-provided
  * business IDs are deliberately ignored: they are selectors, not authority.
  */
@@ -15,7 +42,7 @@ async function requireActiveBusiness(req, res, next) {
   try {
     const rows = await query(
       `SELECT u.id, u.business_id, u.role, u.is_active AS user_active,
-              b.is_active AS business_active, b.subscription_package,
+              b.is_active AS business_active, b.owner_email, b.subscription_package,
               b.subscription_expires_at
        FROM users u INNER JOIN businesses b ON b.id = u.business_id
        WHERE u.id = ? AND u.business_id = ? LIMIT 1`,
@@ -31,12 +58,25 @@ async function requireActiveBusiness(req, res, next) {
       return res.status(403).json({ success: false, message: 'The signed-in role is no longer authorized.' });
     }
 
+    // A revoked activation code must immediately stop protected operations.
+    // Do not trust package or expiry values that were previously copied to a
+    // local device or into the businesses table.
+    const entitlement = await activeEntitlementForOwner(user.owner_email);
+    if (!entitlement) {
+      return res.status(403).json({
+        success: false,
+        code: 'subscription_inactive',
+        message: 'This business subscription is inactive, cancelled, revoked, or expired.',
+      });
+    }
+
     req.businessContext = {
       businessId: user.business_id,
       role: databaseRole,
       userId: user.id,
-      subscriptionPackage: user.subscription_package,
-      subscriptionExpiresAt: user.subscription_expires_at,
+      subscriptionPackage: entitlement.package_name,
+      subscriptionExpiresAt: entitlement.expires_at,
+      activationCode: entitlement.activation_code,
     };
     return next();
   } catch (error) {
@@ -73,6 +113,7 @@ function requireFinancialReporting(req, res, next) {
 
 module.exports = {
   MANAGEMENT_ROLES,
+  activeEntitlementForOwner,
   requireActiveBusiness,
   requireManagementRole,
   requireFinancialReporting,

@@ -2,6 +2,7 @@ const express = require('express');
 const { randomUUID } = require('crypto');
 const { query } = require('../db');
 const { escapeHtml, sendEmail } = require('../services/resend_email');
+const { requireDeveloperSession } = require('../security/developer_access');
 
 const router = express.Router();
 
@@ -237,6 +238,64 @@ router.post('/activate', async (req, res) => {
   }
 });
 
+// A running client verifies the entitlement bound to its own device.  This
+// route intentionally returns no owner, business, or subscription history;
+// it only answers whether this exact activated device may continue using its
+// locally stored code.
+router.post('/status', async (req, res) => {
+  const code = String(req.body?.code || '').trim();
+  const deviceId = String(req.body?.deviceId || '').trim();
+  if (!code || !deviceId) {
+    return res.status(400).json({ success: false, message: 'Activation code and device ID are required.' });
+  }
+
+  try {
+    const rows = await query(
+      `SELECT c.status AS code_status, s.status AS subscription_status,
+              s.package_name, s.expires_at
+         FROM activation_codes c
+         LEFT JOIN subscriptions s
+           ON s.activation_code = c.code AND s.device_id = c.device_id
+        WHERE c.code = ? AND c.device_id = ?
+        ORDER BY s.activated_at DESC
+        LIMIT 1`,
+      [code, deviceId],
+    );
+    const record = rows[0];
+    const expired = record?.expires_at && new Date(record.expires_at).getTime() < Date.now();
+    const active = Boolean(
+      record &&
+      record.code_status === 'used' &&
+      record.subscription_status === 'active' &&
+      !expired,
+    );
+
+    if (record) {
+      await query(
+        'UPDATE subscriptions SET last_checked_at = NOW() WHERE activation_code = ? AND device_id = ?',
+        [code, deviceId],
+      );
+    }
+
+    return res.json({
+      success: true,
+      active,
+      reason: active
+        ? 'active'
+        : record?.code_status === 'revoked'
+          ? 'revoked'
+          : expired
+            ? 'expired'
+            : 'inactive',
+      packageName: active ? record.package_name : null,
+      expiresAt: active ? record.expires_at : null,
+    });
+  } catch (error) {
+    console.error('License status check error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to verify license status.' });
+  }
+});
+
 router.get('/code/:code', async (req, res) => {
   const { code } = req.params;
   try {
@@ -407,7 +466,7 @@ router.post('/codes/:code/assign', async (req, res) => {
   }
 });
 
-router.post('/codes/:code/revoke', async (req, res) => {
+router.post('/codes/:code/revoke', requireDeveloperSession, async (req, res) => {
   const { code } = req.params;
   const { reason = '' } = req.body || {};
   try {

@@ -80,8 +80,9 @@ test('sync normalizes ISO timestamps and resolves loyalty records using customer
   const db = {
     async query(sql) {
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
-        return [{ business_id: 'business-a', role: 'owner' }];
+        return [{ business_id: 'business-a', role: 'owner', owner_email: 'owner@example.com' }];
       }
+      if (sql.includes('FROM activation_code_requests r')) return [{ activation_code: 'code-a', package_name: 'Standard', expires_at: null }];
       if (sql.includes('SELECT id FROM businesses')) return [{ id: 'business-a' }];
       throw new Error(`Unexpected SQL: ${sql}`);
     },

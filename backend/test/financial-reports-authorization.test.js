@@ -62,8 +62,11 @@ function database(calls, subscriptionPackage = 'Standard') {
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
         return [{
           id: 'owner-a', business_id: 'business-a', role: 'owner', user_active: 1,
-          business_active: 1, subscription_package: subscriptionPackage, subscription_expires_at: null,
+          business_active: 1, owner_email: 'owner@example.com', subscription_package: subscriptionPackage, subscription_expires_at: null,
         }];
+      }
+      if (sql.includes('FROM activation_code_requests r')) {
+        return [{ activation_code: 'code-a', package_name: subscriptionPackage, expires_at: null }];
       }
       if (sql.includes("status = 'cancelled'")) return [{ cancelled_transactions: 0, cancelled_amount: 0 }];
       if (sql.includes('SUM(subtotal)')) return [{ gross_sales: 120, discounts: 5, net_sales: 115, completed_transactions: 1 }];

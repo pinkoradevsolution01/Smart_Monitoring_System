@@ -2,6 +2,7 @@ const express = require('express');
 const { query, getConnection } = require('../db');
 const { dispatchOwnerAlert } = require('../services/smartplus_owner_notifications');
 const { recordOperationalEvent } = require('../services/operational_events');
+const { activeEntitlementForOwner } = require('../security/business_access');
 const router = express.Router();
 const SYNC_ROLES = new Set(['owner', 'admin', 'manager']);
 
@@ -30,13 +31,20 @@ async function resolveAuthenticatedBusiness(req) {
   }
 
   const rows = await query(
-    `SELECT u.business_id, u.role FROM users u INNER JOIN businesses b ON b.id = u.business_id
+    `SELECT u.business_id, u.role, b.owner_email FROM users u INNER JOIN businesses b ON b.id = u.business_id
       WHERE u.id = ? AND u.business_id = ? AND u.is_active = 1 AND b.is_active = 1 LIMIT 1`,
     [auth.userId, auth.businessId],
   );
   if (!rows.length) return { status: 403, message: 'The account or business is inactive.' };
   if (String(rows[0].role || '').toLowerCase() !== String(auth.role || '').toLowerCase()) {
     return { status: 403, message: 'The signed-in role is no longer authorized for synchronization.' };
+  }
+  const entitlement = await activeEntitlementForOwner(rows[0].owner_email);
+  if (!entitlement) {
+    return {
+      status: 403,
+      message: 'This business subscription is inactive, cancelled, revoked, or expired.',
+    };
   }
   return { businessId: rows[0].business_id };
 }

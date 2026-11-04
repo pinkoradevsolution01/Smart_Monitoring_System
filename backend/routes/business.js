@@ -2,6 +2,7 @@ const express = require('express');
 const { query, getConnection } = require('../db');
 const { signSession } = require('../security/session_tokens');
 const { requireDeveloperSession } = require('../security/developer_access');
+const { activeEntitlementForOwner } = require('../security/business_access');
 const router = express.Router();
 
 function normalizeEmail(value) {
@@ -31,19 +32,7 @@ function buildInClause(values) {
 // routes are tenant-oriented. This lookup safely binds an activated code to
 // the authenticated owner's business through the request email only.
 async function activeEntitlementForEmail(email) {
-  const rows = await query(
-    `SELECT r.package_name, s.expires_at
-       FROM activation_code_requests r
-       INNER JOIN subscriptions s ON s.activation_code = r.activation_code
-      WHERE LOWER(r.contact_email) = ?
-        AND r.status = 'fulfilled'
-        AND s.status = 'active'
-        AND (s.expires_at IS NULL OR s.expires_at >= NOW())
-      ORDER BY s.activated_at DESC
-      LIMIT 1`,
-    [email],
-  );
-  return rows[0] || null;
+  return activeEntitlementForOwner(email);
 }
 
 router.post('/init', async (req, res) => {
