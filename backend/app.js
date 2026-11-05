@@ -34,7 +34,20 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '5mb' }));
+// Sync requests may contain a bounded batch of purchase-order lines. Keep a
+// finite limit to protect the server while allowing legitimate mobile sync
+// data; client code also sends purchase orders in small batches.
+app.use(express.json({ limit: '10mb' }));
+app.use((error, req, res, next) => {
+  if (error?.type === 'entity.too.large' || error?.status === 413) {
+    return res.status(413).json({
+      success: false,
+      code: 'SYNC_PAYLOAD_TOO_LARGE',
+      message: 'The sync batch is too large. Please update the app and retry.',
+    });
+  }
+  return next(error);
+});
 
 app.use(attachOptionalSession);
 

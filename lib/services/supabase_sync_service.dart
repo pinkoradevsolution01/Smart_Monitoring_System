@@ -1099,14 +1099,36 @@ class SupabaseSyncService extends ChangeNotifier {
         }
       }
 
-      await _api.postJson(
-        'sync/push',
-        body: {
-          'businessId': _businessId,
-          'purchaseOrders': orderData,
-          'purchaseOrderItems': orderItems,
-        },
-      );
+      // A business can accumulate many purchase orders. Sending every order
+      // and line item in one HTTP request can exceed a reverse-proxy/body
+      // parser limit, leaving otherwise valid records unsynced. Keep each
+      // request bounded while preserving each order with all of its items.
+      const ordersPerBatch = 25;
+      for (var start = 0; start < orderData.length; start += ordersPerBatch) {
+        final end = start + ordersPerBatch < orderData.length
+            ? start + ordersPerBatch
+            : orderData.length;
+        final orderBatch = orderData.sublist(start, end);
+        final orderIds = orderBatch
+            .map((order) => order['id']?.toString())
+            .whereType<String>()
+            .toSet();
+        final itemBatch = orderItems
+            .where(
+              (item) => orderIds.contains(
+                (item['purchase_order_id'] ?? item['order_id'])?.toString(),
+              ),
+            )
+            .toList(growable: false);
+        await _api.postJson(
+          'sync/push',
+          body: {
+            'businessId': _businessId,
+            'purchaseOrders': orderBatch,
+            'purchaseOrderItems': itemBatch,
+          },
+        );
+      }
       await db.acknowledgePurchaseOrderVersions(pendingVersions);
       _syncStats['purchase_orders_pushed'] = orders.length;
       _syncStats['purchase_order_items_pushed'] = orderItems.length;
