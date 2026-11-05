@@ -134,26 +134,10 @@ class _SplashScreenState extends State<SplashScreen>
       if (ownerAccounts.isNotEmpty) {
         final owner = ownerAccounts.first;
 
-        // Initialize business context immediately, then let cloud restore run
-        // in the background so the app can open without waiting for a full sync.
-        try {
-          final supabaseSyncService = GetIt.I<SupabaseSyncService>();
-
-          // Initialize business context for this owner
-          await supabaseSyncService.initializeBusiness(
-            businessName: owner.name,
-            ownerEmail: owner.email,
-            existingBusinessId: owner.businessId,
-          );
-          debugPrint('✅ Business context initialized for cloud sync');
-
-          // Fire-and-forget restore. We keep this off the critical path so the
-          // first screen becomes interactive sooner.
-          unawaited(_restoreCloudDataInBackground(supabaseSyncService));
-        } catch (e) {
-          debugPrint('⚠️ Warning: Could not initialize business context: $e');
-          // App continues - user can still access dashboard but may not sync to cloud
-        }
+        // The verified restore can take longer than the splash animation.
+        // Never hold the owner on a blank loading screen: initializeBusiness
+        // restores before any upload, and completes safely in the background.
+        unawaited(_initializeBusinessInBackground(owner));
 
         // If owner has set a password, they can login
         // Otherwise, go directly to dashboard for password setup
@@ -192,17 +176,17 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
-  Future<void> _restoreCloudDataInBackground(
-    SupabaseSyncService supabaseSyncService,
-  ) async {
+  Future<void> _initializeBusinessInBackground(User owner) async {
     try {
-      final synced = await supabaseSyncService.pullAllData();
-      if (synced) {
-        final stats = supabaseSyncService.getSyncSummary();
-        debugPrint('✅ Data synced from cloud: $stats');
-      }
+      final sync = GetIt.I<SupabaseSyncService>();
+      await sync.initializeBusiness(
+        businessName: owner.name,
+        ownerEmail: owner.email,
+        existingBusinessId: owner.businessId,
+      );
+      debugPrint('✅ Background business initialization completed');
     } catch (e) {
-      debugPrint('ℹ️ Auto-sync on login: $e (data will be synced on demand)');
+      debugPrint('ℹ️ Background business initialization: $e');
     }
   }
 
