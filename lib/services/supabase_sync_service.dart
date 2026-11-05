@@ -50,6 +50,7 @@ class SupabaseSyncService extends ChangeNotifier {
   int _activeExternalDatabaseReads = 0;
   Completer<void>? _externalReadsDrained;
   Completer<void>? _syncIdle;
+  Future<bool>? _restoreInFlight;
 
   // Getters
   bool get isSyncing => _isSyncing;
@@ -299,14 +300,41 @@ class SupabaseSyncService extends ChangeNotifier {
     }
   }
 
-  /// Pull all data from Supabase to local database (Restore)
+  /// Coalesce concurrent startup restores. This prevents overlapping SQLite
+  /// writes and makes every caller wait for the same verified restore.
   Future<bool> pullAllData() async {
+    final runningRestore = _restoreInFlight;
+    if (runningRestore != null) return runningRestore;
+
+    final restore = _pullAllDataOnce();
+    _restoreInFlight = restore;
+    try {
+      return await restore;
+    } finally {
+      if (identical(_restoreInFlight, restore)) {
+        _restoreInFlight = null;
+      }
+    }
+  }
+
+  /// Pull all data from the authoritative backend to the local database.
+  Future<bool> _pullAllDataOnce() async {
     if (!isConfigured) {
       _lastError = 'Business not initialized. Please activate license first.';
       notifyListeners();
       return false;
     }
 
+    // Snapshot the verified tenant before an await. A stale sign-out callback
+    // must not turn a recoverable context change into a null-check crash.
+    final verifiedBusinessId = _businessId;
+    if (verifiedBusinessId == null || verifiedBusinessId.isEmpty) {
+      _lastError = 'Business context is unavailable. Please sign in again.';
+      notifyListeners();
+      return false;
+    }
+
+    var restoreStage = 'requesting cloud records';
     await _beginSync();
     _lastError = null;
     _syncStats.clear();
@@ -318,23 +346,36 @@ class SupabaseSyncService extends ChangeNotifier {
       final db = DatabaseService();
       final payload = await _api.getJson(
         'sync/pull',
-        queryParameters: {'businessId': _businessId!},
+        queryParameters: {'businessId': verifiedBusinessId},
       );
 
       // Pull data in order (respecting foreign keys)
       await db.runWithoutCloudSync(() async {
+        restoreStage = 'users';
         await _pullUsers(payload);
+        restoreStage = 'customers';
         await _pullCustomers(db, payload);
+        restoreStage = 'loyalty ledger';
         await _pullLoyaltyLedger(db, payload);
+        restoreStage = 'cameras';
         await _pullCameras(db, payload);
+        restoreStage = 'CCTV timestamps';
         await _pullCctvTimestamps(db, payload);
+        restoreStage = 'attendance';
         await _pullAttendance(db, payload);
+        restoreStage = 'activity logs';
         await _pullActivityLogs(db, payload);
+        restoreStage = 'suppliers';
         await _pullSuppliers(db, payload);
+        restoreStage = 'products';
         await _pullProducts(db, payload);
+        restoreStage = 'sales';
         await _pullSales(db, payload);
+        restoreStage = 'inventory movements';
         await _pullInventoryMovements(db, payload);
+        restoreStage = 'purchase orders';
         await _pullPurchaseOrders(db, payload);
+        restoreStage = 'damage reports';
         await _pullDamageReports(db, payload);
       });
 
@@ -345,7 +386,9 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('✅ Restore completed successfully');
       debugPrint('📊 Sync stats: $_syncStats');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('Restore failed during $restoreStage: $e');
+      debugPrintStack(stackTrace: stackTrace, label: 'Restore failure stack');
       debugPrint('❌ Restore failed: $e');
       _lastError = safeApiError(e);
       _finishSync();
