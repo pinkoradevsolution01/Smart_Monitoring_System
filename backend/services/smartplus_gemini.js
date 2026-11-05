@@ -1,7 +1,8 @@
 const { query } = require('../db');
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+// Stable model verified as available for the SmartPlus Gemini API project.
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 const MAX_QUESTION_LENGTH = 1200;
 const MAX_ANSWER_LENGTH = 6000;
 const FREE_DAILY_REQUEST_LIMIT = 100;
