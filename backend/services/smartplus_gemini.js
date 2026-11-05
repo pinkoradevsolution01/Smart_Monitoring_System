@@ -4,6 +4,7 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 // Gemini 3.8 Flash is the supported successor for new Gemini API projects.
 // It uses the Interactions API rather than the legacy generateContent path.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_FALLBACK_MODEL = 'gemini-3.7-flash';
 const MAX_QUESTION_LENGTH = 1200;
 const MAX_ANSWER_LENGTH = 6000;
 const FREE_DAILY_REQUEST_LIMIT = 100;
@@ -46,6 +47,13 @@ function selectedModel(value) {
   const requested = normalizeModelName(value);
   if (!requested) return modelName();
   return allowedModels().includes(requested) ? requested : null;
+}
+
+function fallbackModel() {
+  const fallback = normalizeModelName(
+    process.env.GEMINI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
+  );
+  return validModelName(fallback) ? fallback : null;
 }
 
 function normalizeQuestion(value) {
@@ -239,7 +247,7 @@ async function callGemini({ question, context, locale, model }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const requestGemini = async () => {
+    const requestGemini = async (activeModel) => {
       // Gemini 3.8 Flash uses the Interactions API. Do not send the API key
       // or a client-supplied business ID to the device.
       const response = await fetch(
@@ -252,7 +260,7 @@ async function callGemini({ question, context, locale, model }) {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            model,
+            model: activeModel,
             // Keep policy, tenant aggregate, and the owner's input in one
             // stateless interaction. The backend has no write tools, and the
             // instruction explicitly treats all supplied data as untrusted.
@@ -281,17 +289,26 @@ async function callGemini({ question, context, locale, model }) {
         .trim()
         .slice(0, MAX_ANSWER_LENGTH);
       if (!answer) throw new Error('Gemini returned no usable text.');
-      return answer;
+      return { answer, model: activeModel };
     };
 
     try {
-      return await requestGemini();
+      return await requestGemini(model);
     } catch (error) {
       // A single bounded retry handles transient Google 5xx/network failures
       // without turning SmartPlus into an unbounded request loop.
       if (!error.retryable || controller.signal.aborted) throw error;
       await new Promise((resolve) => setTimeout(resolve, 600));
-      return requestGemini();
+      try {
+        return await requestGemini(model);
+      } catch (retryError) {
+        const fallback = fallbackModel();
+        if (!retryError.retryable || controller.signal.aborted ||
+            !fallback || fallback === model) {
+          throw retryError;
+        }
+        return requestGemini(fallback);
+      }
     }
   } finally {
     clearTimeout(timer);
@@ -317,15 +334,15 @@ async function answerBusinessQuestion({ businessId, question, locale = 'en', mod
     throw error;
   }
   const context = await buildBusinessContext(businessId);
-  const answer = await callGemini({
+  const gemini = await callGemini({
     question: normalizedQuestion,
     context,
     locale: locale === 'fil' ? 'fil' : 'en',
     model: approvedModel,
   });
   return {
-    answer,
-    model: approvedModel,
+    answer: gemini.answer,
+    model: gemini.model,
     dateRange: context.dateRange,
     dataQuality: context.dataQuality,
   };
@@ -339,6 +356,7 @@ module.exports = {
   FREE_DAILY_REQUEST_LIMIT,
   allowedModels,
   callGemini,
+  fallbackModel,
   normalizeQuestion,
   normalizeModelName,
   philippinesUsageDate,

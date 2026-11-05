@@ -85,13 +85,14 @@ test('SmartPlus Gemini uses the supported Interactions API contract', { concurre
     };
   };
   try {
-    const answer = await callGemini({
+    const result = await callGemini({
       question: 'What sold best?',
       context: { dataQuality: 'limited' },
       locale: 'en',
       model: 'gemini-3.8-flash',
     });
-    assert.equal(answer, 'Tenant-safe answer.');
+    assert.equal(result.answer, 'Tenant-safe answer.');
+    assert.equal(result.model, 'gemini-3.8-flash');
     assert.match(requestedUrl, /\/v1beta\/interactions$/);
     assert.equal(requestedBody.model, 'gemini-3.8-flash');
     assert.match(requestedBody.input, /owner-reviewed/);
@@ -100,6 +101,54 @@ test('SmartPlus Gemini uses the supported Interactions API contract', { concurre
     global.fetch = previousFetch;
     if (previousKey == null) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = previousKey;
+  }
+});
+
+test('SmartPlus Gemini uses one controlled fallback after a busy provider response', { concurrency: false }, async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousFallback = process.env.GEMINI_FALLBACK_MODEL;
+  const requestedModels = [];
+  process.env.GEMINI_API_KEY = 'test-key';
+  process.env.GEMINI_FALLBACK_MODEL = 'gemini-3.7-flash';
+  global.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    requestedModels.push(request.model);
+    if (requestedModels.length < 3) {
+      return {
+        ok: false,
+        status: 503,
+        async json() { return { error: { message: 'busy' } }; },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Fallback answer.' }] }] };
+      },
+    };
+  };
+  try {
+    const result = await callGemini({
+      question: 'What sold best?',
+      context: { dataQuality: 'limited' },
+      locale: 'en',
+      model: 'gemini-3.8-flash',
+    });
+    assert.equal(result.answer, 'Fallback answer.');
+    assert.equal(result.model, 'gemini-3.7-flash');
+    assert.deepEqual(requestedModels, [
+      'gemini-3.8-flash',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+    ]);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey == null) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+    if (previousFallback == null) delete process.env.GEMINI_FALLBACK_MODEL;
+    else process.env.GEMINI_FALLBACK_MODEL = previousFallback;
   }
 });
 

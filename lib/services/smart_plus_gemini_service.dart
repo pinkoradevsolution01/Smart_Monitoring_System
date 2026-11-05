@@ -88,7 +88,7 @@ class SmartPlusGeminiService {
         answer: answer,
         dateRange: meta['dateRange']?.toString() ?? 'Current available records',
         dataQuality: meta['dataQuality']?.toString() ?? 'Limited',
-        model: model,
+        model: meta['model']?.toString() ?? model,
       );
     } on SmartPlusGeminiException {
       rethrow;

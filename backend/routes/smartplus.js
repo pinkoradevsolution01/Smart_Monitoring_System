@@ -264,6 +264,7 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
       meta: {
         dateRange: result.dateRange,
         dataQuality: result.dataQuality,
+        model: result.model,
         quota: req.geminiQuota || null,
       },
     });
