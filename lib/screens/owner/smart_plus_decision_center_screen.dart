@@ -34,10 +34,9 @@ class _SmartPlusDecisionCenterScreenState
     });
   }
 
-  Future<void> _refresh(SmartPlusNotificationService service) {
-    service.refresh(forceSupplierCheck: true);
+  Future<void> _refresh(SmartPlusNotificationService service) async {
+    await service.refresh(forceSupplierCheck: true);
     if (mounted) _reloadActions();
-    return Future<void>.value();
   }
 
   @override

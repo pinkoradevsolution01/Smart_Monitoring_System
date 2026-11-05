@@ -324,6 +324,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
   List<SmartPlusNotification> _customerIntelligenceNotifications = const [];
   List<PurchaseOrder> _purchaseOrders = const [];
   bool _supplierRefreshInFlight = false;
+  Completer<void>? _supplierRefreshCompleter;
   DateTime? _lastSupplierRefresh;
   SmartPlusDataTrust _dataTrust = const SmartPlusDataTrust();
   SmartPlusDailyBrief _dailyBrief = const SmartPlusDailyBrief();
@@ -424,11 +425,11 @@ class SmartPlusNotificationService extends ChangeNotifier {
     }
   }
 
-  void _onBusinessDataChanged() => refresh();
+  void _onBusinessDataChanged() => unawaited(refresh());
 
-  void refresh({bool forceSupplierCheck = false}) {
+  Future<void> refresh({bool forceSupplierCheck = false}) async {
     _applyVisibleNotifications();
-    unawaited(_refreshSupplierDeliveryNotifications(force: forceSupplierCheck));
+    await _refreshSupplierDeliveryNotifications(force: forceSupplierCheck);
   }
 
   void _applyVisibleNotifications() {
@@ -479,14 +480,18 @@ class SmartPlusNotificationService extends ChangeNotifier {
     bool force = false,
   }) async {
     final now = DateTime.now();
-    if (_supplierRefreshInFlight ||
-        (!force &&
-            _lastSupplierRefresh != null &&
-            now.difference(_lastSupplierRefresh!) <
-                const Duration(seconds: 30))) {
+    if (_supplierRefreshInFlight) {
+      await (_supplierRefreshCompleter?.future ?? Future<void>.value());
+      return;
+    }
+    if (!force &&
+        _lastSupplierRefresh != null &&
+        now.difference(_lastSupplierRefresh!) < const Duration(seconds: 30)) {
       return;
     }
     _supplierRefreshInFlight = true;
+    final completer = Completer<void>();
+    _supplierRefreshCompleter = completer;
     _lastSupplierRefresh = now;
     try {
       final database = DatabaseService();
@@ -510,6 +515,10 @@ class SmartPlusNotificationService extends ChangeNotifier {
       debugPrint('SmartPlus supplier delivery review unavailable: $error');
     } finally {
       _supplierRefreshInFlight = false;
+      if (!completer.isCompleted) completer.complete();
+      if (identical(_supplierRefreshCompleter, completer)) {
+        _supplierRefreshCompleter = null;
+      }
     }
   }
 
