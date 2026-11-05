@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import '../services/ai_help_service.dart';
+import '../services/smart_plus_gemini_service.dart';
 import '../services/setup_progress_service.dart';
 import '../models/chat_message.dart';
 import '../screens/owner/customer_management_screen.dart';
@@ -59,13 +60,39 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   late final AIHelpService _aiService;
+  final _geminiService = SmartPlusGeminiService();
+  List<SmartPlusChatModel> _chatModels = const [
+    SmartPlusChatModel(
+      id: 'rule-based',
+      label: 'Rule-based',
+      description: 'Local, deterministic SmartPlus rules',
+    ),
+  ];
+  String _selectedModelId = 'rule-based';
 
   @override
   void initState() {
     super.initState();
     _aiService = GetIt.I<AIHelpService>();
     _aiService.addListener(_onAssistantChanged);
+    _loadChatModels();
   }
+
+  Future<void> _loadChatModels() async {
+    final models = await _geminiService.availableModels();
+    if (!mounted) return;
+    setState(() {
+      _chatModels = models;
+      if (!models.any((model) => model.id == _selectedModelId)) {
+        _selectedModelId = 'rule-based';
+      }
+    });
+  }
+
+  SmartPlusChatModel get _selectedModel => _chatModels.firstWhere(
+    (model) => model.id == _selectedModelId,
+    orElse: () => _chatModels.first,
+  );
 
   @override
   void dispose() {
@@ -94,14 +121,14 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _aiService.isThinking) return;
 
-    _aiService.sendMessage(text);
+    _aiService.sendMessage(text, selectedModel: _selectedModelId);
     _messageController.clear();
     _scrollToBottom();
   }
 
   void _sendSuggestedQuestion(String question) {
     if (_aiService.isThinking) return;
-    _aiService.sendMessage(question);
+    _aiService.sendMessage(question, selectedModel: _selectedModelId);
     _scrollToBottom();
   }
 
@@ -113,6 +140,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
     final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
     final availableHeight = media.height - keyboardHeight - 48;
     final dialogHeight = availableHeight > 700 ? 700.0 : availableHeight;
+    final compactHeader = media.width < 430;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
@@ -166,6 +194,8 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                           children: [
                             Text(
                               'SmartPlus',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
@@ -176,6 +206,8 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                               isFilipino
                                   ? 'Gabay para sa sales, inventory, at sistema'
                                   : 'Guidance for sales, inventory, and system use',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 12,
@@ -184,6 +216,96 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                           ],
                         );
                       },
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Choose SmartPlus answer mode',
+                    onSelected: (modelId) {
+                      setState(() => _selectedModelId = modelId);
+                    },
+                    itemBuilder: (context) => _chatModels
+                        .map(
+                          (model) => PopupMenuItem<String>(
+                            value: model.id,
+                            child: SizedBox(
+                              width: 230,
+                              child: ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  model.isRuleBased
+                                      ? Icons.rule_rounded
+                                      : Icons.auto_awesome_rounded,
+                                  color: model.id == _selectedModelId
+                                      ? primaryColor
+                                      : null,
+                                ),
+                                title: Text(model.label),
+                                subtitle: Text(
+                                  model.description.isEmpty
+                                      ? 'Secure Gemini business chat'
+                                      : model.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: model.id == _selectedModelId
+                                    ? Icon(
+                                        Icons.check_rounded,
+                                        color: primaryColor,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: compactHeader ? 88 : 152,
+                      ),
+                      margin: const EdgeInsets.only(right: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.24),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _selectedModel.isRuleBased
+                                ? Icons.rule_rounded
+                                : Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              _selectedModel.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   IconButton(

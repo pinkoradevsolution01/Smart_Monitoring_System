@@ -587,7 +587,10 @@ On the login screen:
   }
 
   /// Send a user message and get AI response
-  Future<void> sendMessage(String userMessage) async {
+  Future<void> sendMessage(
+    String userMessage, {
+    String selectedModel = 'rule-based',
+  }) async {
     if (userMessage.trim().isEmpty || _isThinking) return;
 
     // Add user message
@@ -600,7 +603,7 @@ On the login screen:
       // abruptly while data rules are evaluated.
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
-      final geminiReply = await _askGeminiWhenSafe(query);
+      final geminiReply = await _askGeminiWhenSafe(query, selectedModel);
       final response =
           geminiReply?.displayText ??
           _explainSmartPlusAnswer(
@@ -623,7 +626,10 @@ On the login screen:
   /// Gemini is an optional enhancement for aggregate business questions. Keep
   /// customer/loyalty and forecast questions local because those flows can
   /// include person-level records or need deterministic data-quality checks.
-  Future<SmartPlusGeminiReply?> _askGeminiWhenSafe(String query) async {
+  Future<SmartPlusGeminiReply?> _askGeminiWhenSafe(
+    String query,
+    String selectedModel,
+  ) async {
     const customerTerms = [
       'customer',
       'loyalty',
@@ -636,13 +642,15 @@ On the login screen:
       'follow-up',
     ];
     const forecastTerms = ['forecast', 'christmas', 'season'];
-    if (customerTerms.any(query.contains) ||
+    if (selectedModel == 'rule-based' ||
+        customerTerms.any(query.contains) ||
         forecastTerms.any(query.contains)) {
       return null;
     }
     return SmartPlusGeminiService().ask(
       question: query,
       useFilipino: LocaleController.locale.value.languageCode == 'fil',
+      model: selectedModel,
     );
   }
 

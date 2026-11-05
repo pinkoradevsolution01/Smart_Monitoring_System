@@ -14,6 +14,32 @@ function modelName() {
   return String(process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
 }
 
+function validModelName(value) {
+  return /^[A-Za-z0-9._-]{1,100}$/.test(String(value || '').trim());
+}
+
+// Clients can select only models explicitly configured by the operator. This
+// prevents a client from selecting arbitrary provider models or billing tiers.
+function allowedModels() {
+  const configuredModels = String(
+    process.env.GEMINI_ALLOWED_MODELS || modelName(),
+  )
+    .split(',')
+    .map((value) => value.trim())
+    .filter(validModelName);
+  const defaultModel = modelName();
+  if (validModelName(defaultModel) && !configuredModels.includes(defaultModel)) {
+    configuredModels.unshift(defaultModel);
+  }
+  return [...new Set(configuredModels)];
+}
+
+function selectedModel(value) {
+  const requested = String(value || '').trim();
+  if (!requested) return modelName();
+  return allowedModels().includes(requested) ? requested : null;
+}
+
 function normalizeQuestion(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, MAX_QUESTION_LENGTH);
 }
@@ -201,7 +227,7 @@ function systemInstruction(locale) {
   ].join(' ');
 }
 
-async function callGemini({ question, context, locale }) {
+async function callGemini({ question, context, locale, model }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -213,7 +239,7 @@ async function callGemini({ question, context, locale }) {
       },
       signal: controller.signal,
       body: JSON.stringify({
-        model: modelName(),
+        model,
         store: false,
         system_instruction: systemInstruction(locale),
         generation_config: {
@@ -238,7 +264,7 @@ async function callGemini({ question, context, locale }) {
   }
 }
 
-async function answerBusinessQuestion({ businessId, question, locale = 'en' }) {
+async function answerBusinessQuestion({ businessId, question, locale = 'en', model }) {
   if (!configured()) {
     const error = new Error('Gemini is not configured on the secure backend.');
     error.code = 'gemini_not_configured';
@@ -250,15 +276,22 @@ async function answerBusinessQuestion({ businessId, question, locale = 'en' }) {
     error.code = 'invalid_question';
     throw error;
   }
+  const approvedModel = selectedModel(model);
+  if (!approvedModel) {
+    const error = new Error('The selected Gemini model is not enabled by the system administrator.');
+    error.code = 'unsupported_model';
+    throw error;
+  }
   const context = await buildBusinessContext(businessId);
   const answer = await callGemini({
     question: normalizedQuestion,
     context,
     locale: locale === 'fil' ? 'fil' : 'en',
+    model: approvedModel,
   });
   return {
     answer,
-    model: modelName(),
+    model: approvedModel,
     dateRange: context.dateRange,
     dataQuality: context.dataQuality,
   };
@@ -270,7 +303,9 @@ module.exports = {
   configured,
   consumeDailyQuota,
   FREE_DAILY_REQUEST_LIMIT,
+  allowedModels,
   normalizeQuestion,
   philippinesUsageDate,
+  selectedModel,
   systemInstruction,
 };

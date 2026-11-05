@@ -3,10 +3,26 @@ const test = require('node:test');
 
 const {
   answerBusinessQuestion,
+  allowedModels,
   consumeDailyQuota,
   normalizeQuestion,
   systemInstruction,
 } = require('../services/smartplus_gemini');
+
+test('SmartPlus exposes only the administrator allow-listed Gemini models', () => {
+  const previousModel = process.env.GEMINI_MODEL;
+  const previousAllowed = process.env.GEMINI_ALLOWED_MODELS;
+  process.env.GEMINI_MODEL = 'gemini-approved';
+  process.env.GEMINI_ALLOWED_MODELS = 'gemini-approved, gemini-fast, invalid model name';
+  try {
+    assert.deepEqual(allowedModels(), ['gemini-approved', 'gemini-fast']);
+  } finally {
+    if (previousModel == null) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = previousModel;
+    if (previousAllowed == null) delete process.env.GEMINI_ALLOWED_MODELS;
+    else process.env.GEMINI_ALLOWED_MODELS = previousAllowed;
+  }
+});
 
 test('SmartPlus Gemini rejects an unconfigured provider before any tenant data is read', async () => {
   const previous = process.env.GEMINI_API_KEY;

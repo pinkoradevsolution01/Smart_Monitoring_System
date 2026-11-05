@@ -76,6 +76,8 @@ Create an API key in Google AI Studio, then add these server-only values to
 ```env
 GEMINI_API_KEY=your_private_google_ai_studio_key
 GEMINI_MODEL=gemini-3.8-flash
+# Optional: models exposed in the SmartPlus chat selector.
+GEMINI_ALLOWED_MODELS=gemini-3.8-flash
 ```
 
 Restart the backend after changing `.env`. When the key is absent or Gemini is

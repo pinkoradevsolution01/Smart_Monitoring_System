@@ -5,6 +5,7 @@ const { requireActiveBusiness } = require('../security/business_access');
 const { dispatchOwnerActionCompletion } = require('../services/smartplus_owner_notifications');
 const {
   answerBusinessQuestion,
+  allowedModels,
   configured: geminiConfigured,
   consumeDailyQuota,
 } = require('../services/smartplus_gemini');
@@ -208,12 +209,30 @@ async function recheckReceivedDelivery(orderNumber, businessId) {
 
 router.use(requireActiveBusiness, requireOwner);
 
+// Models are discovered from a server-side allow-list. The client cannot add
+// a model name itself, and Rule-based is always local (it never reaches this
+// endpoint).
+router.get('/chat/models', (req, res) => {
+  const models = geminiConfigured()
+    ? allowedModels().map((id) => ({ id, label: `Gemini · ${id}` }))
+    : [];
+  return res.json({
+    success: true,
+    configured: geminiConfigured(),
+    models: [
+      { id: 'rule-based', label: 'Rule-based', description: 'Local, deterministic SmartPlus rules' },
+      ...models,
+    ],
+  });
+});
+
 // Gemini is an optional read-only enhancement. The endpoint has no write
 // tools, derives the tenant only from the verified JWT/session, and sends a
 // privacy-minimized aggregate context from this backend to Gemini.
 router.post('/chat', limitOwnerChats, async (req, res) => {
   const question = String(req.body?.question || '').trim();
   const locale = String(req.body?.locale || 'en').trim().toLowerCase();
+  const model = String(req.body?.model || '').trim();
   if (!question || question.length > 1200 || !['en', 'fil'].includes(locale)) {
     return res.status(400).json({ success: false, message: 'Provide a SmartPlus question of up to 1,200 characters and a supported language.' });
   }
@@ -229,6 +248,7 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
       businessId: req.businessContext.businessId,
       question,
       locale,
+      model,
     });
     console.info(JSON.stringify({
       event: 'smartplus_gemini_completed',
@@ -248,7 +268,9 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
       },
     });
   } catch (error) {
-    const status = error.code === 'gemini_not_configured' ? 503 : error.code === 'invalid_question' ? 400 : 502;
+    const status = error.code === 'gemini_not_configured' ? 503
+      : ['invalid_question', 'unsupported_model'].includes(error.code) ? 400
+      : 502;
     console.error(JSON.stringify({
       event: 'smartplus_gemini_failed',
       businessId: req.businessContext?.businessId,
