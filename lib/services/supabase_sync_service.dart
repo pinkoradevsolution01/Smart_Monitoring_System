@@ -151,9 +151,19 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       debugPrint('✅ Business initialized: $_businessId');
+      // A newly installed app has an empty local database. Always restore the
+      // verified tenant first; starting auto-sync or queuing a backup before
+      // this point would upload the empty device state and make an existing
+      // owner appear to be starting over.
+      final restored = await pullAllData();
+      if (!restored) {
+        throw StateError(
+          'Could not restore the existing business data. Uploads were paused to protect the cloud records.',
+        );
+      }
       startAutoSync();
-      // A backend outage or an expired session may have left local records
-      // unsynced. Upload them as soon as the owner has a fresh tenant token.
+      // The restore completed successfully, so it is safe to upload any
+      // remaining local changes after the cloud records have been merged.
       queuePushAllData(delay: Duration.zero);
       notifyListeners();
     } catch (e) {
