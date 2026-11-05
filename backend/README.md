@@ -75,15 +75,21 @@ Create an API key in Google AI Studio, then add these server-only values to
 
 ```env
 GEMINI_API_KEY=your_private_google_ai_studio_key
-GEMINI_MODEL=gemini-2.5-flash
-# Optional: models exposed in the SmartPlus chat selector.
-GEMINI_ALLOWED_MODELS=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
+# Only compatible text-chat models are exposed in the SmartPlus selector.
+GEMINI_ALLOWED_MODELS=gemini-3.8-flash,gemini-3.7-flash,gemini-3.5-flash-lite
+# If Google reports temporary high demand, the secure backend tries these in order.
+GEMINI_FALLBACK_MODELS=gemini-3.7-flash,gemini-3.5-flash-lite
 ```
 
 Restart the backend after changing `.env`. When the key is absent or Gemini is
 temporarily unavailable, SmartPlus automatically retains its existing local
 rule-based answers. Gemini has no write tools: it cannot change inventory,
 orders, sales, prices, discounts, payments, users, or settings.
+
+Do not add speech, transcription, embedding, image, robotics, or agent-only
+models to this selector. They use different APIs or output types and are not
+compatible with the text business chat.
 
 SmartPlus limits Gemini to **100 requests per Philippines calendar day** for
 the entire API project. This is a durable database-backed limit, so restarting

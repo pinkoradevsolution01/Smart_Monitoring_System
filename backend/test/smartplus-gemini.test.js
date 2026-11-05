@@ -104,17 +104,19 @@ test('SmartPlus Gemini uses the supported Interactions API contract', { concurre
   }
 });
 
-test('SmartPlus Gemini uses one controlled fallback after a busy provider response', { concurrency: false }, async () => {
+test('SmartPlus Gemini uses ordered, controlled fallback models after a busy provider response', { concurrency: false }, async () => {
   const previousFetch = global.fetch;
   const previousKey = process.env.GEMINI_API_KEY;
   const previousFallback = process.env.GEMINI_FALLBACK_MODEL;
+  const previousFallbacks = process.env.GEMINI_FALLBACK_MODELS;
   const requestedModels = [];
   process.env.GEMINI_API_KEY = 'test-key';
-  process.env.GEMINI_FALLBACK_MODEL = 'gemini-3.7-flash';
+  delete process.env.GEMINI_FALLBACK_MODEL;
+  process.env.GEMINI_FALLBACK_MODELS = 'gemini-3.7-flash, gemini-3.5-flash-lite';
   global.fetch = async (_url, options) => {
     const request = JSON.parse(options.body);
     requestedModels.push(request.model);
-    if (requestedModels.length < 3) {
+    if (requestedModels.length < 4) {
       return {
         ok: false,
         status: 503,
@@ -125,7 +127,7 @@ test('SmartPlus Gemini uses one controlled fallback after a busy provider respon
       ok: true,
       status: 200,
       async json() {
-        return { steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Fallback answer.' }] }] };
+        return { steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Second fallback answer.' }] }] };
       },
     };
   };
@@ -136,12 +138,13 @@ test('SmartPlus Gemini uses one controlled fallback after a busy provider respon
       locale: 'en',
       model: 'gemini-3.8-flash',
     });
-    assert.equal(result.answer, 'Fallback answer.');
-    assert.equal(result.model, 'gemini-3.7-flash');
+    assert.equal(result.answer, 'Second fallback answer.');
+    assert.equal(result.model, 'gemini-3.5-flash-lite');
     assert.deepEqual(requestedModels, [
       'gemini-3.8-flash',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
+      'gemini-3.5-flash-lite',
     ]);
   } finally {
     global.fetch = previousFetch;
@@ -149,6 +152,8 @@ test('SmartPlus Gemini uses one controlled fallback after a busy provider respon
     else process.env.GEMINI_API_KEY = previousKey;
     if (previousFallback == null) delete process.env.GEMINI_FALLBACK_MODEL;
     else process.env.GEMINI_FALLBACK_MODEL = previousFallback;
+    if (previousFallbacks == null) delete process.env.GEMINI_FALLBACK_MODELS;
+    else process.env.GEMINI_FALLBACK_MODELS = previousFallbacks;
   }
 });
 

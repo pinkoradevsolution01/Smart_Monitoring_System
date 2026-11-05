@@ -4,7 +4,7 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 // Gemini 3.8 Flash is the supported successor for new Gemini API projects.
 // It uses the Interactions API rather than the legacy generateContent path.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
-const DEFAULT_FALLBACK_MODEL = 'gemini-3.7-flash';
+const DEFAULT_FALLBACK_MODELS = ['gemini-3.7-flash', 'gemini-3.5-flash-lite'];
 const MAX_QUESTION_LENGTH = 1200;
 const MAX_ANSWER_LENGTH = 6000;
 const FREE_DAILY_REQUEST_LIMIT = 100;
@@ -49,11 +49,25 @@ function selectedModel(value) {
   return allowedModels().includes(requested) ? requested : null;
 }
 
+// Fall back only to explicit server configuration. GEMINI_FALLBACK_MODEL is
+// retained for existing deployments; GEMINI_FALLBACK_MODELS adds ordered
+// backups without allowing a mobile/web client to choose provider models.
+function fallbackModels() {
+  const configuredFallbacks = String(
+    process.env.GEMINI_FALLBACK_MODELS ||
+      process.env.GEMINI_FALLBACK_MODEL ||
+      DEFAULT_FALLBACK_MODELS.join(','),
+  )
+    .split(',')
+    .map(normalizeModelName)
+    .filter(validModelName);
+  return [...new Set(configuredFallbacks)];
+}
+
+// Backwards-compatible helper for routes or integrations that only need the
+// first fallback model.
 function fallbackModel() {
-  const fallback = normalizeModelName(
-    process.env.GEMINI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL,
-  );
-  return validModelName(fallback) ? fallback : null;
+  return fallbackModels()[0] || null;
 }
 
 function normalizeQuestion(value) {
@@ -302,12 +316,22 @@ async function callGemini({ question, context, locale, model }) {
       try {
         return await requestGemini(model);
       } catch (retryError) {
-        const fallback = fallbackModel();
-        if (!retryError.retryable || controller.signal.aborted ||
-            !fallback || fallback === model) {
+        if (!retryError.retryable || controller.signal.aborted) {
           throw retryError;
         }
-        return requestGemini(fallback);
+        let lastError = retryError;
+        for (const fallback of fallbackModels()) {
+          if (fallback === model) continue;
+          try {
+            return await requestGemini(fallback);
+          } catch (fallbackError) {
+            lastError = fallbackError;
+            if (!fallbackError.retryable || controller.signal.aborted) {
+              throw fallbackError;
+            }
+          }
+        }
+        throw lastError;
       }
     }
   } finally {
@@ -357,6 +381,7 @@ module.exports = {
   allowedModels,
   callGemini,
   fallbackModel,
+  fallbackModels,
   normalizeQuestion,
   normalizeModelName,
   philippinesUsageDate,
