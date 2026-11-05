@@ -1,5 +1,6 @@
 // ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import '../../utils/currency_formatter.dart';
 import '../../models/supplier.dart';
 import '../../models/restock_record.dart';
@@ -10,6 +11,7 @@ import '../../services/database_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/purchase_order_pdf_service.dart';
 import '../../services/smart_plus_action_service.dart';
+import '../../services/smart_plus_notification_service.dart';
 import '../../services/damage_return_pdf_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/signature_pad.dart';
@@ -3149,6 +3151,12 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
                   ),
                 );
                 await _loadData();
+                // The receipt and its linked restock are now both durable.
+                // Re-evaluate immediately so a resolved delivery disappears
+                // from SmartPlus without requiring a manual screen refresh.
+                await GetIt.I<SmartPlusNotificationService>().refresh(
+                  forceSupplierCheck: true,
+                );
 
                 if (mounted) {
                   Navigator.pop(ctx);

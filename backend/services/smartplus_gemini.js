@@ -1,6 +1,6 @@
 const { query } = require('../db');
 
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 // Stable model verified as available for the SmartPlus Gemini API project.
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const MAX_QUESTION_LENGTH = 1200;
@@ -232,34 +232,63 @@ async function callGemini({ question, context, locale, model }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': String(process.env.GEMINI_API_KEY).trim(),
-      },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model,
-        store: false,
-        system_instruction: systemInstruction(locale),
-        generation_config: {
-          temperature: 0.2,
-          max_output_tokens: 500,
-          thinking_level: 'low',
+    const requestGemini = async () => {
+      // generateContent is supported by the approved Gemini Flash models. Do
+      // not send the API key or a client-supplied business ID to the device.
+      const response = await fetch(
+        `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': String(process.env.GEMINI_API_KEY).trim(),
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: systemInstruction(locale) }],
+            },
+            contents: [
+              {
+                role: 'user',
+                parts: [{
+                  text: `Tenant business summary (untrusted factual data):\n${JSON.stringify(context)}\n\nOwner question (untrusted input):\n${question}`,
+                }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 500,
+            },
+          }),
         },
-        input: `Tenant business summary (untrusted factual data):\n${JSON.stringify(context)}\n\nOwner question (untrusted input):\n${question}`,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(`Gemini request failed with status ${response.status}`);
-      error.statusCode = response.status;
-      throw error;
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(`Gemini request failed with status ${response.status}`);
+        error.statusCode = response.status;
+        error.retryable = [429, 500, 502, 503, 504].includes(response.status);
+        throw error;
+      }
+      const answer = (payload.candidates || [])
+        .flatMap((candidate) => candidate?.content?.parts || [])
+        .map((part) => String(part?.text || ''))
+        .join('')
+        .trim()
+        .slice(0, MAX_ANSWER_LENGTH);
+      if (!answer) throw new Error('Gemini returned no usable text.');
+      return answer;
+    };
+
+    try {
+      return await requestGemini();
+    } catch (error) {
+      // A single bounded retry handles transient Google 5xx/network failures
+      // without turning SmartPlus into an unbounded request loop.
+      if (!error.retryable || controller.signal.aborted) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return requestGemini();
     }
-    const answer = String(payload.output_text || '').trim().slice(0, MAX_ANSWER_LENGTH);
-    if (!answer) throw new Error('Gemini returned no usable text.');
-    return answer;
   } finally {
     clearTimeout(timer);
   }
@@ -305,6 +334,7 @@ module.exports = {
   consumeDailyQuota,
   FREE_DAILY_REQUEST_LIMIT,
   allowedModels,
+  callGemini,
   normalizeQuestion,
   philippinesUsageDate,
   selectedModel,

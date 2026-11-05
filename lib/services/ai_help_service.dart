@@ -603,13 +603,19 @@ On the login screen:
       // abruptly while data rules are evaluated.
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
-      final geminiReply = await _askGeminiWhenSafe(query, selectedModel);
-      final response =
-          geminiReply?.displayText ??
-          _explainSmartPlusAnswer(
-            query,
-            await _generateSmartPlusResponse(query),
-          );
+      String response;
+      try {
+        final geminiReply = await _askGeminiWhenSafe(query, selectedModel);
+        response =
+            geminiReply?.displayText ??
+            _explainSmartPlusAnswer(
+              query,
+              await _generateSmartPlusResponse(query),
+            );
+      } on SmartPlusGeminiException catch (error) {
+        response =
+            'Gemini could not answer this question right now.\n\n${error.message}\n\nYou can retry, or select Rule-based for a local SmartPlus answer.';
+      }
       _messages.add(
         ChatMessage(
           text: response,

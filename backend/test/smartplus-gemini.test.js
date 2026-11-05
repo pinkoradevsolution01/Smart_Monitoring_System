@@ -4,6 +4,7 @@ const test = require('node:test');
 const {
   answerBusinessQuestion,
   allowedModels,
+  callGemini,
   consumeDailyQuota,
   normalizeQuestion,
   systemInstruction,
@@ -44,6 +45,44 @@ test('SmartPlus Gemini rejects an unconfigured provider before any tenant data i
 test('SmartPlus Gemini normalizes and bounds chat input', () => {
   assert.equal(normalizeQuestion('  Sales\n\tthis week  '), 'Sales this week');
   assert.equal(normalizeQuestion('x'.repeat(1500)).length, 1200);
+});
+
+test('SmartPlus Gemini uses the supported generateContent contract', { concurrency: false }, async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GEMINI_API_KEY;
+  let requestedUrl = '';
+  let requestedBody = null;
+  process.env.GEMINI_API_KEY = 'test-key';
+  global.fetch = async (url, options) => {
+    requestedUrl = String(url);
+    requestedBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          candidates: [{ content: { parts: [{ text: 'Tenant-safe answer.' }] } }],
+        };
+      },
+    };
+  };
+  try {
+    const answer = await callGemini({
+      question: 'What sold best?',
+      context: { dataQuality: 'limited' },
+      locale: 'en',
+      model: 'gemini-2.5-flash',
+    });
+    assert.equal(answer, 'Tenant-safe answer.');
+    assert.match(requestedUrl, /models\/gemini-2\.5-flash:generateContent$/);
+    assert.equal(requestedBody.systemInstruction.parts[0].text.includes('owner-reviewed'), true);
+    assert.equal(requestedBody.contents[0].role, 'user');
+    assert.equal(requestedBody.generationConfig.maxOutputTokens, 500);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey == null) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+  }
 });
 
 test('SmartPlus Gemini enforces one shared 100-request Philippines daily cap', async () => {

@@ -69,6 +69,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
     ),
   ];
   String _selectedModelId = 'rule-based';
+  String? _chatModelLoadError;
 
   @override
   void initState() {
@@ -83,6 +84,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
     if (!mounted) return;
     setState(() {
       _chatModels = models;
+      _chatModelLoadError = _geminiService.modelsError;
       if (!models.any((model) => model.id == _selectedModelId)) {
         _selectedModelId = 'rule-based';
       }
@@ -397,72 +399,94 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: ValueListenableBuilder<Locale>(
-                      valueListenable: LocaleController.locale,
-                      builder: (context, locale, _) {
-                        final isFilipino = locale.languageCode == 'fil';
-                        return TextField(
-                          controller: _messageController,
-                          decoration: InputDecoration(
-                            hintText: isFilipino
-                                ? 'I-type ang iyong tanong...'
-                                : 'Type your question...',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide(color: primaryColor),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide(
-                                color: Colors.grey.shade300,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide(
-                                color: primaryColor,
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
+                  if (_chatModelLoadError != null) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _chatModelLoadError!,
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                           ),
-                          maxLines: null,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _modelSelector(primaryColor, compact: compactHeader),
-                  const SizedBox(width: 8),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          primaryColor,
-                          primaryColor.withValues(alpha: 0.8),
-                        ],
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: primaryColor.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
                         ),
-                      ],
+                      ),
                     ),
-                    child: IconButton(
-                      icon: const Icon(Icons.send, color: Colors.white),
-                      onPressed: _sendMessage,
-                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ValueListenableBuilder<Locale>(
+                          valueListenable: LocaleController.locale,
+                          builder: (context, locale, _) {
+                            final isFilipino = locale.languageCode == 'fil';
+                            return TextField(
+                              controller: _messageController,
+                              decoration: InputDecoration(
+                                hintText: isFilipino
+                                    ? 'I-type ang iyong tanong...'
+                                    : 'Type your question...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(color: primaryColor),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide(
+                                    color: primaryColor,
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                              maxLines: null,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _sendMessage(),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _modelSelector(primaryColor, compact: compactHeader),
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              primaryColor,
+                              primaryColor.withValues(alpha: 0.8),
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: primaryColor.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white),
+                          onPressed: _sendMessage,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

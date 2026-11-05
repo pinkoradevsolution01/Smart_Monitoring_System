@@ -26,6 +26,17 @@ class _SmartPlusDecisionCenterScreenState
   late Future<List<SmartPlusActionDraft>> _actions = _actionService
       .listDrafts();
 
+  @override
+  void initState() {
+    super.initState();
+    // Do not show a previous dashboard evaluation as if it were current.
+    // The service safely defers this until a restore transaction has finished.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _refresh(GetIt.I<SmartPlusNotificationService>());
+    });
+  }
+
   void _reloadActions() {
     // `setState` callbacks must be synchronous. Assigning the Future is
     // synchronous; fetching the server data happens afterward in FutureBuilder.

@@ -1,5 +1,14 @@
 import 'backend_api_service.dart';
 
+class SmartPlusGeminiException implements Exception {
+  const SmartPlusGeminiException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// A backend-only Gemini reply. Flutter never receives or stores the Gemini
 /// API key; the backend verifies the owner, tenant, and subscription first.
 class SmartPlusGeminiReply {
@@ -42,9 +51,12 @@ class SmartPlusGeminiService {
   SmartPlusGeminiService({ApiClient? api}) : _api = api ?? ApiClient();
 
   final ApiClient _api;
+  String? _modelsError;
 
-  /// Returns null when the secure backend cannot use Gemini, allowing the
-  /// established local SmartPlus rules to continue working offline.
+  /// A safe, user-facing explanation if the model list cannot be loaded.
+  /// This never contains backend secrets or provider response bodies.
+  String? get modelsError => _modelsError;
+
   Future<SmartPlusGeminiReply?> ask({
     required String question,
     required bool useFilipino,
@@ -60,19 +72,28 @@ class SmartPlusGeminiService {
         },
       );
       if (response['success'] != true || response['provider'] != 'gemini') {
-        return null;
+        throw SmartPlusGeminiException(
+          response['message']?.toString() ??
+              'Gemini could not answer right now. Try again shortly or use Rule-based.',
+        );
       }
       final answer = response['answer']?.toString().trim() ?? '';
       final meta = response['meta'];
-      if (answer.isEmpty || meta is! Map) return null;
+      if (answer.isEmpty || meta is! Map) {
+        throw const SmartPlusGeminiException(
+          'Gemini returned no usable answer. Please try again or use Rule-based.',
+        );
+      }
       return SmartPlusGeminiReply(
         answer: answer,
         dateRange: meta['dateRange']?.toString() ?? 'Current available records',
         dataQuality: meta['dataQuality']?.toString() ?? 'Limited',
         model: model,
       );
-    } catch (_) {
-      return null;
+    } on SmartPlusGeminiException {
+      rethrow;
+    } catch (error) {
+      throw SmartPlusGeminiException(_geminiErrorMessage(error));
     }
   }
 
@@ -82,10 +103,15 @@ class SmartPlusGeminiService {
       label: 'Rule-based',
       description: 'Local, deterministic SmartPlus rules',
     );
+    _modelsError = null;
     try {
       final response = await _api.get('smartplus/chat/models');
       final rawModels = response['models'];
-      if (response['success'] != true || rawModels is! List) return [local];
+      if (response['success'] != true || rawModels is! List) {
+        _modelsError =
+            'Gemini models are unavailable. Rule-based answers remain available.';
+        return [local];
+      }
       final models = rawModels
           .whereType<Map>()
           .map(
@@ -97,11 +123,30 @@ class SmartPlusGeminiService {
           )
           .where((model) => model.id.isNotEmpty && model.label.isNotEmpty)
           .toList(growable: false);
-      return models.any((model) => model.isRuleBased)
+      final result = models.any((model) => model.isRuleBased)
           ? models
           : [local, ...models];
-    } catch (_) {
+      if (result.length == 1 && response['configured'] != true) {
+        _modelsError =
+            'Gemini is not configured on the secure server yet. Rule-based answers remain available.';
+      }
+      return result;
+    } catch (error) {
+      _modelsError = _geminiErrorMessage(error);
       return [local];
     }
+  }
+
+  String _geminiErrorMessage(Object error) {
+    if (error is ApiException && error.statusCode == 503) {
+      return 'Gemini is temporarily unavailable on the secure server. Please try again shortly.';
+    }
+    if (error is ApiException && error.statusCode == 401) {
+      return 'Your session expired. Sign in again to use Gemini.';
+    }
+    if (error is ApiException && error.statusCode == 403) {
+      return 'Only the active business owner can use Gemini in SmartPlus.';
+    }
+    return safeApiError(error);
   }
 }
