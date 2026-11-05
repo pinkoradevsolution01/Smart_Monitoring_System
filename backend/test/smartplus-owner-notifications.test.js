@@ -172,6 +172,7 @@ test('SmartPlus emails only the database owner for a new important alert and ded
       inserts += 1;
       return [{ affectedRows: inserts === 1 ? 1 : 0 }];
     }
+    if (sql.includes("SET status = 'pending'")) return [{ affectedRows: 0 }];
     if (sql.includes('UPDATE smartplus_email_deliveries')) return [{ affectedRows: 1 }];
     throw new Error(`Unexpected execute: ${sql}`);
   };
@@ -192,7 +193,7 @@ test('SmartPlus emails only the database owner for a new important alert and ded
   });
 
   assert.equal(first.sent, true);
-  assert.equal(second.skipped, 'already_sent');
+  assert.equal(second.skipped, 'already_sent_or_retry_pending');
   assert.equal(emails.length, 1);
   assert.equal(emails[0].to, 'owner-a@example.com');
   assert.match(emails[0].text, /Milk/);
@@ -265,6 +266,7 @@ test('SmartPlus sends one professional completion email only to the database own
         reserved = true;
         return [{ affectedRows: 1 }];
       }
+      if (sql.includes("SET status = 'pending'")) return [{ affectedRows: 0 }];
       if (sql.includes('UPDATE smartplus_email_deliveries')) return [{ affectedRows: 1 }];
       throw new Error(`Unexpected execute: ${sql}`);
     },
@@ -284,10 +286,98 @@ test('SmartPlus sends one professional completion email only to the database own
   const second = await dispatchOwnerActionCompletion('business-a', action, dependencies);
 
   assert.equal(first.sent, true);
-  assert.equal(second.skipped, 'already_sent');
+  assert.equal(second.skipped, 'already_sent_or_retry_pending');
   assert.equal(emails.length, 1);
   assert.equal(emails[0].to, 'owner-a@example.com');
   assert.match(emails[0].subject, /task completed/i);
   assert.match(emails[0].html, /COMPLETED/);
   assert.match(emails[0].html, /Owner follow-up/);
+});
+
+test('SmartPlus retries a failed important alert once it is due, without duplicating a sent alert', async () => {
+  let insertCalls = 0;
+  let sendCalls = 0;
+  const dependencies = {
+    query: async (sql) => {
+      if (sql.includes('FROM businesses')) {
+        return [{ id: 'business-a', name: 'Store A', owner_email: 'owner-a@example.com' }];
+      }
+      if (sql.includes('smartplus_notification_preferences')) return [];
+      if (sql.includes('quantity <= 0')) return [{ name: 'Milk', quantity: 0 }];
+      if (sql.includes('low_stock_threshold')) return [];
+      if (sql.includes('discount / subtotal')) return [{ count: 0 }];
+      if (sql.includes('FROM purchase_orders po')) return [];
+      if (sql.includes('FROM restock_records')) return [];
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    execute: async (sql) => {
+      if (sql.includes('INSERT IGNORE')) {
+        insertCalls += 1;
+        return [{ affectedRows: insertCalls === 1 ? 1 : 0 }];
+      }
+      if (sql.includes("SET status = 'pending'")) {
+        // The second call represents a due failed record. The third finds
+        // the record already sent and cannot reserve it again.
+        return [{ affectedRows: insertCalls === 2 ? 1 : 0 }];
+      }
+      if (sql.includes('UPDATE smartplus_email_deliveries')) return [{ affectedRows: 1 }];
+      throw new Error(`Unexpected execute: ${sql}`);
+    },
+    sendEmail: async () => {
+      sendCalls += 1;
+      if (sendCalls === 1) throw new Error('Temporary Resend outage');
+      return 'resend-retry-id';
+    },
+  };
+
+  await assert.rejects(
+    dispatchOwnerAlert('business-a', dependencies),
+    /Temporary Resend outage/,
+  );
+  const retry = await dispatchOwnerAlert('business-a', dependencies);
+  const duplicate = await dispatchOwnerAlert('business-a', dependencies);
+
+  assert.equal(retry.sent, true);
+  assert.equal(retry.retried, true);
+  assert.equal(duplicate.skipped, 'already_sent_or_retry_pending');
+  assert.equal(sendCalls, 2);
+});
+
+test('SmartPlus retries a failed task-completion email without repeating the task', async () => {
+  let insertCalls = 0;
+  let sendCalls = 0;
+  const dependencies = {
+    query: async (sql) => {
+      if (sql.includes('FROM businesses')) {
+        return [{ id: 'business-a', name: 'Store A', owner_email: 'owner-a@example.com' }];
+      }
+      if (sql.includes('smartplus_notification_preferences')) return [];
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+    execute: async (sql) => {
+      if (sql.includes('INSERT IGNORE')) {
+        insertCalls += 1;
+        return [{ affectedRows: insertCalls === 1 ? 1 : 0 }];
+      }
+      if (sql.includes("SET status = 'pending'")) return [{ affectedRows: insertCalls === 2 ? 1 : 0 }];
+      if (sql.includes('UPDATE smartplus_email_deliveries')) return [{ affectedRows: 1 }];
+      throw new Error(`Unexpected execute: ${sql}`);
+    },
+    sendEmail: async () => {
+      sendCalls += 1;
+      if (sendCalls === 1) throw new Error('Temporary Resend outage');
+      return 'resend-completion-retry-id';
+    },
+  };
+  const action = { id: 'action-a', title: 'Record received stock' };
+
+  await assert.rejects(
+    dispatchOwnerActionCompletion('business-a', action, dependencies),
+    /Temporary Resend outage/,
+  );
+  const retry = await dispatchOwnerActionCompletion('business-a', action, dependencies);
+
+  assert.equal(retry.sent, true);
+  assert.equal(retry.retried, true);
+  assert.equal(sendCalls, 2);
 });

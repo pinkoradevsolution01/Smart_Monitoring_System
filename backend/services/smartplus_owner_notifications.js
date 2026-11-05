@@ -11,6 +11,72 @@ const OWNER_EMAIL_ENABLED = String(
 // parallel is wasteful and can monopolise the small production database.
 // Coalesce concurrent requests for the same tenant into one evaluation.
 const ownerAlertRuns = new Map();
+const MAX_EMAIL_ATTEMPTS = Math.max(
+  1,
+  Math.min(12, Number(process.env.SMARTPLUS_EMAIL_MAX_ATTEMPTS || 8)),
+);
+
+/**
+ * Reserve a delivery before contacting Resend. A sent delivery can never be
+ * sent twice; a failed delivery becomes available again after its backoff.
+ * The conditional update is atomic, so concurrent devices cannot both retry.
+ */
+async function reserveEmailDelivery({ dbExecute, businessId, notificationKey, ownerEmail }) {
+  const inserted = await dbExecute(
+    `INSERT IGNORE INTO smartplus_email_deliveries
+      (id, business_id, notification_key, owner_email, status, attempt_count, last_attempt_at)
+      VALUES (?, ?, ?, ?, 'pending', 1, NOW())`,
+    [randomUUID(), businessId, notificationKey, ownerEmail],
+  );
+  const insertResult = Array.isArray(inserted) ? inserted[0] : inserted;
+  if (Number(insertResult?.affectedRows || 0) === 1) return { reserved: true, retried: false };
+
+  // Retry only a failed notification that is due. Backoff is set when the
+  // previous attempt failed; sent and in-progress records remain untouched.
+  const retried = await dbExecute(
+    `UPDATE smartplus_email_deliveries
+        SET status = 'pending',
+            owner_email = ?,
+            attempt_count = attempt_count + 1,
+            last_attempt_at = NOW(),
+            next_retry_at = NULL,
+            error_message = NULL
+      WHERE business_id = ?
+        AND notification_key = ?
+        AND status = 'failed'
+        AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+        AND attempt_count < ?`,
+    [ownerEmail, businessId, notificationKey, MAX_EMAIL_ATTEMPTS],
+  );
+  const retryResult = Array.isArray(retried) ? retried[0] : retried;
+  return {
+    reserved: Number(retryResult?.affectedRows || 0) === 1,
+    retried: Number(retryResult?.affectedRows || 0) === 1,
+  };
+}
+
+async function markEmailSent({ dbExecute, businessId, notificationKey, providerMessageId }) {
+  await dbExecute(
+    `UPDATE smartplus_email_deliveries
+        SET status = 'sent', provider_message_id = ?, sent_at = CURRENT_TIMESTAMP,
+            error_message = NULL, next_retry_at = NULL
+      WHERE business_id = ? AND notification_key = ?`,
+    [providerMessageId, businessId, notificationKey],
+  );
+}
+
+async function markEmailFailed({ dbExecute, businessId, notificationKey, error }) {
+  await dbExecute(
+    `UPDATE smartplus_email_deliveries
+        SET status = 'failed', error_message = ?,
+            next_retry_at = DATE_ADD(
+              NOW(),
+              INTERVAL LEAST(360, 5 * POW(2, GREATEST(attempt_count - 1, 0))) MINUTE
+            )
+      WHERE business_id = ? AND notification_key = ?`,
+    [String(error.message || error).slice(0, 1000), businessId, notificationKey],
+  ).catch(() => undefined);
+}
 
 function manilaDate(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -280,13 +346,14 @@ function emailContent({ businessName, suggestions }) {
 
 function actionCompletionEmailContent({ businessName, action }) {
   const title = String(action?.title || 'SmartPlus task');
-  const completedAt = action?.executedAt
-    ? new Date(action.executedAt).toLocaleString('en-PH', {
+  const completedAtValue = action?.executedAt || action?.executed_at;
+  const completedAt = completedAtValue
+    ? new Date(completedAtValue).toLocaleString('en-PH', {
       timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short',
     })
     : 'just now';
   const result = String(
-    action?.resultMessage ||
+    action?.resultMessage || action?.result_message ||
       'The owner completed the guided follow-up. SmartPlus did not change business records automatically.',
   );
   const text = [
@@ -356,14 +423,13 @@ async function dispatchOwnerActionCompletion(businessId, action, dependencies = 
   }
 
   const notificationKey = `action-completed-${String(action.id).slice(0, 120)}`;
-  const insert = await dbExecute(
-    `INSERT IGNORE INTO smartplus_email_deliveries
-      (id, business_id, notification_key, owner_email, status)
-      VALUES (?, ?, ?, ?, 'pending')`,
-    [randomUUID(), business.id, notificationKey, business.owner_email],
-  );
-  const result = Array.isArray(insert) ? insert[0] : insert;
-  if (Number(result?.affectedRows || 0) !== 1) return { skipped: 'already_sent' };
+  const reservation = await reserveEmailDelivery({
+    dbExecute,
+    businessId: business.id,
+    notificationKey,
+    ownerEmail: business.owner_email,
+  });
+  if (!reservation.reserved) return { skipped: 'already_sent_or_retry_pending' };
 
   try {
     const content = actionCompletionEmailContent({
@@ -375,20 +441,12 @@ async function dispatchOwnerActionCompletion(businessId, action, dependencies = 
       subject: `SmartPlus task completed: ${String(action.title || 'Task')}`,
       ...content,
     });
-    await dbExecute(
-      `UPDATE smartplus_email_deliveries
-          SET status = 'sent', provider_message_id = ?, sent_at = CURRENT_TIMESTAMP, error_message = NULL
-        WHERE business_id = ? AND notification_key = ?`,
-      [providerMessageId, business.id, notificationKey],
-    );
-    return { sent: true };
+    await markEmailSent({
+      dbExecute, businessId: business.id, notificationKey, providerMessageId,
+    });
+    return { sent: true, retried: reservation.retried };
   } catch (error) {
-    await dbExecute(
-      `UPDATE smartplus_email_deliveries
-          SET status = 'failed', error_message = ?
-        WHERE business_id = ? AND notification_key = ?`,
-      [String(error.message || error).slice(0, 1000), business.id, notificationKey],
-    ).catch(() => undefined);
+    await markEmailFailed({ dbExecute, businessId: business.id, notificationKey, error });
     throw error;
   }
 }
@@ -530,14 +588,13 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
   const notificationKey = `owner-alert-${fingerprint}`;
   // Reserve the notification before contacting Resend. The unique key makes
   // concurrent device syncs unable to send duplicate owner messages.
-  const insert = await dbExecute(
-    `INSERT IGNORE INTO smartplus_email_deliveries
-      (id, business_id, notification_key, owner_email, status)
-      VALUES (?, ?, ?, ?, 'pending')`,
-    [randomUUID(), business.id, notificationKey, business.owner_email],
-  );
-  const result = Array.isArray(insert) ? insert[0] : insert;
-  if (Number(result?.affectedRows || 0) !== 1) return { skipped: 'already_sent' };
+  const reservation = await reserveEmailDelivery({
+    dbExecute,
+    businessId: business.id,
+    notificationKey,
+    ownerEmail: business.owner_email,
+  });
+  if (!reservation.reserved) return { skipped: 'already_sent_or_retry_pending' };
 
   try {
     const content = emailContent({
@@ -549,20 +606,12 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
       subject: `SmartPlus alert: ${emailSuggestions[0].title}`,
       ...content,
     });
-    await dbExecute(
-      `UPDATE smartplus_email_deliveries
-          SET status = 'sent', provider_message_id = ?, sent_at = CURRENT_TIMESTAMP, error_message = NULL
-        WHERE business_id = ? AND notification_key = ?`,
-      [providerMessageId, business.id, notificationKey],
-    );
-    return { sent: true, suggestionCount: emailSuggestions.length };
+    await markEmailSent({
+      dbExecute, businessId: business.id, notificationKey, providerMessageId,
+    });
+    return { sent: true, retried: reservation.retried, suggestionCount: emailSuggestions.length };
   } catch (error) {
-    await dbExecute(
-      `UPDATE smartplus_email_deliveries
-          SET status = 'failed', error_message = ?
-        WHERE business_id = ? AND notification_key = ?`,
-      [String(error.message || error).slice(0, 1000), business.id, notificationKey],
-    ).catch(() => undefined);
+    await markEmailFailed({ dbExecute, businessId: business.id, notificationKey, error });
     throw error;
   }
 }
@@ -580,11 +629,49 @@ function dispatchOwnerAlert(businessId, dependencies = {}) {
   return task;
 }
 
+// Task-completion messages are normally dispatched as soon as an owner marks
+// an Action Review Center task complete. If Resend is temporarily unavailable,
+// the completed task is already safely stored; this scheduled retry delivers
+// its acknowledgement later without asking the owner to repeat the task.
+async function retryFailedActionCompletionEmails(dependencies = {}) {
+  const dbQuery = dependencies.query || query;
+  const failed = await dbQuery(
+    `SELECT d.business_id, a.id, a.title, a.executed_at, a.result_message
+       FROM smartplus_email_deliveries d
+       INNER JOIN smartplus_action_drafts a
+         ON a.business_id = d.business_id
+        AND d.notification_key = CONCAT('action-completed-', LEFT(a.id, 120))
+      WHERE d.status = 'failed'
+        AND (d.next_retry_at IS NULL OR d.next_retry_at <= NOW())
+        AND a.status = 'executed'
+      ORDER BY d.updated_at ASC
+      LIMIT 25`,
+  ).catch(() => []);
+  let retried = 0;
+  let failedCount = 0;
+  for (const action of failed) {
+    try {
+      const result = await dispatchOwnerActionCompletion(action.business_id, {
+        id: action.id,
+        title: action.title,
+        executedAt: action.executed_at,
+        resultMessage: action.result_message,
+      }, dependencies);
+      if (result.sent) retried += 1;
+    } catch (error) {
+      failedCount += 1;
+      console.error('SmartPlus action-completion retry error:', error.message);
+    }
+  }
+  return { retried, failed: failedCount };
+}
+
 /// Runs from the backend process as well as after sync. Each individual
 /// business remains protected by its alert fingerprint in dispatchOwnerAlert.
 async function dispatchScheduledOwnerAlerts(dependencies = {}) {
   if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
   const dbQuery = dependencies.query || query;
+  const completionRetries = await retryFailedActionCompletionEmails(dependencies);
   const businesses = await dbQuery(
     'SELECT id FROM businesses WHERE is_active = 1',
   );
@@ -601,7 +688,8 @@ async function dispatchScheduledOwnerAlerts(dependencies = {}) {
   }
   return {
     processed: businesses.length,
-    failed: results.filter((result) => result.status === 'rejected').length,
+    retriedCompletions: completionRetries.retried,
+    failed: completionRetries.failed + results.filter((result) => result.status === 'rejected').length,
   };
 }
 
@@ -616,6 +704,7 @@ module.exports = {
   supplierDeliverySuggestions,
   actionCompletionEmailContent,
   dispatchOwnerActionCompletion,
+  retryFailedActionCompletionEmails,
   dispatchScheduledOwnerAlerts,
   // Backward-compatible aliases for callers deployed before alert delivery
   // replaced the daily/weekly digest behavior.

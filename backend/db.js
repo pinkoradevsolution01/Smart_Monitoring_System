@@ -443,6 +443,9 @@ async function ensureSmartPlusEmailDeliveriesTable() {
       notification_key VARCHAR(128) NOT NULL,
       owner_email VARCHAR(255) NOT NULL,
       status ENUM('pending', 'sent', 'failed') NOT NULL DEFAULT 'pending',
+      attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+      last_attempt_at DATETIME NULL,
+      next_retry_at DATETIME NULL,
       provider_message_id VARCHAR(255) NULL,
       error_message TEXT NULL,
       sent_at DATETIME NULL,
@@ -450,11 +453,22 @@ async function ensureSmartPlusEmailDeliveriesTable() {
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_smartplus_email_delivery (business_id, notification_key),
       KEY idx_smartplus_email_delivery_status (status, created_at),
+      KEY idx_smartplus_email_delivery_retry (status, next_retry_at),
       CONSTRAINT fk_smartplus_email_delivery_business
         FOREIGN KEY (business_id) REFERENCES businesses(id)
         ON DELETE CASCADE ON UPDATE CASCADE
     ) ENGINE=InnoDB
   `);
+  // Existing installations already have this table, so add retry metadata
+  // incrementally rather than requiring a manual migration.
+  await ensureColumn('smartplus_email_deliveries', 'attempt_count', 'INT UNSIGNED NOT NULL DEFAULT 0');
+  await ensureColumn('smartplus_email_deliveries', 'last_attempt_at', 'DATETIME NULL');
+  await ensureColumn('smartplus_email_deliveries', 'next_retry_at', 'DATETIME NULL');
+  if (!(await indexExists('smartplus_email_deliveries', 'idx_smartplus_email_delivery_retry'))) {
+    await pool.execute(
+      'ALTER TABLE smartplus_email_deliveries ADD KEY idx_smartplus_email_delivery_retry (status, next_retry_at)',
+    );
+  }
 }
 
 // Gemini free usage is allocated to the API project. A durable daily counter
