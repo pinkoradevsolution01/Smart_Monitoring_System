@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../models/product.dart';
@@ -17,6 +18,8 @@ import 'backend_api_service.dart';
 import 'backend_config.dart';
 import 'attendance_service.dart';
 import 'user_service.dart';
+import 'package_service.dart';
+import 'business_info_service.dart';
 
 /// Comprehensive cloud sync service for Supabase integration
 /// Syncs all business data: products, sales, inventory, purchases, suppliers, etc.
@@ -148,6 +151,7 @@ class SupabaseSyncService extends ChangeNotifier {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('backend_access_token', token);
         }
+        await _restoreVerifiedOwnerSetup(response);
       }
 
       debugPrint('✅ Business initialized: $_businessId');
@@ -170,6 +174,28 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('❌ Error initializing business: $e');
       _lastError = e.toString();
       rethrow;
+    }
+  }
+
+  /// Restores reinstall-sensitive UI state only from the authenticated
+  /// backend response. Keeping this in the shared initializer makes every
+  /// Google owner sign-in path behave the same way.
+  Future<void> _restoreVerifiedOwnerSetup(Map<String, dynamic> response) async {
+    final packageName = response['subscriptionPackage']?.toString();
+    final businessName = response['businessName']?.toString().trim();
+    final businessAddress = response['businessAddress']?.toString();
+
+    if (GetIt.I.isRegistered<PackageService>()) {
+      await GetIt.I<PackageService>().restoreFromVerifiedBackendSubscription(
+        packageName,
+      );
+    }
+
+    if (businessName != null && businessName.isNotEmpty) {
+      await BusinessInfoService().restoreFromVerifiedBackendBusiness(
+        storeName: businessName,
+        storeAddress: businessAddress,
+      );
     }
   }
 
