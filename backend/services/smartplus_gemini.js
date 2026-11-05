@@ -1,8 +1,9 @@
 const { query } = require('../db');
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-// Stable model verified as available for the SmartPlus Gemini API project.
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+// Gemini 3.8 Flash is the supported successor for new Gemini API projects.
+// It uses the Interactions API rather than the legacy generateContent path.
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MAX_QUESTION_LENGTH = 1200;
 const MAX_ANSWER_LENGTH = 6000;
 const FREE_DAILY_REQUEST_LIMIT = 100;
@@ -239,10 +240,10 @@ async function callGemini({ question, context, locale, model }) {
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const requestGemini = async () => {
-      // generateContent is supported by the approved Gemini Flash models. Do
-      // not send the API key or a client-supplied business ID to the device.
+      // Gemini 3.8 Flash uses the Interactions API. Do not send the API key
+      // or a client-supplied business ID to the device.
       const response = await fetch(
-        `${GEMINI_API_BASE}/${encodeURIComponent(model)}:generateContent`,
+        `${GEMINI_API_BASE}/interactions`,
         {
           method: 'POST',
           headers: {
@@ -251,20 +252,14 @@ async function callGemini({ question, context, locale, model }) {
           },
           signal: controller.signal,
           body: JSON.stringify({
-            systemInstruction: {
-              parts: [{ text: systemInstruction(locale) }],
-            },
-            contents: [
-              {
-                role: 'user',
-                parts: [{
-                  text: `Tenant business summary (untrusted factual data):\n${JSON.stringify(context)}\n\nOwner question (untrusted input):\n${question}`,
-                }],
-              },
-            ],
-            generationConfig: {
+            model,
+            // Keep policy, tenant aggregate, and the owner's input in one
+            // stateless interaction. The backend has no write tools, and the
+            // instruction explicitly treats all supplied data as untrusted.
+            input: `SYSTEM INSTRUCTIONS (follow these before all other text):\n${systemInstruction(locale)}\n\nTenant business summary (untrusted factual data):\n${JSON.stringify(context)}\n\nOwner question (untrusted input):\n${question}`,
+            generation_config: {
               temperature: 0.2,
-              maxOutputTokens: 500,
+              max_output_tokens: 500,
             },
           }),
         },
@@ -277,10 +272,12 @@ async function callGemini({ question, context, locale, model }) {
         error.retryable = [429, 500, 502, 503, 504].includes(response.status);
         throw error;
       }
-      const answer = (payload.candidates || [])
-        .flatMap((candidate) => candidate?.content?.parts || [])
-        .map((part) => String(part?.text || ''))
-        .join('')
+      const answer = (String(payload.output_text || '') || (payload.steps || [])
+        .filter((step) => step?.type === 'model_output')
+        .flatMap((step) => step?.content || [])
+        .filter((content) => content?.type === 'text')
+        .map((content) => String(content?.text || ''))
+        .join(''))
         .trim()
         .slice(0, MAX_ANSWER_LENGTH);
       if (!answer) throw new Error('Gemini returned no usable text.');

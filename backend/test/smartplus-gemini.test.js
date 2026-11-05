@@ -51,11 +51,11 @@ test('SmartPlus Gemini normalizes and bounds chat input', () => {
 test('SmartPlus accepts the provider model-resource prefix in configuration', () => {
   const previousModel = process.env.GEMINI_MODEL;
   const previousAllowed = process.env.GEMINI_ALLOWED_MODELS;
-  process.env.GEMINI_MODEL = 'models/gemini-2.5-flash';
-  process.env.GEMINI_ALLOWED_MODELS = 'models/gemini-2.5-flash';
+  process.env.GEMINI_MODEL = 'models/gemini-3.8-flash';
+  process.env.GEMINI_ALLOWED_MODELS = 'models/gemini-3.8-flash';
   try {
-    assert.equal(normalizeModelName(process.env.GEMINI_MODEL), 'gemini-2.5-flash');
-    assert.deepEqual(allowedModels(), ['gemini-2.5-flash']);
+    assert.equal(normalizeModelName(process.env.GEMINI_MODEL), 'gemini-3.8-flash');
+    assert.deepEqual(allowedModels(), ['gemini-3.8-flash']);
   } finally {
     if (previousModel == null) delete process.env.GEMINI_MODEL;
     else process.env.GEMINI_MODEL = previousModel;
@@ -64,7 +64,7 @@ test('SmartPlus accepts the provider model-resource prefix in configuration', ()
   }
 });
 
-test('SmartPlus Gemini uses the supported generateContent contract', { concurrency: false }, async () => {
+test('SmartPlus Gemini uses the supported Interactions API contract', { concurrency: false }, async () => {
   const previousFetch = global.fetch;
   const previousKey = process.env.GEMINI_API_KEY;
   let requestedUrl = '';
@@ -78,7 +78,8 @@ test('SmartPlus Gemini uses the supported generateContent contract', { concurren
       status: 200,
       async json() {
         return {
-          candidates: [{ content: { parts: [{ text: 'Tenant-safe answer.' }] } }],
+          id: 'int_test',
+          steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Tenant-safe answer.' }] }],
         };
       },
     };
@@ -88,13 +89,13 @@ test('SmartPlus Gemini uses the supported generateContent contract', { concurren
       question: 'What sold best?',
       context: { dataQuality: 'limited' },
       locale: 'en',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
     });
     assert.equal(answer, 'Tenant-safe answer.');
-    assert.match(requestedUrl, /models\/gemini-2\.5-flash:generateContent$/);
-    assert.equal(requestedBody.systemInstruction.parts[0].text.includes('owner-reviewed'), true);
-    assert.equal(requestedBody.contents[0].role, 'user');
-    assert.equal(requestedBody.generationConfig.maxOutputTokens, 500);
+    assert.match(requestedUrl, /\/v1beta\/interactions$/);
+    assert.equal(requestedBody.model, 'gemini-3.8-flash');
+    assert.match(requestedBody.input, /owner-reviewed/);
+    assert.equal(requestedBody.generation_config.max_output_tokens, 500);
   } finally {
     global.fetch = previousFetch;
     if (previousKey == null) delete process.env.GEMINI_API_KEY;
