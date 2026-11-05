@@ -6,6 +6,7 @@ const {
   allowedModels,
   callGemini,
   consumeDailyQuota,
+  normalizeModelName,
   normalizeQuestion,
   systemInstruction,
 } = require('../services/smartplus_gemini');
@@ -45,6 +46,22 @@ test('SmartPlus Gemini rejects an unconfigured provider before any tenant data i
 test('SmartPlus Gemini normalizes and bounds chat input', () => {
   assert.equal(normalizeQuestion('  Sales\n\tthis week  '), 'Sales this week');
   assert.equal(normalizeQuestion('x'.repeat(1500)).length, 1200);
+});
+
+test('SmartPlus accepts the provider model-resource prefix in configuration', () => {
+  const previousModel = process.env.GEMINI_MODEL;
+  const previousAllowed = process.env.GEMINI_ALLOWED_MODELS;
+  process.env.GEMINI_MODEL = 'models/gemini-2.5-flash';
+  process.env.GEMINI_ALLOWED_MODELS = 'models/gemini-2.5-flash';
+  try {
+    assert.equal(normalizeModelName(process.env.GEMINI_MODEL), 'gemini-2.5-flash');
+    assert.deepEqual(allowedModels(), ['gemini-2.5-flash']);
+  } finally {
+    if (previousModel == null) delete process.env.GEMINI_MODEL;
+    else process.env.GEMINI_MODEL = previousModel;
+    if (previousAllowed == null) delete process.env.GEMINI_ALLOWED_MODELS;
+    else process.env.GEMINI_ALLOWED_MODELS = previousAllowed;
+  }
 });
 
 test('SmartPlus Gemini uses the supported generateContent contract', { concurrency: false }, async () => {

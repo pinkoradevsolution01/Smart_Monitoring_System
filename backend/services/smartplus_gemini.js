@@ -11,12 +11,18 @@ function configured() {
   return Boolean(String(process.env.GEMINI_API_KEY || '').trim());
 }
 
+// Google lists model resources as `models/gemini-…`, while the generateContent
+// URL needs only `gemini-…`. Accept either administrator spelling safely.
+function normalizeModelName(value) {
+  return String(value || '').trim().replace(/^models\//i, '');
+}
+
 function modelName() {
-  return String(process.env.GEMINI_MODEL || DEFAULT_MODEL).trim();
+  return normalizeModelName(process.env.GEMINI_MODEL || DEFAULT_MODEL) || DEFAULT_MODEL;
 }
 
 function validModelName(value) {
-  return /^[A-Za-z0-9._-]{1,100}$/.test(String(value || '').trim());
+  return /^[A-Za-z0-9._-]{1,100}$/.test(normalizeModelName(value));
 }
 
 // Clients can select only models explicitly configured by the operator. This
@@ -26,7 +32,7 @@ function allowedModels() {
     process.env.GEMINI_ALLOWED_MODELS || modelName(),
   )
     .split(',')
-    .map((value) => value.trim())
+    .map(normalizeModelName)
     .filter(validModelName);
   const defaultModel = modelName();
   if (validModelName(defaultModel) && !configuredModels.includes(defaultModel)) {
@@ -36,7 +42,7 @@ function allowedModels() {
 }
 
 function selectedModel(value) {
-  const requested = String(value || '').trim();
+  const requested = normalizeModelName(value);
   if (!requested) return modelName();
   return allowedModels().includes(requested) ? requested : null;
 }
@@ -267,6 +273,7 @@ async function callGemini({ question, context, locale, model }) {
       if (!response.ok) {
         const error = new Error(`Gemini request failed with status ${response.status}`);
         error.statusCode = response.status;
+        if (response.status === 404) error.code = 'provider_model_not_found';
         error.retryable = [429, 500, 502, 503, 504].includes(response.status);
         throw error;
       }
@@ -336,6 +343,7 @@ module.exports = {
   allowedModels,
   callGemini,
   normalizeQuestion,
+  normalizeModelName,
   philippinesUsageDate,
   selectedModel,
   systemInstruction,

@@ -269,7 +269,7 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
     });
   } catch (error) {
     const status = error.code === 'gemini_not_configured' ? 503
-      : ['invalid_question', 'unsupported_model'].includes(error.code) ? 400
+      : ['invalid_question', 'unsupported_model', 'provider_model_not_found'].includes(error.code) ? 400
       : 502;
     console.error(JSON.stringify({
       event: 'smartplus_gemini_failed',
@@ -286,7 +286,9 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
       message: status === 503
         ? 'SmartPlus Gemini is not configured on the secure backend yet.'
         : status === 400
-        ? error.message
+        ? error.code === 'provider_model_not_found'
+          ? 'The configured Gemini model is unavailable. Set GEMINI_MODEL to an available model, such as gemini-2.5-flash, then restart the backend.'
+          : error.message
         : 'SmartPlus Gemini is temporarily unavailable. Local SmartPlus answers remain available.',
     });
   }
