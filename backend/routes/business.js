@@ -116,7 +116,17 @@ router.post('/init', async (req, res) => {
       return res.status(403).json({ success: false, message: 'The signed-in owner is not assigned to this business.' });
     }
 
-    return res.json({ success: true, businessId, token: issueBusinessSession(users[0]) });
+    return res.json({
+      success: true,
+      businessId,
+      token: issueBusinessSession(users[0]),
+      // This value is derived from the server-side entitlement lookup above,
+      // never from a package selected by the client. It lets a reinstalled
+      // owner app restore its UI package without asking the owner to buy or
+      // select a package again.
+      subscriptionPackage: entitlement?.package_name || null,
+      subscriptionExpiresAt: entitlement?.expires_at || null,
+    });
   } catch (error) {
     console.error('Business init error:', error);
     return res.status(500).json({ success: false, message: 'Failed to initialize business.' });

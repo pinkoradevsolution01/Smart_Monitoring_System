@@ -206,6 +206,8 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
       }
 
       final businessId = businessResponse['businessId'].toString();
+      final verifiedSubscriptionPackage =
+          businessResponse['subscriptionPackage']?.toString();
 
       // Create owner user from Google account
       final owner = user_model.User(
@@ -233,6 +235,12 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         await prefs.setString('business_name', googleUser['name'] as String);
         await prefs.setBool('is_google_auth', true);
         await _googleAuth.storeSession();
+        // A reinstall clears local package preferences. Restore the existing
+        // owner's package only from the backend's verified entitlement, so an
+        // active subscriber is not sent back to Package Selection.
+        await GetIt.I<PackageService>().restoreFromVerifiedBackendSubscription(
+          verifiedSubscriptionPackage,
+        );
       }
 
       if (!mounted) return;

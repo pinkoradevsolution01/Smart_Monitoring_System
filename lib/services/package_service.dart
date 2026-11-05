@@ -200,6 +200,22 @@ class PackageService extends ChangeNotifier {
     );
   }
 
+  /// Restores only a package that the backend has already verified as active
+  /// for the signed-in owner. This is recovery UI state, not authorization:
+  /// every protected backend endpoint still checks the real entitlement.
+  Future<bool> restoreFromVerifiedBackendSubscription(
+    String? packageName,
+  ) async {
+    final package = _findPackageByName(packageName);
+    if (package == null) return false;
+    final prefs = await SharedPreferences.getInstance();
+    await _persistRecoveredPackage(package, prefs);
+    debugPrint(
+      'PackageService: restored verified backend package (${package.name})',
+    );
+    return true;
+  }
+
   PricingPackage? _findPackageByName(String? packageName) {
     if (packageName == null || packageName.trim().isEmpty) return null;
     final normalized = packageName.trim().toLowerCase();
