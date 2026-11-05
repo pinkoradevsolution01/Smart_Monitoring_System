@@ -38,7 +38,12 @@ class SupabaseSyncService extends ChangeNotifier {
   Timer? _autoSyncTimer;
   Timer? _queuedPushTimer;
   bool _autoSyncEnabled = true;
-  Duration _autoSyncInterval = const Duration(seconds: 30);
+  // A full restore touches every local module table. Running it every 30
+  // seconds competes with screen queries and SQLite writes, which makes the
+  // app appear to freeze on devices with real sales and purchase-order data.
+  // Local changes still use the short queued upload below; this cadence only
+  // controls cloud-to-device refreshes from other devices.
+  Duration _autoSyncInterval = const Duration(minutes: 2);
   Duration _queuedPushDelay = const Duration(seconds: 2);
   int _retryAttempts = 0;
   DateTime? _nextRetryAt;
@@ -398,7 +403,7 @@ class SupabaseSyncService extends ChangeNotifier {
 
       try {
         // Poll cloud changes without re-uploading every product, sale, and
-        // purchase-order item on every device every 30 seconds. Writes are
+        // purchase-order item on every device on a short loop. Writes are
         // still pushed promptly by queuePushAllData after a local mutation.
         await pullAllData();
       } catch (e) {
