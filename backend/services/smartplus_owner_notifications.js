@@ -6,6 +6,12 @@ const OWNER_EMAIL_ENABLED = String(
   process.env.SMARTPLUS_OWNER_EMAIL_ENABLED || '',
 ).trim().toLowerCase() === 'true';
 
+// A successful sync can be triggered by more than one signed-in device.  An
+// alert evaluation is read-only, but running the same delivery analysis in
+// parallel is wasteful and can monopolise the small production database.
+// Coalesce concurrent requests for the same tenant into one evaluation.
+const ownerAlertRuns = new Map();
+
 function manilaDate(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
@@ -310,7 +316,7 @@ async function dispatchOwnerActionCompletion(businessId, action, dependencies = 
  * SmartPlus condition is found. The owner email and tenant scope always come
  * from the database; this service never accepts either from a Flutter client.
  */
-async function dispatchOwnerAlert(businessId, dependencies = {}) {
+async function evaluateOwnerAlert(businessId, dependencies = {}) {
   if (!OWNER_EMAIL_ENABLED) return { skipped: 'disabled' };
 
   const dbQuery = dependencies.query || query;
@@ -372,31 +378,28 @@ async function dispatchOwnerAlert(businessId, dependencies = {}) {
                 ORDER BY poi.product_name SEPARATOR ', ') AS ordered_items,
               SUM(CASE WHEN p.quantity <= p.low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
               MAX(CASE WHEN po.status = 'received' AND poi.received_quantity > 0
-                AND rr.id IS NULL THEN 1 ELSE 0 END) AS missing_inventory,
-              CASE WHEN EXISTS (
-                SELECT 1 FROM purchase_order_items line
-                 WHERE line.business_id = po.business_id AND line.order_id = po.id
-              ) AND NOT EXISTS (
-                SELECT 1 FROM purchase_order_items line
-                 WHERE line.business_id = po.business_id AND line.order_id = po.id
-                   AND (line.quantity <= 0 OR line.received_quantity < line.quantity
-                     OR COALESCE((SELECT SUM(stock.quantity) FROM restock_records stock
-                       WHERE stock.business_id = po.business_id
-                         AND stock.product_id = line.product_id
-                         AND LOWER(stock.referenced_by) = LOWER(CONCAT('Purchase Order ', po.order_number))), 0)
-                       < (SELECT SUM(same_product.received_quantity) FROM purchase_order_items same_product
-                         WHERE same_product.business_id = po.business_id AND same_product.order_id = po.id
-                           AND same_product.product_id = line.product_id))
-              ) THEN 1 ELSE 0 END AS fully_restocked,
+                AND COALESCE((SELECT SUM(stock.quantity)
+                  FROM restock_records stock
+                 WHERE stock.business_id = po.business_id
+                   AND stock.product_id = poi.product_id
+                   AND stock.referenced_by = CONCAT('Purchase Order ', po.order_number)), 0)
+                  < poi.received_quantity THEN 1 ELSE 0 END) AS missing_inventory,
+              CASE WHEN COUNT(poi.id) > 0
+                AND MAX(CASE WHEN poi.quantity <= 0 OR poi.received_quantity < poi.quantity
+                  OR COALESCE((SELECT SUM(stock.quantity)
+                    FROM restock_records stock
+                   WHERE stock.business_id = po.business_id
+                     AND stock.product_id = poi.product_id
+                     AND stock.referenced_by = CONCAT('Purchase Order ', po.order_number)), 0)
+                    < poi.received_quantity
+                  THEN 1 ELSE 0 END) = 0
+                THEN 1 ELSE 0 END AS fully_restocked,
               DATEDIFF(CURDATE(), DATE(po.expected_delivery)) AS overdue_days,
               DATEDIFF(CURDATE(), DATE(po.order_date)) AS pending_days
          FROM purchase_orders po
          LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.business_id = po.business_id
          LEFT JOIN purchase_order_items poi ON poi.order_id = po.id AND poi.business_id = po.business_id
          LEFT JOIN products p ON p.id = poi.product_id AND p.business_id = po.business_id
-         LEFT JOIN restock_records rr ON rr.business_id = po.business_id
-           AND CAST(rr.product_id AS CHAR) = CAST(poi.product_id AS CHAR)
-           AND LOWER(rr.referenced_by) LIKE CONCAT('%', LOWER(po.order_number), '%')
         WHERE po.business_id = ?
           AND (
             po.status IN ('completed', 'partial')
@@ -484,6 +487,19 @@ async function dispatchOwnerAlert(businessId, dependencies = {}) {
   }
 }
 
+function dispatchOwnerAlert(businessId, dependencies = {}) {
+  const key = String(businessId || '').trim();
+  if (!key) return Promise.resolve({ skipped: 'business_not_found' });
+  const running = ownerAlertRuns.get(key);
+  if (running) return running;
+
+  const task = evaluateOwnerAlert(key, dependencies).finally(() => {
+    if (ownerAlertRuns.get(key) === task) ownerAlertRuns.delete(key);
+  });
+  ownerAlertRuns.set(key, task);
+  return task;
+}
+
 /// Runs from the backend process as well as after sync. Each individual
 /// business remains protected by its alert fingerprint in dispatchOwnerAlert.
 async function dispatchScheduledOwnerAlerts(dependencies = {}) {
@@ -492,9 +508,17 @@ async function dispatchScheduledOwnerAlerts(dependencies = {}) {
   const businesses = await dbQuery(
     'SELECT id FROM businesses WHERE is_active = 1',
   );
-  const results = await Promise.allSettled(
-    businesses.map((business) => dispatchOwnerAlert(business.id, dependencies)),
-  );
+  // Keep scheduled work deliberately sequential. A shared MySQL pool serves
+  // real POS and sync requests first; starting one heavy delivery check per
+  // business at the same instant can otherwise exhaust the entire pool.
+  const results = [];
+  for (const business of businesses) {
+    try {
+      results.push({ status: 'fulfilled', value: await dispatchOwnerAlert(business.id, dependencies) });
+    } catch (error) {
+      results.push({ status: 'rejected', reason: error });
+    }
+  }
   return {
     processed: businesses.length,
     failed: results.filter((result) => result.status === 'rejected').length,

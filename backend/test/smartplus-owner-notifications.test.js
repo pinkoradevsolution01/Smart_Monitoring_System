@@ -188,6 +188,32 @@ test('scheduled SmartPlus alerts evaluate active businesses only', async () => {
   assert.equal(queried.some((call) => call.params.includes('business-b')), false);
 });
 
+test('concurrent owner-alert triggers share one tenant evaluation', async () => {
+  let businessQueries = 0;
+  let releaseBusiness;
+  const businessGate = new Promise((resolve) => { releaseBusiness = resolve; });
+  const dependencies = {
+    query: async (sql) => {
+      if (sql.includes('FROM businesses')) {
+        businessQueries += 1;
+        await businessGate;
+        return [{ id: 'business-concurrent', name: 'Store', owner_email: 'owner@example.com' }];
+      }
+      if (sql.includes('smartplus_notification_preferences')) return [{ email_enabled: 0 }];
+      throw new Error(`Unexpected query: ${sql}`);
+    },
+  };
+
+  const first = dispatchOwnerAlert('business-concurrent', dependencies);
+  const second = dispatchOwnerAlert('business-concurrent', dependencies);
+  releaseBusiness();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  assert.equal(businessQueries, 1);
+  assert.equal(firstResult.skipped, 'email_disabled_by_owner');
+  assert.equal(secondResult.skipped, 'email_disabled_by_owner');
+});
+
 test('SmartPlus sends one professional completion email only to the database owner', async () => {
   const emails = [];
   let reserved = false;

@@ -48,6 +48,18 @@ async function uniqueIndexExists(tableName, indexName) {
   return (rows[0]?.count || 0) > 0;
 }
 
+async function indexExists(tableName, indexName) {
+  const [rows] = await pool.execute(
+    `SELECT COUNT(*) AS count
+       FROM information_schema.statistics
+      WHERE table_schema = DATABASE()
+        AND table_name = ?
+        AND index_name = ?`,
+    [tableName, indexName],
+  );
+  return (rows[0]?.count || 0) > 0;
+}
+
 async function getUniqueIndexes(tableName) {
   const [rows] = await pool.execute(
     `SELECT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns_csv
@@ -584,6 +596,28 @@ async function ensureOperationalEventsTable() {
   `);
 }
 
+// SmartPlus delivery alerts query purchase-order lines and their exact restock
+// reference. Older production schemas only indexed each column separately,
+// which turned the alert check into long table scans when several businesses
+// synced at once. These indexes keep that tenant-scoped lookup bounded.
+async function ensureSmartPlusPerformanceIndexes() {
+  if (!(await indexExists('purchase_orders', 'idx_purchase_orders_business_status_delivery'))) {
+    await pool.execute(
+      'ALTER TABLE purchase_orders ADD KEY idx_purchase_orders_business_status_delivery (business_id, status, expected_delivery)',
+    );
+  }
+  if (!(await indexExists('purchase_order_items', 'idx_purchase_order_items_business_order_product'))) {
+    await pool.execute(
+      'ALTER TABLE purchase_order_items ADD KEY idx_purchase_order_items_business_order_product (business_id, order_id, product_id)',
+    );
+  }
+  if (!(await indexExists('restock_records', 'idx_restock_records_business_product_reference'))) {
+    await pool.execute(
+      'ALTER TABLE restock_records ADD KEY idx_restock_records_business_product_reference (business_id, product_id, referenced_by)',
+    );
+  }
+}
+
 async function initDb() {
   pool = mysql.createPool({
     host: MYSQL_HOST,
@@ -612,6 +646,7 @@ async function initDb() {
   await ensureSmartPlusFeedbackTable();
   await ensureSmartPlusActionTables();
   await ensureOperationalEventsTable();
+  await ensureSmartPlusPerformanceIndexes();
   connection.release();
 
   console.log(`✅ Connected to MySQL database ${MYSQL_DATABASE} at ${MYSQL_HOST}:${MYSQL_PORT}`);
