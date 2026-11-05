@@ -46,6 +46,12 @@ function nextPhilippinesMidnight(now = new Date()) {
   return `${currentDay}T16:00:00.000Z`;
 }
 
+// db.execute intentionally returns mysql2's [result, fields] tuple in this
+// project, while tests may provide the result object directly.
+function executeResult(value) {
+  return Array.isArray(value) ? (value[0] || {}) : (value || {});
+}
+
 /**
  * Atomically consumes one request from the API project's daily Gemini quota.
  * It is deliberately global: Google API free quotas apply to the API project,
@@ -60,14 +66,14 @@ async function consumeDailyQuota({ db = require('../db'), now = new Date() } = {
     [usageDate, FREE_DAILY_REQUEST_LIMIT],
   );
 
-  let allowed = Number(update.affectedRows || 0) === 1;
+  let allowed = Number(executeResult(update).affectedRows || 0) === 1;
   if (!allowed) {
     const insert = await db.execute(
       `INSERT IGNORE INTO smartplus_gemini_daily_usage
         (usage_date, request_count) VALUES (?, 1)`,
       [usageDate],
     );
-    allowed = Number(insert.affectedRows || 0) === 1;
+    allowed = Number(executeResult(insert).affectedRows || 0) === 1;
     if (!allowed) {
       // Another request may have created the row just before this one. Retry
       // the guarded increment once; it stays atomic at the 100-request cap.
@@ -77,7 +83,7 @@ async function consumeDailyQuota({ db = require('../db'), now = new Date() } = {
           WHERE usage_date = ? AND request_count < ?`,
         [usageDate, FREE_DAILY_REQUEST_LIMIT],
       );
-      allowed = Number(retry.affectedRows || 0) === 1;
+      allowed = Number(executeResult(retry).affectedRows || 0) === 1;
     }
   }
 
