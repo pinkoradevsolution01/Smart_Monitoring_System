@@ -4,6 +4,7 @@ const test = require('node:test');
 process.env.SMARTPLUS_OWNER_EMAIL_ENABLED = 'true';
 
 const {
+  buildSupplierDeliveryRows,
   dispatchOwnerAlert,
   dispatchOwnerActionCompletion,
   dispatchScheduledOwnerAlerts,
@@ -95,14 +96,46 @@ test('genuine missing-restock and partial-delivery warnings remain visible', () 
   assert.match(alerts[1].title, /partial/i);
 });
 
+test('delivery analysis matches restocks once in memory instead of correlated SQL scans', () => {
+  const rows = buildSupplierDeliveryRows(
+    [{
+      order_id: 7,
+      order_number: 'PO-FAST-7',
+      status: 'received',
+      order_date: '2026-10-14',
+      expected_delivery: '2026-10-16',
+      supplier_name: 'ABC Supplies',
+      product_id: 3,
+      product_name: 'Milk',
+      quantity: 5,
+      received_quantity: 5,
+      product_quantity: 2,
+      low_stock_threshold: 5,
+    }],
+    [{ product_id: 3, quantity: 5, referenced_by: 'Received PO-FAST-7' }],
+    new Date('2026-10-17T04:00:00.000Z'),
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].missing_inventory, 0);
+  assert.equal(rows[0].fully_restocked, 1);
+  assert.equal(rows[0].low_stock_count, 1);
+  assert.deepEqual(supplierDeliverySuggestions(rows), []);
+});
+
 test('owner email is skipped when only received orders remain', async () => {
   const dbQuery = async (sql) => {
     if (sql.includes('FROM businesses')) return [{ id: 'business-a', name: 'Store A', owner_email: 'owner@example.com' }];
     if (sql.includes('smartplus_notification_preferences')) return [];
     if (sql.includes('FROM purchase_orders po')) {
-      assert.match(sql, /AS fully_restocked/);
-      return [{ order_number: 'PO-20261016-4154015', status: 'received', expected_delivery: '2026-10-16', overdue_days: 1, missing_inventory: 0 }];
+      assert.doesNotMatch(sql, /INSTR\(/);
+      return [{
+        order_id: 1, order_number: 'PO-20261016-4154015', status: 'received',
+        order_date: '2026-10-15', expected_delivery: '2026-10-16',
+        product_id: 1, product_name: 'Milk', quantity: 5, received_quantity: 5,
+        product_quantity: 10, low_stock_threshold: 5,
+      }];
     }
+    if (sql.includes('FROM restock_records')) return [{ product_id: 1, quantity: 5, referenced_by: 'PO-20261016-4154015' }];
     if (sql.includes('discount / subtotal')) return [{ count: 0 }];
     return [];
   };
@@ -129,6 +162,7 @@ test('SmartPlus emails only the database owner for a new important alert and ded
     if (sql.includes('low_stock_threshold')) return [{ name: 'Bread', quantity: 2, low_stock_threshold: 5 }];
     if (sql.includes('discount / subtotal')) return [{ count: 0 }];
     if (sql.includes('FROM purchase_orders po')) return [];
+    if (sql.includes('FROM restock_records')) return [];
     throw new Error(`Unexpected query: ${sql}`);
   };
   let inserts = 0;

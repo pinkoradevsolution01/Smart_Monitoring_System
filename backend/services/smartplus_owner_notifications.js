@@ -51,6 +51,88 @@ function asNumber(value) {
   return Number(value || 0);
 }
 
+function calendarDaysBetween(fromDate, toDate) {
+  const from = String(fromDate || '').slice(0, 10);
+  const to = String(toDate || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return 0;
+  }
+  return Math.floor((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
+
+// Keep reference matching out of MySQL. The legacy reference is free text, so
+// INSTR(LOWER(...)) forced a restock-table scan for every purchase-order item.
+// We fetch the tenant's bounded records once and match them in memory instead.
+function buildSupplierDeliveryRows(orderItems = [], restockRecords = [], now = new Date()) {
+  const restocksByProduct = new Map();
+  for (const restock of restockRecords) {
+    const productId = String(restock.product_id ?? '');
+    if (!productId) continue;
+    const records = restocksByProduct.get(productId) || [];
+    records.push({
+      quantity: asNumber(restock.quantity),
+      reference: String(restock.referenced_by || '').toLowerCase(),
+    });
+    restocksByProduct.set(productId, records);
+  }
+
+  const today = manilaDate(now);
+  const orders = new Map();
+  for (const item of orderItems) {
+    const orderId = String(item.order_id ?? item.order_number ?? '');
+    if (!orderId) continue;
+    const existing = orders.get(orderId) || {
+      order_number: item.order_number,
+      status: String(item.status || '').toLowerCase(),
+      order_date: item.order_date,
+      expected_delivery: item.expected_delivery,
+      supplier_name: item.supplier_name,
+      orderedItems: [],
+      low_stock_count: 0,
+      missing_inventory: 0,
+      fully_restocked: 1,
+      itemCount: 0,
+    };
+
+    if (item.product_id != null) {
+      const productId = String(item.product_id);
+      const orderNumber = String(item.order_number || '').toLowerCase();
+      const restockedQuantity = (restocksByProduct.get(productId) || [])
+        .filter((restock) => restock.reference.includes(orderNumber))
+        .reduce((total, restock) => total + restock.quantity, 0);
+      const orderedQuantity = asNumber(item.quantity);
+      const receivedQuantity = asNumber(item.received_quantity);
+      existing.itemCount += 1;
+      existing.orderedItems.push(`${item.product_name || 'Unnamed product'} x${orderedQuantity}`);
+      if (item.product_quantity != null &&
+          asNumber(item.product_quantity) <= asNumber(item.low_stock_threshold)) {
+        existing.low_stock_count += 1;
+      }
+      if (existing.status === 'received' && receivedQuantity > 0 && restockedQuantity < receivedQuantity) {
+        existing.missing_inventory = 1;
+      }
+      if (orderedQuantity <= 0 || receivedQuantity < orderedQuantity || restockedQuantity < receivedQuantity) {
+        existing.fully_restocked = 0;
+      }
+    }
+    orders.set(orderId, existing);
+  }
+
+  return [...orders.values()].map((order) => ({
+    order_number: order.order_number,
+    status: order.status,
+    order_date: order.order_date,
+    expected_delivery: order.expected_delivery,
+    supplier_name: order.supplier_name || 'Unassigned supplier',
+    ordered_items: order.orderedItems.join(', ') || 'No line items recorded',
+    low_stock_count: order.low_stock_count,
+    missing_inventory: order.missing_inventory,
+    fully_restocked: order.itemCount > 0 && order.fully_restocked === 1 ? 1 : 0,
+    overdue_days: calendarDaysBetween(order.expected_delivery, today),
+    pending_days: calendarDaysBetween(order.order_date, today),
+  }));
+}
+
 function supplierDeliverySuggestions(rows = []) {
   return rows.map((row) => {
     const orderNumber = String(row.order_number || 'Unknown purchase order');
@@ -344,7 +426,13 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
   if (Number(preferences.email_enabled ?? 1) !== 1) {
     return { skipped: 'email_disabled_by_owner' };
   }
-  const [outOfStock, lowStock, discountRows, supplierDelivery] = await Promise.all([
+  const [
+    outOfStock,
+    lowStock,
+    discountRows,
+    supplierDeliveryLines,
+    restockRecords,
+  ] = await Promise.all([
     dbQuery(
       `SELECT name, quantity
          FROM products
@@ -371,55 +459,47 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
           AND discount / subtotal >= 0.20`,
       [businessId],
     ),
+    // Return tenant-scoped order lines only. Restock reference matching is
+    // intentionally performed once in JavaScript below: doing it as a
+    // correlated INSTR subquery caused full restock-table scans per line.
     dbQuery(
-      `SELECT po.order_number, po.status, po.order_date, po.expected_delivery,
-              COALESCE(s.name, 'Unassigned supplier') AS supplier_name,
-              GROUP_CONCAT(CONCAT(poi.product_name, ' x', poi.quantity)
-                ORDER BY poi.product_name SEPARATOR ', ') AS ordered_items,
-              SUM(CASE WHEN p.quantity <= p.low_stock_threshold THEN 1 ELSE 0 END) AS low_stock_count,
-              MAX(CASE WHEN po.status = 'received' AND poi.received_quantity > 0
-                AND COALESCE((SELECT SUM(stock.quantity)
-                  FROM restock_records stock
-                 WHERE stock.business_id = po.business_id
-                   AND stock.product_id = poi.product_id
-                   AND INSTR(LOWER(stock.referenced_by), LOWER(po.order_number)) > 0), 0)
-                  < poi.received_quantity THEN 1 ELSE 0 END) AS missing_inventory,
-              CASE WHEN COUNT(poi.id) > 0
-                AND MAX(CASE WHEN poi.quantity <= 0 OR poi.received_quantity < poi.quantity
-                  OR COALESCE((SELECT SUM(stock.quantity)
-                    FROM restock_records stock
-                   WHERE stock.business_id = po.business_id
-                     AND stock.product_id = poi.product_id
-                     AND INSTR(LOWER(stock.referenced_by), LOWER(po.order_number)) > 0), 0)
-                    < poi.received_quantity
-                  THEN 1 ELSE 0 END) = 0
-                THEN 1 ELSE 0 END AS fully_restocked,
-              DATEDIFF(CURDATE(), DATE(po.expected_delivery)) AS overdue_days,
-              DATEDIFF(CURDATE(), DATE(po.order_date)) AS pending_days
+      `SELECT po.id AS order_id, po.order_number, po.status, po.order_date,
+              po.expected_delivery, COALESCE(s.name, 'Unassigned supplier') AS supplier_name,
+              poi.product_id, poi.product_name, poi.quantity, poi.received_quantity,
+              p.quantity AS product_quantity, p.low_stock_threshold
          FROM purchase_orders po
          LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.business_id = po.business_id
          LEFT JOIN purchase_order_items poi ON poi.order_id = po.id AND poi.business_id = po.business_id
          LEFT JOIN products p ON p.id = poi.product_id AND p.business_id = po.business_id
         WHERE po.business_id = ?
+          AND po.status <> 'cancelled'
           AND (
-            po.status IN ('completed', 'partial')
-            OR (po.status = 'received' AND poi.received_quantity > 0)
+            po.status IN ('received', 'completed', 'partial')
             OR (po.status = 'pending' AND po.expected_delivery IS NULL
-                AND DATEDIFF(CURDATE(), DATE(po.order_date)) >= 2
-                AND MOD(DATEDIFF(CURDATE(), DATE(po.order_date)) - 2, 3) = 0)
-            OR (po.status NOT IN ('received', 'cancelled') AND po.expected_delivery IS NOT NULL
-                AND (DATEDIFF(CURDATE(), DATE(po.expected_delivery)) = 0
-                  OR DATEDIFF(CURDATE(), DATE(po.expected_delivery)) = 1
-                  OR (DATEDIFF(CURDATE(), DATE(po.expected_delivery)) > 1
-                    AND MOD(DATEDIFF(CURDATE(), DATE(po.expected_delivery)), 3) = 0)))
-          )
-        GROUP BY po.id, po.order_number, po.status, po.order_date, po.expected_delivery, s.name`,
+                AND po.order_date <= DATE_SUB(CURDATE(), INTERVAL 2 DAY))
+            OR (po.expected_delivery IS NOT NULL AND po.expected_delivery <= CURDATE())
+          )`,
       [businessId],
     ).catch((error) => {
       console.error('SmartPlus supplier delivery query failed:', error.message);
       return [];
     }),
+    dbQuery(
+      `SELECT product_id, quantity, referenced_by
+         FROM restock_records
+        WHERE business_id = ?
+          AND referenced_by IS NOT NULL
+          AND referenced_by <> ''`,
+      [businessId],
+    ).catch((error) => {
+      console.error('SmartPlus restock-reference query failed:', error.message);
+      return [];
+    }),
   ]);
+  const supplierDelivery = buildSupplierDeliveryRows(
+    supplierDeliveryLines,
+    restockRecords,
+  );
   const suggestions = normalizeSuggestions({
     outOfStock,
     lowStock,
@@ -532,6 +612,7 @@ module.exports = {
   manilaHour,
   isQuietHour,
   normalizeSuggestions,
+  buildSupplierDeliveryRows,
   supplierDeliverySuggestions,
   actionCompletionEmailContent,
   dispatchOwnerActionCompletion,
