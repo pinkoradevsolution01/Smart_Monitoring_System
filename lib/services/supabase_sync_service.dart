@@ -42,6 +42,9 @@ class SupabaseSyncService extends ChangeNotifier {
   Duration _queuedPushDelay = const Duration(seconds: 2);
   int _retryAttempts = 0;
   DateTime? _nextRetryAt;
+  int _activeExternalDatabaseReads = 0;
+  Completer<void>? _externalReadsDrained;
+  Completer<void>? _syncIdle;
 
   // Getters
   bool get isSyncing => _isSyncing;
@@ -60,6 +63,49 @@ class SupabaseSyncService extends ChangeNotifier {
   Duration get queuedPushDelay => _queuedPushDelay;
   int get retryAttempts => _retryAttempts;
   DateTime? get nextRetryAt => _nextRetryAt;
+
+  /// Runs a read-only local-data task without overlapping a cloud restore or
+  /// backup. The small gate closes the race between checking [isSyncing] and
+  /// SQLite beginning a sync transaction.
+  Future<T> readLocalDataSafely<T>(Future<T> Function() action) async {
+    while (_isSyncing) {
+      final idle = _syncIdle;
+      if (idle == null) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+      } else {
+        await idle.future;
+      }
+    }
+    _activeExternalDatabaseReads += 1;
+    try {
+      return await action();
+    } finally {
+      _activeExternalDatabaseReads -= 1;
+      if (_activeExternalDatabaseReads == 0 &&
+          _externalReadsDrained != null &&
+          !_externalReadsDrained!.isCompleted) {
+        _externalReadsDrained!.complete();
+        _externalReadsDrained = null;
+      }
+    }
+  }
+
+  Future<void> _beginSync() async {
+    _isSyncing = true;
+    _syncIdle = Completer<void>();
+    notifyListeners();
+    if (_activeExternalDatabaseReads > 0) {
+      _externalReadsDrained ??= Completer<void>();
+      await _externalReadsDrained!.future;
+    }
+  }
+
+  void _finishSync() {
+    _isSyncing = false;
+    final idle = _syncIdle;
+    _syncIdle = null;
+    if (idle != null && !idle.isCompleted) idle.complete();
+  }
 
   String get _syncStateKey => 'sync_state_${_businessId ?? 'unassigned'}';
 
@@ -207,7 +253,7 @@ class SupabaseSyncService extends ChangeNotifier {
       return false;
     }
 
-    _isSyncing = true;
+    await _beginSync();
     _lastError = null;
     _syncStats.clear();
     notifyListeners();
@@ -232,7 +278,7 @@ class SupabaseSyncService extends ChangeNotifier {
       await _pushDamageReports();
 
       await _recordSyncSuccess();
-      _isSyncing = false;
+      _finishSync();
       notifyListeners();
 
       debugPrint('✅ Backup completed successfully');
@@ -241,7 +287,7 @@ class SupabaseSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Backup failed: $e');
       _lastError = safeApiError(e);
-      _isSyncing = false;
+      _finishSync();
       await _scheduleRetry();
       notifyListeners();
       return false;
@@ -256,7 +302,7 @@ class SupabaseSyncService extends ChangeNotifier {
       return false;
     }
 
-    _isSyncing = true;
+    await _beginSync();
     _lastError = null;
     _syncStats.clear();
     notifyListeners();
@@ -288,7 +334,7 @@ class SupabaseSyncService extends ChangeNotifier {
       });
 
       await _recordSyncSuccess();
-      _isSyncing = false;
+      _finishSync();
       notifyListeners();
 
       debugPrint('✅ Restore completed successfully');
@@ -297,7 +343,7 @@ class SupabaseSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Restore failed: $e');
       _lastError = safeApiError(e);
-      _isSyncing = false;
+      _finishSync();
       notifyListeners();
       return false;
     }

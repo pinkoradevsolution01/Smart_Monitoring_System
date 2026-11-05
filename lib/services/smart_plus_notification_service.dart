@@ -487,9 +487,6 @@ class SmartPlusNotificationService extends ChangeNotifier {
   Future<void> _refreshSupplierDeliveryNotifications({
     bool force = false,
   }) async {
-    // A manual refresh during restore must wait for the restore-complete
-    // listener rather than competing with its SQLite transaction.
-    if (_syncService?.isSyncing ?? false) return;
     final now = DateTime.now();
     if (_supplierRefreshInFlight) {
       await (_supplierRefreshCompleter?.future ?? Future<void>.value());
@@ -505,20 +502,28 @@ class SmartPlusNotificationService extends ChangeNotifier {
     _supplierRefreshCompleter = completer;
     _lastSupplierRefresh = now;
     try {
-      final database = DatabaseService();
-      final orders = await database.getAllPurchaseOrders();
-      _purchaseOrders = List.unmodifiable(orders);
-      _dataTrust = _assessDataTrust(orders);
-      _dailyBrief = await _buildDailyBrief();
-      _supplierDeliveryNotifications = _preferences.supplierDeliveryEnabled
-          ? [
-              ...await _evaluateSupplierDeliveryRules(),
-              ...await _evaluateDamageReportRules(),
-            ]
-          : const [];
-      _customerIntelligenceNotifications = _preferences.customerLoyaltyEnabled
-          ? await _evaluateCustomerIntelligenceRules()
-          : const [];
+      Future<void> evaluateLocalRecords() async {
+        final database = DatabaseService();
+        final orders = await database.getAllPurchaseOrders();
+        _purchaseOrders = List.unmodifiable(orders);
+        _dataTrust = _assessDataTrust(orders);
+        _dailyBrief = await _buildDailyBrief();
+        _supplierDeliveryNotifications = _preferences.supplierDeliveryEnabled
+            ? [
+                ...await _evaluateSupplierDeliveryRules(),
+                ...await _evaluateDamageReportRules(),
+              ]
+            : const [];
+        _customerIntelligenceNotifications = _preferences.customerLoyaltyEnabled
+            ? await _evaluateCustomerIntelligenceRules()
+            : const [];
+      }
+
+      if (_syncService == null) {
+        await evaluateLocalRecords();
+      } else {
+        await _syncService.readLocalDataSafely(evaluateLocalRecords);
+      }
       _applyVisibleNotifications();
     } catch (error) {
       // SmartPlus must never interrupt a normal POS/inventory workflow if a
