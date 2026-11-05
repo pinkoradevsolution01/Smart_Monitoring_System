@@ -425,7 +425,15 @@ class SmartPlusNotificationService extends ChangeNotifier {
     }
   }
 
-  void _onBusinessDataChanged() => unawaited(refresh());
+  void _onBusinessDataChanged() {
+    // Cloud restore writes many related records in SQLite transactions. Do
+    // not start an independent SmartPlus read in the middle of that work:
+    // sqflite blocks it and emits the 10-second "database has been locked"
+    // warning. The sync service notifies again when it completes, at which
+    // point this method runs the fresh evaluation safely.
+    if (_syncService?.isSyncing ?? false) return;
+    unawaited(refresh());
+  }
 
   Future<void> refresh({bool forceSupplierCheck = false}) async {
     _applyVisibleNotifications();
@@ -479,6 +487,9 @@ class SmartPlusNotificationService extends ChangeNotifier {
   Future<void> _refreshSupplierDeliveryNotifications({
     bool force = false,
   }) async {
+    // A manual refresh during restore must wait for the restore-complete
+    // listener rather than competing with its SQLite transaction.
+    if (_syncService?.isSyncing ?? false) return;
     final now = DateTime.now();
     if (_supplierRefreshInFlight) {
       await (_supplierRefreshCompleter?.future ?? Future<void>.value());
