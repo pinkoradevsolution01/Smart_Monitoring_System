@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'backend_config.dart';
 
-/// Probes configured backend URLs on startup and selects the first healthy one.
+/// Probes build-configured backend URLs on startup and selects the first
+/// healthy one. End users cannot change the backend from app Settings.
 class BackendServerResolver {
   static const Duration _probeTimeout = Duration(seconds: 2);
   static final http.Client _client = http.Client();
@@ -23,16 +24,12 @@ class BackendServerResolver {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    final savedBaseUrl = prefs.getString(
-      BackendConfig.backendApiBaseUrlPrefsKey,
-    );
-    final savedBaseUrls = prefs.getString(
-      BackendConfig.backendApiBaseUrlsPrefsKey,
-    );
-
+    // Remove legacy, client-editable URL preferences. The production endpoint
+    // is now controlled only by the app build configuration, preventing a
+    // client from accidentally redirecting sync or authentication traffic.
+    await prefs.remove(BackendConfig.backendApiBaseUrlPrefsKey);
+    await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
     final candidateUrls = normalizeCandidates([
-      ..._splitCandidates(savedBaseUrl ?? ''),
-      ..._splitCandidates(savedBaseUrls ?? ''),
       ...(candidates ?? BackendConfig.configuredApiBaseUrls),
     ]);
     if (candidateUrls.isEmpty) {
@@ -46,9 +43,6 @@ class BackendServerResolver {
     final healthyUrl = await _probeCandidates(candidateUrls);
     final selectedUrl = healthyUrl ?? candidateUrls.first;
     BackendConfig.setResolvedApiBaseUrl(selectedUrl);
-    if (healthyUrl != null) {
-      await _saveSelectedUrl(prefs, selectedUrl);
-    }
     _initialized = true;
 
     if (healthyUrl != null) {
@@ -65,14 +59,6 @@ class BackendServerResolver {
   static List<String> normalizeCandidates(List<String> candidates) {
     return candidates
         .map((candidate) => candidate.trim().replaceAll(RegExp(r'/+$'), ''))
-        .where((candidate) => candidate.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  static List<String> _splitCandidates(String rawCandidates) {
-    return rawCandidates
-        .split(RegExp(r'[,\n; ]+'))
-        .map((candidate) => candidate.trim())
         .where((candidate) => candidate.isNotEmpty)
         .toList(growable: false);
   }
@@ -96,69 +82,6 @@ class BackendServerResolver {
       debugPrint('BackendServerResolver: probe failed for $baseUrl: $e');
       return false;
     }
-  }
-
-  static Future<bool> testBaseUrl(String baseUrl) {
-    final normalized = baseUrl.trim().replaceAll(RegExp(r'/+$'), '');
-    if (normalized.isEmpty) {
-      return Future.value(false);
-    }
-    return _probe(normalized);
-  }
-
-  static Future<bool> testBaseUrls(List<String> baseUrls) async {
-    final normalized = normalizeCandidates(baseUrls);
-    if (normalized.isEmpty) {
-      return false;
-    }
-
-    for (final baseUrl in normalized) {
-      if (await testBaseUrl(baseUrl)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static Future<void> savePreferredBaseUrl(String baseUrl) async {
-    await savePreferredBaseUrls([baseUrl]);
-  }
-
-  static Future<void> savePreferredBaseUrls(List<String> baseUrls) async {
-    final normalized = normalizeCandidates(baseUrls);
-    final prefs = await SharedPreferences.getInstance();
-    if (normalized.isEmpty) {
-      await prefs.remove(BackendConfig.backendApiBaseUrlPrefsKey);
-      await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
-      BackendConfig.setResolvedApiBaseUrl('');
-      _initialized = false;
-      return;
-    }
-
-    if (normalized.length == 1) {
-      await prefs.setString(
-        BackendConfig.backendApiBaseUrlPrefsKey,
-        normalized.first,
-      );
-      await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
-      BackendConfig.setResolvedApiBaseUrl(normalized.first);
-    } else {
-      await prefs.setString(
-        BackendConfig.backendApiBaseUrlsPrefsKey,
-        normalized.join(','),
-      );
-      await prefs.remove(BackendConfig.backendApiBaseUrlPrefsKey);
-      BackendConfig.setResolvedApiBaseUrl(normalized.first);
-    }
-    _initialized = true;
-  }
-
-  static Future<void> _saveSelectedUrl(
-    SharedPreferences prefs,
-    String selectedUrl,
-  ) async {
-    await prefs.setString(BackendConfig.backendApiBaseUrlPrefsKey, selectedUrl);
-    await prefs.remove(BackendConfig.backendApiBaseUrlsPrefsKey);
   }
 
   static void resetForTests() {

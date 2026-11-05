@@ -11,8 +11,6 @@ import '../../services/package_service.dart';
 import '../../services/license_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../../services/google_auth_service.dart';
-import '../../services/backend_config.dart';
-import '../../services/backend_server_resolver.dart';
 import '../../services/setup_progress_service.dart';
 import '../../models/pricing_package.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,10 +33,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late String _savedThemeKey;
   late bool _selectedReduceMotion;
   late bool _savedReduceMotion;
-  final TextEditingController _backendUrlController = TextEditingController();
   String _selectedPaperSize = 'Thermal 48mm';
   bool _hasChanges = false;
-  bool _isSavingBackendUrl = false;
   String? _subscriptionMode;
   DateTime? _trialExpires;
   DateTime? _subscriptionExpires; // Monthly rental expiry
@@ -56,28 +52,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _savedThemeKey = _selectedThemeKey;
     _selectedReduceMotion = MotionController.reduceMotion.value;
     _savedReduceMotion = _selectedReduceMotion;
-    _backendUrlController.text =
-        BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
     // Load saved default paper size and update shared notifier
     SharedPreferences.getInstance().then((prefs) {
       final saved = prefs.getString('default_receipt_paper_size');
-      final savedBackendUrl = prefs.getString(
-        BackendConfig.backendApiBaseUrlPrefsKey,
-      );
-      final savedBackendUrls = prefs.getString(
-        BackendConfig.backendApiBaseUrlsPrefsKey,
-      );
       final mode = prefs.getString('subscription_mode');
       final trialExpiresStr = prefs.getString('trial_expires');
       final subscriptionExpiresStr = prefs.getString('subscription_expires');
       final activated = prefs.getBool('activation_status') ?? false;
       if (mounted) {
         if (saved != null) setState(() => _selectedPaperSize = saved);
-        if (savedBackendUrls != null && savedBackendUrls.isNotEmpty) {
-          _backendUrlController.text = savedBackendUrls;
-        } else if (savedBackendUrl != null && savedBackendUrl.isNotEmpty) {
-          _backendUrlController.text = savedBackendUrl;
-        }
         if (mode != null) setState(() => _subscriptionMode = mode);
         if (trialExpiresStr != null) {
           try {
@@ -149,81 +132,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _selectedReduceMotion = _savedReduceMotion;
       _hasChanges = false;
     });
-  }
-
-  List<String> _parseBackendUrls(String entered) {
-    return BackendServerResolver.normalizeCandidates(
-      entered.split(RegExp(r'[,\n; ]+')),
-    );
-  }
-
-  Future<void> _saveBackendUrl() async {
-    final entered = _backendUrlController.text.trim();
-    if (entered.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your backend URL'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    final candidateUrls = _parseBackendUrls(entered);
-    if (candidateUrls.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter at least one valid URL like http://152.42.185.35:3000/api',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isSavingBackendUrl = true);
-    try {
-      final ok = await BackendServerResolver.testBaseUrls(candidateUrls);
-      if (!ok) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Cannot reach any saved backend. Check the droplet IP, port 3000, and firewall.',
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      await BackendServerResolver.savePreferredBaseUrls(candidateUrls);
-      if (!mounted) return;
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            candidateUrls.length == 1
-                ? 'Backend URL saved: ${candidateUrls.first}'
-                : 'Backend URLs saved: ${candidateUrls.join(', ')}',
-          ),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save backend URL: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSavingBackendUrl = false);
-      }
-    }
   }
 
   Future<void> _logoutOwnerAccount() async {
@@ -505,12 +413,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   @override
-  void dispose() {
-    _backendUrlController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -679,9 +581,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
             ),
-            const SizedBox(height: 16),
-            _buildBackendConnectionCard(context),
-            const SizedBox(height: 24),
             // Cloud Sync Section - Standard Package Required
             _buildCloudSyncSection(context),
 
@@ -2331,79 +2230,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ],
-    );
-  }
-
-  Widget _buildBackendConnectionCard(BuildContext context) {
-    final activeUrl =
-        BackendConfig.resolvedApiBaseUrl ?? BackendConfig.apiBaseUrl;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.link, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Backend Connection',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Enter your droplet URL first. You can also add fallback URLs separated by commas or spaces.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _backendUrlController,
-              decoration: const InputDecoration(
-                labelText: 'Backend URL(s)',
-                hintText:
-                    'http://152.42.185.35:3000/api, http://192.168.x.x:3000/api',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              enableSuggestions: false,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isSavingBackendUrl ? null : _saveBackendUrl,
-                    icon: _isSavingBackendUrl
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save),
-                    label: Text(
-                      _isSavingBackendUrl ? 'Saving...' : 'Save Backend URL',
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Active URL: $activeUrl',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
