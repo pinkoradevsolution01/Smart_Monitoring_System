@@ -139,7 +139,9 @@ class SmartPlusGeminiService {
 
   String _geminiErrorMessage(Object error) {
     if (error is ApiException && error.statusCode == 503) {
-      return 'Gemini is temporarily unavailable on the secure server. Please try again shortly.';
+      return error.message.isNotEmpty
+          ? error.message
+          : 'Gemini is temporarily unavailable. Please try again shortly or use Rule-based answers.';
     }
     if (error is ApiException && error.statusCode == 401) {
       return 'Your session expired. Sign in again to use Gemini.';

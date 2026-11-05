@@ -268,7 +268,8 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
       },
     });
   } catch (error) {
-    const status = error.code === 'gemini_not_configured' ? 503
+    const providerBusy = error.statusCode === 429 || error.statusCode === 503;
+    const status = error.code === 'gemini_not_configured' || providerBusy ? 503
       : ['invalid_question', 'unsupported_model', 'provider_model_not_found'].includes(error.code) ? 400
       : 502;
     console.error(JSON.stringify({
@@ -283,11 +284,13 @@ router.post('/chat', limitOwnerChats, async (req, res) => {
     return res.status(status).json({
       success: false,
       code: error.code || 'gemini_unavailable',
-      message: status === 503
+      message: error.code === 'gemini_not_configured'
         ? 'SmartPlus Gemini is not configured on the secure backend yet.'
+        : providerBusy
+        ? 'Gemini is temporarily busy because Google is experiencing high demand. Please retry shortly or use Rule-based answers.'
         : status === 400
         ? error.code === 'provider_model_not_found'
-          ? 'The configured Gemini model is unavailable. Set GEMINI_MODEL to an available model, such as gemini-2.5-flash, then restart the backend.'
+          ? 'The configured Gemini model is unavailable. Set GEMINI_MODEL to an available supported model, then restart the backend.'
           : error.message
         : 'SmartPlus Gemini is temporarily unavailable. Local SmartPlus answers remain available.',
     });
