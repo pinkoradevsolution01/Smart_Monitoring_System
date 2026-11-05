@@ -60,6 +60,23 @@ FROM_EMAIL=Smart Monitoring System <noreply@mail.smartmonitoringsystem.store>
 The `FROM_EMAIL` domain must be verified in Resend. Do not expose the Resend key
 in the Flutter app, Web Analytics application, or source control.
 
+### Shared product photos
+
+Product photos are uploaded through the authenticated Smart Monitoring backend,
+then stored in the server-only `backend/storage/product_images` directory by
+default. The database stores an opaque image reference, never a public URL,
+local laptop path, or session token. Every image download validates the signed-
+in user's active business before the file is served.
+
+For a Droplet deployment, include this folder in the same protected backup
+routine as MySQL. To use a different persistent disk location, set:
+
+```env
+PRODUCT_IMAGE_STORAGE_PATH=/root/smart-monitoring-product-images
+```
+
+Do not expose this directory through Caddy/Nginx as a static public folder.
+
 ### SmartPlus Gemini chat (optional)
 
 SmartPlus can use Gemini for owner-only natural-language business questions.

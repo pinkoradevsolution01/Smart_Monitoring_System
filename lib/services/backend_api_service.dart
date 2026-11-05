@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'backend_config.dart';
@@ -147,6 +148,23 @@ class ApiClient {
       headers: await _authorizedHeaders(),
     );
     return _processResponse(response);
+  }
+
+  /// Uploads bounded binary data using the same authenticated backend session
+  /// as JSON calls. The token stays in an HTTP header and is never placed in a
+  /// product image URL or persisted with the image reference.
+  Future<Map<String, dynamic>> postBytes(
+    String path,
+    Uint8List bytes, {
+    required String contentType,
+  }) async {
+    final uri = _buildUri(path);
+    final headers = await _authorizedHeaders();
+    headers['Content-Type'] = contentType;
+    final response = await _client.post(uri, headers: headers, body: bytes);
+    final data = _processResponse(response);
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Expected JSON object response from binary POST $path');
   }
 
   dynamic _processResponse(http.Response response) {

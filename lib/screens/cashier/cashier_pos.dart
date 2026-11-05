@@ -16,6 +16,8 @@ import 'widgets/cart_sheet.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
 import 'package:smart_monitoring_system/utils/interaction_feedback.dart';
 import 'package:smart_monitoring_system/utils/motion_controller.dart';
+import '../../services/product_image_service.dart';
+import '../../widgets/remote_product_image.dart';
 
 class CashierPOS extends StatefulWidget {
   final String cashierName;
@@ -422,17 +424,40 @@ class _CashierPOSState extends State<CashierPOS> {
                           minScale: 0.5,
                           maxScale: 4.0,
                           child: Center(
-                            child: Image.file(
-                              File(p.imagePath!),
-                              fit: BoxFit.contain,
-                              errorBuilder: (c, e, s) => const SizedBox(
-                                width: 200,
-                                height: 200,
-                                child: Center(
-                                  child: Icon(Icons.broken_image, size: 48),
-                                ),
-                              ),
-                            ),
+                            child:
+                                ProductImageService.isRemoteReference(
+                                  p.imagePath,
+                                )
+                                ? RemoteProductImage(
+                                    imageReference: p.imagePath!,
+                                    width: 200,
+                                    height: 200,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_) => const SizedBox(
+                                      width: 200,
+                                      height: 200,
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          size: 48,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Image.file(
+                                    File(p.imagePath!),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (c, e, s) => const SizedBox(
+                                      width: 200,
+                                      height: 200,
+                                      child: Center(
+                                        child: Icon(
+                                          Icons.broken_image,
+                                          size: 48,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -470,21 +495,38 @@ class _CashierPOSState extends State<CashierPOS> {
                       child: p.imagePath != null && p.imagePath!.isNotEmpty
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: Image.file(
-                                File(p.imagePath!),
-                                height: 120,
-                                width: 120,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    Icons.shopping_bag,
-                                    size: 80,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                  );
-                                },
-                              ),
+                              child:
+                                  ProductImageService.isRemoteReference(
+                                    p.imagePath,
+                                  )
+                                  ? RemoteProductImage(
+                                      imageReference: p.imagePath!,
+                                      width: 120,
+                                      height: 120,
+                                      errorBuilder: (_) => Icon(
+                                        Icons.shopping_bag,
+                                        size: 80,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                    )
+                                  : Image.file(
+                                      File(p.imagePath!),
+                                      height: 120,
+                                      width: 120,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) {
+                                            return Icon(
+                                              Icons.shopping_bag,
+                                              size: 80,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                            );
+                                          },
+                                    ),
                             )
                           : Icon(
                               Icons.shopping_bag,

@@ -20,6 +20,8 @@ import '../../models/sale_item.dart';
 import '../owner/supplier_management_screen.dart';
 import 'package:smart_monitoring_system/widgets/header_clock.dart';
 import 'package:smart_monitoring_system/widgets/app_design_system.dart';
+import '../../services/product_image_service.dart';
+import '../../widgets/remote_product_image.dart';
 
 enum InventoryFilter { all, lowStock, outOfStock, inStock }
 
@@ -506,24 +508,42 @@ class _InventoryScreenState extends State<InventoryScreen>
         leading: product.imagePath != null && product.imagePath!.isNotEmpty
             ? ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  File(product.imagePath!),
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Icon(
-                    isOut
-                        ? Icons.remove_circle
-                        : isLow
-                        ? Icons.warning_amber
-                        : Icons.check_circle,
-                    color: isOut
-                        ? Colors.red
-                        : isLow
-                        ? Colors.orange
-                        : Colors.green,
-                  ),
-                ),
+                child: ProductImageService.isRemoteReference(product.imagePath)
+                    ? RemoteProductImage(
+                        imageReference: product.imagePath!,
+                        width: 50,
+                        height: 50,
+                        errorBuilder: (_) => Icon(
+                          isOut
+                              ? Icons.remove_circle
+                              : isLow
+                              ? Icons.warning_amber
+                              : Icons.check_circle,
+                          color: isOut
+                              ? Colors.red
+                              : isLow
+                              ? Colors.orange
+                              : Colors.green,
+                        ),
+                      )
+                    : Image.file(
+                        File(product.imagePath!),
+                        width: 50,
+                        height: 50,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Icon(
+                          isOut
+                              ? Icons.remove_circle
+                              : isLow
+                              ? Icons.warning_amber
+                              : Icons.check_circle,
+                          color: isOut
+                              ? Colors.red
+                              : isLow
+                              ? Colors.orange
+                              : Colors.green,
+                        ),
+                      ),
               )
             : Icon(
                 isOut

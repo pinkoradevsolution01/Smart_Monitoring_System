@@ -6,6 +6,8 @@ import '../../models/product.dart';
 import '../../services/pos_service.dart';
 import '../../utils/app_localizations.dart';
 import 'dart:io';
+import '../../services/product_image_service.dart';
+import '../../widgets/remote_product_image.dart';
 
 class PriceCheckerScreen extends StatefulWidget {
   const PriceCheckerScreen({super.key});
@@ -436,12 +438,20 @@ class _PriceCheckerScreenState extends State<PriceCheckerScreen> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(18),
               child: product.imagePath != null && product.imagePath!.isNotEmpty
-                  ? Image.file(
-                      File(product.imagePath!),
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          _buildPlaceholderImage(primaryColor),
-                    )
+                  ? ProductImageService.isRemoteReference(product.imagePath)
+                        ? RemoteProductImage(
+                            imageReference: product.imagePath!,
+                            width: double.infinity,
+                            height: double.infinity,
+                            errorBuilder: (_) =>
+                                _buildPlaceholderImage(primaryColor),
+                          )
+                        : Image.file(
+                            File(product.imagePath!),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                _buildPlaceholderImage(primaryColor),
+                          )
                   : _buildPlaceholderImage(primaryColor),
             ),
           ),
@@ -777,16 +787,29 @@ class _PriceCheckerScreenState extends State<PriceCheckerScreen> {
                       child:
                           product.imagePath != null &&
                               product.imagePath!.isNotEmpty
-                          ? Image.file(
-                              File(product.imagePath!),
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Icon(
-                                    Icons.inventory_2,
-                                    color: theme.colorScheme.primary,
-                                    size: 32,
-                                  ),
-                            )
+                          ? ProductImageService.isRemoteReference(
+                                  product.imagePath,
+                                )
+                                ? RemoteProductImage(
+                                    imageReference: product.imagePath!,
+                                    width: 70,
+                                    height: 70,
+                                    errorBuilder: (_) => Icon(
+                                      Icons.inventory_2,
+                                      color: theme.colorScheme.primary,
+                                      size: 32,
+                                    ),
+                                  )
+                                : Image.file(
+                                    File(product.imagePath!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) => Icon(
+                                          Icons.inventory_2,
+                                          color: theme.colorScheme.primary,
+                                          size: 32,
+                                        ),
+                                  )
                           : Icon(
                               Icons.inventory_2,
                               color: theme.colorScheme.primary,

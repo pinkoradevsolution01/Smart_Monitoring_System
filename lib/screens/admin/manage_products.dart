@@ -12,7 +12,9 @@ import '../../models/shoe_size.dart';
 import '../../services/pos_service.dart';
 import '../../services/package_service.dart';
 import '../../services/business_info_service.dart';
+import '../../services/product_image_service.dart';
 import '../../utils/app_localizations.dart';
+import '../../widgets/remote_product_image.dart';
 
 class ManageProductsScreen extends StatefulWidget {
   const ManageProductsScreen({super.key});
@@ -592,14 +594,22 @@ class ProductListTile extends StatelessWidget {
       color: isLowStock ? Colors.orange.shade50 : null,
       child: ListTile(
         leading: product.imagePath != null
-            ? Image.file(
-                File(product.imagePath!),
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.inventory_2, size: 40),
-              )
+            ? ProductImageService.isRemoteReference(product.imagePath)
+                  ? RemoteProductImage(
+                      imageReference: product.imagePath!,
+                      width: 50,
+                      height: 50,
+                      errorBuilder: (_) =>
+                          const Icon(Icons.inventory_2, size: 40),
+                    )
+                  : Image.file(
+                      File(product.imagePath!),
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.inventory_2, size: 40),
+                    )
             : const Icon(Icons.inventory_2, size: 40),
         title: Row(
           children: [
@@ -989,6 +999,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         throw Exception('Invalid reorder level: "$reorderLevelText"');
       }
 
+      final selectedLocalImage =
+          _imagePath != null &&
+          !ProductImageService.isRemoteReference(_imagePath);
       final product = Product(
         id: widget.product?.id,
         name: _nameController.text.trim(),
@@ -1001,7 +1014,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         sellingPrice: sellingPrice,
         quantity: totalQuantity,
         reorderLevel: reorderLevel,
-        imagePath: _imagePath,
+        // A local filesystem path must not be synchronized to another device.
+        // The selected image is uploaded after this local product is saved.
+        imagePath: selectedLocalImage ? widget.product?.imagePath : _imagePath,
         createdAt: widget.product?.createdAt ?? DateTime.now(),
         expirationDate: _expirationDate,
         shoeSizes: finalShoeSizes,
@@ -1009,7 +1024,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       );
 
       if (widget.product == null) {
-        await _posService.addProduct(product);
+        final id = await _posService.addProduct(product);
+        if (selectedLocalImage) {
+          final remoteImage = await _uploadSelectedProductImage();
+          await _posService.updateProduct(
+            product.copyWith(id: id, imagePath: remoteImage),
+          );
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(AppLocalizations.t('product_added'))),
@@ -1017,6 +1038,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         }
       } else {
         await _posService.updateProduct(product);
+        if (selectedLocalImage) {
+          final remoteImage = await _uploadSelectedProductImage();
+          await _posService.updateProduct(
+            product.copyWith(imagePath: remoteImage),
+          );
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(AppLocalizations.t('product_updated'))),
@@ -1036,6 +1063,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         setState(() => _isSubmitting = false);
       }
     }
+  }
+
+  Future<String> _uploadSelectedProductImage() async {
+    final localPath = _imagePath;
+    if (localPath == null || ProductImageService.isRemoteReference(localPath)) {
+      throw StateError('Choose a local product image before uploading.');
+    }
+    final bytes = await File(localPath).readAsBytes();
+    return ProductImageService().upload(
+      bytes,
+      contentType: ProductImageService.contentTypeForPath(localPath),
+    );
   }
 
   @override
@@ -1379,19 +1418,30 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                   const SizedBox(height: 8),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.file(
-                      File(_imagePath!),
-                      height: 150,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          height: 150,
-                          color: Colors.grey[300],
-                          child: const Icon(Icons.broken_image, size: 48),
-                        );
-                      },
-                    ),
+                    child: ProductImageService.isRemoteReference(_imagePath)
+                        ? RemoteProductImage(
+                            imageReference: _imagePath!,
+                            height: 150,
+                            width: double.infinity,
+                            errorBuilder: (_) => Container(
+                              height: 150,
+                              color: Colors.grey[300],
+                              child: const Icon(Icons.broken_image, size: 48),
+                            ),
+                          )
+                        : Image.file(
+                            File(_imagePath!),
+                            height: 150,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                height: 150,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.broken_image, size: 48),
+                              );
+                            },
+                          ),
                   ),
                 ],
               ],

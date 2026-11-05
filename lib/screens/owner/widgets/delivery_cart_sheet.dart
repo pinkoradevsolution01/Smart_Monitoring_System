@@ -11,6 +11,8 @@ import '../../../services/customer_service.dart';
 import '../../../models/sale.dart';
 import '../../../utils/app_localizations.dart';
 import '../../shared/receipt_preview_screen.dart';
+import '../../../services/product_image_service.dart';
+import '../../../widgets/remote_product_image.dart';
 
 class DeliveryCartSheet extends StatefulWidget {
   final POSService pos;
@@ -456,16 +458,32 @@ class _DeliveryCartSheetState extends State<DeliveryCartSheet> {
                                         item.product.imagePath!.isNotEmpty
                                     ? ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
-                                        child: Image.file(
-                                          File(item.product.imagePath!),
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (c, e, s) => Icon(
-                                            Icons.shopping_bag,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                          ),
-                                        ),
+                                        child:
+                                            ProductImageService.isRemoteReference(
+                                              item.product.imagePath,
+                                            )
+                                            ? RemoteProductImage(
+                                                imageReference:
+                                                    item.product.imagePath!,
+                                                width: 60,
+                                                height: 60,
+                                                errorBuilder: (_) => Icon(
+                                                  Icons.shopping_bag,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                                ),
+                                              )
+                                            : Image.file(
+                                                File(item.product.imagePath!),
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (c, e, s) => Icon(
+                                                  Icons.shopping_bag,
+                                                  color: Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
+                                                ),
+                                              ),
                                       )
                                     : Icon(
                                         Icons.shopping_bag,

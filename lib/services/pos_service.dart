@@ -81,18 +81,20 @@ class POSService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addProduct(Product product) async {
+  Future<int> addProduct(Product product) async {
     _requireLiveDataAccess();
-    await _databaseService.insertProduct(product);
+    final id = await _databaseService.insertProduct(product);
     await loadProducts();
     _queueCloudSync();
+    return id;
   }
 
-  Future<void> updateProduct(Product product) async {
+  Future<int> updateProduct(Product product) async {
     _requireLiveDataAccess();
-    await _databaseService.updateProduct(product);
+    final rows = await _databaseService.updateProduct(product);
     await loadProducts();
     _queueCloudSync();
+    return rows;
   }
 
   Future<void> deleteProduct(int id) async {

@@ -410,6 +410,30 @@ async function ensureExpensesTable() {
   `);
 }
 
+async function ensureProductImagesTable() {
+  const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
+  const userIdDefinition = await foreignKeyColumnDefinition('users', 'id');
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS product_images (
+      id CHAR(36) NOT NULL PRIMARY KEY,
+      business_id ${businessIdDefinition} NOT NULL,
+      storage_key VARCHAR(512) NOT NULL,
+      content_type VARCHAR(64) NOT NULL,
+      byte_size INT UNSIGNED NOT NULL,
+      created_by ${userIdDefinition} NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_product_images_storage_key (storage_key),
+      KEY idx_product_images_business_created (business_id, created_at),
+      CONSTRAINT fk_product_images_business
+        FOREIGN KEY (business_id) REFERENCES businesses(id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+      CONSTRAINT fk_product_images_creator
+        FOREIGN KEY (created_by) REFERENCES users(id)
+        ON DELETE SET NULL ON UPDATE CASCADE
+    ) ENGINE=InnoDB
+  `);
+}
+
 async function ensureSmartPlusEmailDeliveriesTable() {
   const businessIdDefinition = await foreignKeyColumnDefinition('businesses', 'id');
   await pool.execute(`
@@ -640,6 +664,7 @@ async function initDb() {
   await ensureDeveloperAccountsTable();
   await ensureOwnerPinResetTokensTable();
   await ensureExpensesTable();
+  await ensureProductImagesTable();
   await ensureSmartPlusEmailDeliveriesTable();
   await ensureSmartPlusGeminiDailyUsageTable();
   await ensureSmartPlusNotificationPreferencesTable();

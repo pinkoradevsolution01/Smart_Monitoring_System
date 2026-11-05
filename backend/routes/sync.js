@@ -24,6 +24,13 @@ function toMySqlDate(value, fallback = null) {
   return dateTime === null ? null : dateTime.slice(0, 10);
 }
 
+// Device-local filesystem paths are not portable and must never replace a
+// secure server image reference during synchronization.
+function syncedProductImageReference(value) {
+  const reference = String(value || '').trim();
+  return /^server-image:[0-9a-f-]{36}$/i.test(reference) ? reference : null;
+}
+
 async function resolveAuthenticatedBusiness(req) {
   const auth = req.auth;
   if (!auth?.userId || !auth?.businessId || !SYNC_ROLES.has(String(auth.role || '').toLowerCase())) {
@@ -471,7 +478,7 @@ router.post('/push', async (req, res) => {
               category = VALUES(category),
               selling_price = VALUES(selling_price),
               quantity = VALUES(quantity),
-              image_path = VALUES(image_path),
+              image_path = COALESCE(VALUES(image_path), image_path),
               low_stock_threshold = VALUES(low_stock_threshold),
               shoe_sizes = VALUES(shoe_sizes),
               size_type = VALUES(size_type),
@@ -487,7 +494,7 @@ router.post('/push', async (req, res) => {
             product.category,
             product.selling_price,
             product.quantity,
-            product.image_path,
+            syncedProductImageReference(product.image_path),
             product.low_stock_threshold,
             product.shoe_sizes,
             product.size_type,

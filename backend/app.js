@@ -14,6 +14,7 @@ const crudRouter = require('./routes/crud');
 const analyticsRouter = require('./routes/analytics');
 const financialReportsRouter = require('./routes/financial_reports');
 const smartPlusRouter = require('./routes/smartplus');
+const { router: productImagesRouter } = require('./routes/product_images');
 const { dispatchScheduledOwnerAlerts } = require('./services/smartplus_owner_notifications');
 
 const app = express();
@@ -59,6 +60,7 @@ app.use('/api/sync', syncRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/financial-reports', financialReportsRouter);
 app.use('/api/smartplus', smartPlusRouter);
+app.use('/api/product-images', productImagesRouter);
 
 // Keep liveness endpoints ahead of the generic /api router.  The generic
 // router is intentionally authenticated and must not turn health probes into
