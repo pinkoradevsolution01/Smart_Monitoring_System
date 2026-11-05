@@ -70,9 +70,15 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     if (MotionController.reduceMotion.value) {
+      // Reduced motion must not remove the brand or make the app appear to
+      // skip its loading screen. Show a calm, static splash long enough for
+      // the logo and name to be read, without running any animation.
+      _ctrl.value = 1.0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _navigateToNextScreen();
+        Future<void>.delayed(const Duration(milliseconds: 850), () {
+          if (!mounted) return;
+          _navigateToNextScreen();
+        });
       });
     } else {
       _ctrl.forward().whenComplete(() {
@@ -287,11 +293,12 @@ class _SplashScreenState extends State<SplashScreen>
 
                 const SizedBox(height: 32),
 
-                // Fade in "Smart Store Monitoring System" text
+                // The static reduced-motion frame and animated normal frame
+                // both show the same recognizable product name.
                 FadeTransition(
                   opacity: _fadeIn,
                   child: const Text(
-                    'Smart Store Monitoring System',
+                    'Smart Monitoring System',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 24,
