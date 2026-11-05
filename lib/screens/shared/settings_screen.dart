@@ -834,6 +834,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       floatingActionButton: _hasChanges
           ? FloatingActionButton.extended(
+              heroTag: 'settings-save-changes',
               onPressed: _saveChanges,
               icon: const Icon(Icons.save),
               label: const Text('Save'),

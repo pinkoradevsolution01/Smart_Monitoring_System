@@ -536,9 +536,9 @@ class _CashierPOSState extends State<CashierPOS> {
                     label: isOutOfStock
                         ? 'Out of stock'
                         : ((p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
-                                p.reorderLevel
-                            ? 'Low stock'
-                            : 'In stock'),
+                                  p.reorderLevel
+                              ? 'Low stock'
+                              : 'In stock'),
                     status: isOutOfStock
                         ? AppStatus.danger
                         : (p.hasShoeVariants ? p.totalQuantity : p.quantity) <=
@@ -1136,6 +1136,7 @@ class _CashierPOSState extends State<CashierPOS> {
             duration: const Duration(milliseconds: 150),
             curve: Curves.easeOutBack,
             child: FloatingActionButton.extended(
+              heroTag: 'cashier-pos-open-cart',
               onPressed: () {
                 InteractionFeedback.tap();
                 openCartSheet();

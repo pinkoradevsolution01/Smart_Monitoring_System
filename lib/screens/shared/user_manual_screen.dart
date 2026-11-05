@@ -509,6 +509,7 @@ class _UserManualScreenState extends State<UserManualScreen> {
       ),
       floatingActionButton: isMobile
           ? FloatingActionButton(
+              heroTag: 'user-manual-mobile-contents',
               onPressed: () => _showMobileMenu(context, isDark),
               tooltip: AppLocalizations.t('contents'),
               child: Icon(Icons.menu_book),

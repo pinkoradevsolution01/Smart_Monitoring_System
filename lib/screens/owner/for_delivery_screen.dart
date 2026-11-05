@@ -231,6 +231,7 @@ class _ForDeliveryScreenState extends State<ForDeliveryScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'for-delivery-open-pos',
         onPressed: () {
           Navigator.push(
             context,

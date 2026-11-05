@@ -34,6 +34,7 @@ class SmartPlusFloatingButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FloatingActionButton(
+      heroTag: 'smartplus-floating-assistant',
       onPressed: () => showSmartPlusDialog(context),
       backgroundColor: Theme.of(context).colorScheme.tertiary,
       tooltip: 'Open SmartPlus',

@@ -561,6 +561,7 @@ class _CCTVScreenState extends State<CCTVScreen> {
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'cctv-backup-timestamps-log',
         onPressed: _openTimestampsLog,
         icon: const Icon(Icons.history),
         label: Text(AppLocalizations.t('timestamps_log')),

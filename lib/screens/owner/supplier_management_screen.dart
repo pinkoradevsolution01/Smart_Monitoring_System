@@ -1163,12 +1163,14 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
     switch (_tabController.index) {
       case 0: // Suppliers tab
         return FloatingActionButton.extended(
+          heroTag: 'supplier-management-add-supplier',
           onPressed: _showAddSupplierDialog,
           icon: const Icon(Icons.add),
           label: Text(AppLocalizations.t('add_supplier')),
         );
       case 2: // Purchase Orders tab
         return FloatingActionButton.extended(
+          heroTag: 'supplier-management-create-order',
           onPressed: _showCreateOrderDialog,
           icon: const Icon(Icons.shopping_cart),
           label: Text(AppLocalizations.t('create_order')),

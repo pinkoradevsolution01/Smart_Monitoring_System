@@ -572,6 +572,7 @@ class _FinancialComplianceScreenState extends State<FinancialComplianceScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'financial-compliance-add-expense',
         onPressed: _loading ? null : _addExpense,
         icon: const Icon(Icons.add),
         label: const Text('Add expense'),

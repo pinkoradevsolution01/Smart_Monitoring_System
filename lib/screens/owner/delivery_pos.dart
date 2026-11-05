@@ -534,6 +534,7 @@ class _DeliveryPOSState extends State<DeliveryPOS> {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'delivery-pos-open-cart',
         onPressed: openCartSheet,
         icon: const Icon(Icons.shopping_cart_checkout),
         label: Text(

@@ -465,6 +465,7 @@ class _ManageProductsScreenState extends State<ManageProductsScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'admin-manage-products-add',
         onPressed: () => _showProductDialog(),
         icon: const Icon(Icons.add),
         label: Text(AppLocalizations.t('add_product')),

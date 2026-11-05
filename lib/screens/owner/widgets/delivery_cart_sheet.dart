@@ -1346,6 +1346,7 @@ class _CameraScreenState extends State<_CameraScreen> {
         },
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'delivery-cart-camera-capture',
         onPressed: _takePicture,
         backgroundColor: Colors.white,
         child: const Icon(Icons.camera_alt, color: Colors.black),

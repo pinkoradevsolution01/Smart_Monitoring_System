@@ -1468,6 +1468,7 @@ class _CameraScreenState extends State<_CameraScreen> {
                   right: 0,
                   child: Center(
                     child: FloatingActionButton.large(
+                      heroTag: 'cashier-cart-camera-capture',
                       onPressed: _takePicture,
                       backgroundColor: Colors.white,
                       child: const Icon(
