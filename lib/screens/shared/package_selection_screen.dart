@@ -13,6 +13,7 @@ import '../../services/supabase_sync_service.dart';
 import '../../utils/currency_formatter.dart';
 import '../owner/owner_dashboard.dart';
 import '../cashier/cashier_dashboard.dart';
+import 'owner_registration_screen.dart';
 
 enum _PricingModel { oneTimeLicense, saas }
 
@@ -258,7 +259,32 @@ class _PackageSelectionScreenState extends State<PackageSelectionScreen>
           style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
           textAlign: TextAlign.center,
         ),
+        if (widget.currentUser != null) ...[
+          const SizedBox(height: 20),
+          Text(
+            'Already registered as ${widget.currentUser!.email}?',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _signInExistingOwner,
+            icon: const Icon(Icons.login),
+            label: const Text('Sign in with Google instead'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.blue.shade800,
+              side: BorderSide(color: Colors.blue.shade300),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            ),
+          ),
+        ],
       ],
+    );
+  }
+
+  void _signInExistingOwner() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const OwnerRegistrationScreen()),
     );
   }
 
