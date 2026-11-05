@@ -396,20 +396,45 @@ class AppLoadingSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.surfaceContainerHighest;
-    return Column(
-      children: List.generate(
-        lines,
-        (index) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: Container(
-            height: 72,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(12),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 10.0;
+        const preferredCardHeight = 72.0;
+        const minimumCardHeight = 36.0;
+        final requestedLines = lines < 1 ? 1 : lines;
+        final availableHeight = constraints.maxHeight;
+        final isHeightBounded = constraints.hasBoundedHeight;
+        final capacity = isHeightBounded
+            ? ((availableHeight + spacing) / (minimumCardHeight + spacing))
+                  .floor()
+            : requestedLines;
+        final visibleLines = capacity < 1
+            ? 1
+            : (capacity < requestedLines ? capacity : requestedLines);
+        final cardHeight = isHeightBounded
+            ? ((availableHeight - (spacing * (visibleLines - 1))) /
+                      visibleLines)
+                  .clamp(0.0, preferredCardHeight)
+            : preferredCardHeight;
+
+        return Column(
+          children: List.generate(
+            visibleLines,
+            (index) => Padding(
+              padding: EdgeInsets.only(
+                bottom: index == visibleLines - 1 ? 0 : spacing,
+              ),
+              child: Container(
+                height: cardHeight,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
