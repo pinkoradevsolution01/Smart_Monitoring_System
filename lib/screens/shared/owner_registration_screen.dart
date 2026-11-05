@@ -232,7 +232,12 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         authMethod: 'google', // Mark as Google OAuth authenticated
       );
 
-      final success = await _userService.addUser(owner);
+      final addedLocalOwner = await _userService.addUser(owner);
+      // An existing owner can already have a local row after an app update or
+      // a partial restore. Backend Google verification is authoritative here;
+      // a duplicate local email must not send that owner through onboarding or
+      // prevent their verified package/profile from being restored.
+      final success = addedLocalOwner || ownerAlreadyRegistered;
 
       // Store businessId and auth info in local storage
       if (success) {
