@@ -3261,9 +3261,13 @@ class DatabaseService {
           whereArgs: [orderId],
         );
         for (final item in order.items) {
+          final itemMap = item.copyWith(orderId: orderId).toMap();
+          // SQLite item IDs are device-local. A cloud item can have the same
+          // numeric ID as an unrelated local row, so never reuse it here.
+          itemMap['id'] = null;
           await txn.insert(
             'purchase_order_items',
-            item.copyWith(orderId: orderId).toMap(),
+            itemMap,
           );
         }
         return orderId;
@@ -3271,9 +3275,12 @@ class DatabaseService {
 
       final orderId = await txn.insert('purchase_orders', order.toMap());
       for (final item in order.items) {
+        final itemMap = item.copyWith(orderId: orderId).toMap();
+        // See the matching update path above: local SQLite owns this ID.
+        itemMap['id'] = null;
         await txn.insert(
           'purchase_order_items',
-          item.copyWith(orderId: orderId).toMap(),
+          itemMap,
         );
       }
       return orderId;

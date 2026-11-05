@@ -1905,7 +1905,10 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrint('✅ Pulled ${responseItems.length} purchase order items');
     } catch (e) {
       debugPrint('❌ Error pulling purchase orders: $e');
-      // Don't rethrow - continue with other syncs
+      // Do not call this a successful restore. The caller keeps automatic
+      // uploads paused until every business record, including order items,
+      // has restored safely.
+      rethrow;
     }
   }
 
