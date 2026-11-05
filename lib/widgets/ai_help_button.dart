@@ -132,6 +132,81 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
     _scrollToBottom();
   }
 
+  Widget _modelSelector(Color primaryColor, {required bool compact}) {
+    return PopupMenuButton<String>(
+      tooltip: 'Choose SmartPlus answer mode',
+      onSelected: (modelId) {
+        setState(() => _selectedModelId = modelId);
+      },
+      itemBuilder: (context) => _chatModels
+          .map(
+            (model) => PopupMenuItem<String>(
+              value: model.id,
+              child: SizedBox(
+                width: 230,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    model.isRuleBased
+                        ? Icons.rule_rounded
+                        : Icons.auto_awesome_rounded,
+                    color: model.id == _selectedModelId ? primaryColor : null,
+                  ),
+                  title: Text(model.label),
+                  subtitle: Text(
+                    model.description.isEmpty
+                        ? 'Secure Gemini business chat'
+                        : model.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: model.id == _selectedModelId
+                      ? Icon(Icons.check_rounded, color: primaryColor)
+                      : null,
+                ),
+              ),
+            ),
+          )
+          .toList(growable: false),
+      child: Container(
+        constraints: BoxConstraints(maxWidth: compact ? 88 : 152),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 11),
+        decoration: BoxDecoration(
+          color: primaryColor.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _selectedModel.isRuleBased
+                  ? Icons.rule_rounded
+                  : Icons.auto_awesome_rounded,
+              color: primaryColor,
+              size: 16,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                _selectedModel.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+            const Icon(Icons.keyboard_arrow_down_rounded, size: 17),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -216,96 +291,6 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                           ],
                         );
                       },
-                    ),
-                  ),
-                  PopupMenuButton<String>(
-                    tooltip: 'Choose SmartPlus answer mode',
-                    onSelected: (modelId) {
-                      setState(() => _selectedModelId = modelId);
-                    },
-                    itemBuilder: (context) => _chatModels
-                        .map(
-                          (model) => PopupMenuItem<String>(
-                            value: model.id,
-                            child: SizedBox(
-                              width: 230,
-                              child: ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                leading: Icon(
-                                  model.isRuleBased
-                                      ? Icons.rule_rounded
-                                      : Icons.auto_awesome_rounded,
-                                  color: model.id == _selectedModelId
-                                      ? primaryColor
-                                      : null,
-                                ),
-                                title: Text(model.label),
-                                subtitle: Text(
-                                  model.description.isEmpty
-                                      ? 'Secure Gemini business chat'
-                                      : model.description,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: model.id == _selectedModelId
-                                    ? Icon(
-                                        Icons.check_rounded,
-                                        color: primaryColor,
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    child: Container(
-                      constraints: BoxConstraints(
-                        maxWidth: compactHeader ? 88 : 152,
-                      ),
-                      margin: const EdgeInsets.only(right: 2),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.24),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _selectedModel.isRuleBased
-                                ? Icons.rule_rounded
-                                : Icons.auto_awesome_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              _selectedModel.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                   IconButton(
@@ -412,6 +397,8 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
               ),
               child: Row(
                 children: [
+                  _modelSelector(primaryColor, compact: compactHeader),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: ValueListenableBuilder<Locale>(
                       valueListenable: LocaleController.locale,
