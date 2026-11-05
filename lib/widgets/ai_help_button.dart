@@ -170,7 +170,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
           )
           .toList(growable: false),
       child: Container(
-        constraints: BoxConstraints(maxWidth: compact ? 88 : 152),
+        constraints: BoxConstraints(maxWidth: compact ? 56 : 152),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 11),
         decoration: BoxDecoration(
           color: primaryColor.withValues(alpha: 0.10),
@@ -187,19 +187,21 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
               color: primaryColor,
               size: 16,
             ),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                _selectedModel.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: primaryColor,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+            if (!compact) ...[
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  _selectedModel.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: primaryColor,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
                 ),
               ),
-            ),
+            ],
             const Icon(Icons.keyboard_arrow_down_rounded, size: 17),
           ],
         ),
@@ -397,8 +399,6 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
               ),
               child: Row(
                 children: [
-                  _modelSelector(primaryColor, compact: compactHeader),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: ValueListenableBuilder<Locale>(
                       valueListenable: LocaleController.locale,
@@ -439,6 +439,8 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                       },
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  _modelSelector(primaryColor, compact: compactHeader),
                   const SizedBox(width: 8),
                   Container(
                     decoration: BoxDecoration(
