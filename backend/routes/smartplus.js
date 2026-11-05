@@ -3,6 +3,11 @@ const crypto = require('crypto');
 const { query, execute } = require('../db');
 const { requireActiveBusiness } = require('../security/business_access');
 const { dispatchOwnerActionCompletion } = require('../services/smartplus_owner_notifications');
+const {
+  answerBusinessQuestion,
+  configured: geminiConfigured,
+  consumeDailyQuota,
+} = require('../services/smartplus_gemini');
 
 const router = express.Router();
 const FIELDS = [
@@ -25,6 +30,9 @@ const FEEDBACK_VERDICTS = new Set(['useful', 'ignored', 'inaccurate']);
 const writeRateWindows = new Map();
 const WRITE_RATE_WINDOW_MS = 5 * 60 * 1000;
 const WRITE_RATE_LIMIT = 30;
+const chatRateWindows = new Map();
+const CHAT_RATE_WINDOW_MS = 5 * 60 * 1000;
+const CHAT_RATE_LIMIT = 20;
 const ACTION_TYPES = new Set([
   'reorder',
   'price_change_proposal',
@@ -54,6 +62,52 @@ function limitOwnerWrites(req, res, next) {
   recent.push(now);
   writeRateWindows.set(key, recent);
   return next();
+}
+
+// Gemini requests are read-only, but they are intentionally rate limited to
+// reduce abuse and unexpected provider cost. The key is from the verified
+// session, never a client-supplied business or user identifier.
+async function limitOwnerChats(req, res, next) {
+  const key = `${req.businessContext?.businessId || ''}:${req.businessContext?.userId || ''}`;
+  const now = Date.now();
+  const recent = (chatRateWindows.get(key) || []).filter((time) => now - time < CHAT_RATE_WINDOW_MS);
+  if (recent.length >= CHAT_RATE_LIMIT) {
+    console.warn(JSON.stringify({ event: 'smartplus_gemini_rate_limited', businessId: req.businessContext?.businessId, userId: req.businessContext?.userId, timestamp: new Date().toISOString() }));
+    return res.status(429).json({ success: false, message: 'Too many SmartPlus chat requests. Please wait a few minutes and try again.' });
+  }
+  recent.push(now);
+  chatRateWindows.set(key, recent);
+  if (!geminiConfigured()) return next();
+  try {
+    const quota = await consumeDailyQuota();
+    if (!quota.allowed) {
+      console.warn(JSON.stringify({
+        event: 'smartplus_gemini_daily_quota_reached',
+        used: quota.used,
+        limit: quota.limit,
+        usageDate: quota.resetsAt.slice(0, 10),
+        timestamp: new Date().toISOString(),
+      }));
+      return res.status(429).json({
+        success: false,
+        code: 'gemini_daily_quota_reached',
+        message: 'SmartPlus Gemini has reached today\'s free 100-request limit. It resets at midnight (Philippines time). Local SmartPlus answers remain available.',
+        quota,
+      });
+    }
+    req.geminiQuota = quota;
+    return next();
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'smartplus_gemini_quota_error',
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    }));
+    return res.status(503).json({
+      success: false,
+      message: 'SmartPlus Gemini quota check is temporarily unavailable. Local SmartPlus answers remain available.',
+    });
+  }
 }
 
 function preferencesFromRow(row = {}) {
@@ -153,6 +207,68 @@ async function recheckReceivedDelivery(orderNumber, businessId) {
 }
 
 router.use(requireActiveBusiness, requireOwner);
+
+// Gemini is an optional read-only enhancement. The endpoint has no write
+// tools, derives the tenant only from the verified JWT/session, and sends a
+// privacy-minimized aggregate context from this backend to Gemini.
+router.post('/chat', limitOwnerChats, async (req, res) => {
+  const question = String(req.body?.question || '').trim();
+  const locale = String(req.body?.locale || 'en').trim().toLowerCase();
+  if (!question || question.length > 1200 || !['en', 'fil'].includes(locale)) {
+    return res.status(400).json({ success: false, message: 'Provide a SmartPlus question of up to 1,200 characters and a supported language.' });
+  }
+  try {
+    console.info(JSON.stringify({
+      event: 'smartplus_gemini_requested',
+      businessId: req.businessContext.businessId,
+      userId: req.businessContext.userId,
+      locale,
+      timestamp: new Date().toISOString(),
+    }));
+    const result = await answerBusinessQuestion({
+      businessId: req.businessContext.businessId,
+      question,
+      locale,
+    });
+    console.info(JSON.stringify({
+      event: 'smartplus_gemini_completed',
+      businessId: req.businessContext.businessId,
+      userId: req.businessContext.userId,
+      model: result.model,
+      timestamp: new Date().toISOString(),
+    }));
+    return res.json({
+      success: true,
+      provider: 'gemini',
+      answer: result.answer,
+      meta: {
+        dateRange: result.dateRange,
+        dataQuality: result.dataQuality,
+        quota: req.geminiQuota || null,
+      },
+    });
+  } catch (error) {
+    const status = error.code === 'gemini_not_configured' ? 503 : error.code === 'invalid_question' ? 400 : 502;
+    console.error(JSON.stringify({
+      event: 'smartplus_gemini_failed',
+      businessId: req.businessContext?.businessId,
+      userId: req.businessContext?.userId,
+      status,
+      providerStatus: error.statusCode || null,
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    }));
+    return res.status(status).json({
+      success: false,
+      code: error.code || 'gemini_unavailable',
+      message: status === 503
+        ? 'SmartPlus Gemini is not configured on the secure backend yet.'
+        : status === 400
+        ? error.message
+        : 'SmartPlus Gemini is temporarily unavailable. Local SmartPlus answers remain available.',
+    });
+  }
+});
 
 router.get('/preferences', async (req, res) => {
   try {

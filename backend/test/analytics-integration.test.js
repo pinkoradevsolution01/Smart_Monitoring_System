@@ -21,14 +21,19 @@ function signTestSession(claims, overrides = {}) {
 function loadRouter(routeName, db) {
   const dbPath = require.resolve('../db');
   const routePath = require.resolve(`../routes/${routeName}`);
+  const businessAccessPath = require.resolve('../security/business_access');
   const originalDb = require.cache[dbPath];
   const originalRoute = require.cache[routePath];
+  const originalBusinessAccess = require.cache[businessAccessPath];
   require.cache[dbPath] = {
     id: dbPath,
     filename: dbPath,
     loaded: true,
     exports: db,
   };
+  // business_access also imports db. Reload it after replacing the db module
+  // so analytics entitlement checks use this test's tenant-safe fake DB.
+  delete require.cache[businessAccessPath];
   delete require.cache[routePath];
   const router = require(`../routes/${routeName}`);
 
@@ -36,9 +41,13 @@ function loadRouter(routeName, db) {
     router,
     restore() {
       delete require.cache[routePath];
+      delete require.cache[businessAccessPath];
       if (originalRoute) require.cache[routePath] = originalRoute;
       if (originalDb) require.cache[dbPath] = originalDb;
       else delete require.cache[dbPath];
+      if (originalBusinessAccess) {
+        require.cache[businessAccessPath] = originalBusinessAccess;
+      }
     },
   };
 }
@@ -63,7 +72,11 @@ function analyticsDb(calls) {
       calls.push({ sql, params });
       if (sql.includes('FROM users u INNER JOIN businesses b')) {
         assert.deepEqual(params, ['owner-a', 'business-a']);
-        return [{ id: 'owner-a', name: 'Business A', user_role: 'owner', user_active: 1, business_active: 1 }];
+        return [{ id: 'owner-a', name: 'Business A', owner_email: 'owner@example.com', user_role: 'owner', user_active: 1, business_active: 1 }];
+      }
+      if (sql.includes('FROM activation_code_requests r')) {
+        assert.deepEqual(params, ['owner@example.com']);
+        return [{ activation_code: 'active-code', package_name: 'premium', expires_at: null }];
       }
       if (sql.includes('SUM(subtotal)')) return [{ grossSales: 120, discounts: 5, netSales: 115, transactions: 1, averageOrderValue: 115, itemsSold: 2 }];
       if (sql.includes('COUNT(*) activeCustomers')) return [{ activeCustomers: 4 }];

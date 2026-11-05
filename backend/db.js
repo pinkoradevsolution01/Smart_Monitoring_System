@@ -421,6 +421,19 @@ async function ensureSmartPlusEmailDeliveriesTable() {
   `);
 }
 
+// Gemini free usage is allocated to the API project. A durable daily counter
+// prevents a PM2 restart or a second backend process from bypassing the cap.
+async function ensureSmartPlusGeminiDailyUsageTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS smartplus_gemini_daily_usage (
+      usage_date DATE NOT NULL PRIMARY KEY,
+      request_count INT UNSIGNED NOT NULL DEFAULT 0,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB
+  `);
+}
+
 // Preferences belong to the tenant, never to a client-supplied business ID.
 // The owner-only SmartPlus route resolves this business from the verified JWT.
 async function ensureSmartPlusNotificationPreferencesTable() {
@@ -594,6 +607,7 @@ async function initDb() {
   await ensureOwnerPinResetTokensTable();
   await ensureExpensesTable();
   await ensureSmartPlusEmailDeliveriesTable();
+  await ensureSmartPlusGeminiDailyUsageTable();
   await ensureSmartPlusNotificationPreferencesTable();
   await ensureSmartPlusFeedbackTable();
   await ensureSmartPlusActionTables();

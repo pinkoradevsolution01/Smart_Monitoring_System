@@ -60,6 +60,34 @@ FROM_EMAIL=Smart Monitoring System <noreply@mail.smartmonitoringsystem.store>
 The `FROM_EMAIL` domain must be verified in Resend. Do not expose the Resend key
 in the Flutter app, Web Analytics application, or source control.
 
+### SmartPlus Gemini chat (optional)
+
+SmartPlus can use Gemini for owner-only natural-language business questions.
+Gemini is called only by the backend after it validates the owner session,
+active subscription, and tenant business ID. Flutter never receives the API
+key. The backend sends only a limited aggregate summary of the current tenant's
+sales, products, low-stock quantities, and expense totals. It does **not** send
+customer names, email addresses, phone numbers, addresses, user IDs, payment
+references, or raw transactions.
+
+Create an API key in Google AI Studio, then add these server-only values to
+`backend/.env`:
+
+```env
+GEMINI_API_KEY=your_private_google_ai_studio_key
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+Restart the backend after changing `.env`. When the key is absent or Gemini is
+temporarily unavailable, SmartPlus automatically retains its existing local
+rule-based answers. Gemini has no write tools: it cannot change inventory,
+orders, sales, prices, discounts, payments, users, or settings.
+
+SmartPlus limits Gemini to **100 requests per Philippines calendar day** for
+the entire API project. This is a durable database-backed limit, so restarting
+PM2 does not reset it. Once the daily cap is reached, the app uses its local
+SmartPlus answers until the quota resets at midnight (Asia/Manila).
+
 ## Deploy To DigitalOcean
 
 If you want this backend to run on a DigitalOcean droplet instead of your laptop, the easiest setup is:

@@ -1,0 +1,146 @@
+SMART MONITORING SYSTEM
+Using a Different Account on the Same Laptop
+Client Guide
+
+Purpose
+-------
+This guide explains what to do when a laptop shows "System Locked" for a
+previous owner, but the laptop must now be used by a different business owner.
+
+Important: "System Locked" is a security feature
+-------------------------------------------------
+When an activation code is revoked or a subscription is cancelled, the previous
+owner is intentionally blocked from using the Smart Monitoring System. The
+previous owner must not be able to continue using the system by reopening an
+old application window or an old local cache.
+
+The locked account cannot be used again. To use the laptop for a new business,
+sign in with a DIFFERENT Google account and use a new, active activation code.
+
+Before you begin
+----------------
+1. Confirm that the new owner has:
+   - A different Google account from the revoked/cancelled account.
+   - A new active activation code.
+   - The latest Smart Monitoring System Windows Release folder.
+
+2. Ensure all important records for the previous business were already synced
+   to the cloud before clearing the laptop. If unsure, contact the system
+   administrator first.
+
+3. Close the Smart Monitoring System completely. Check Task Manager and make
+   sure smart_monitoring_system.exe is not still running.
+
+
+OPTION A: The laptop is being reassigned to a new business
+----------------------------------------------------------
+Use this option only when the previous business will no longer use this Windows
+profile on this laptop.
+
+These steps remove LOCAL app cache and settings from this Windows user only.
+They do NOT delete cloud data, MySQL records, subscriptions, or other users'
+accounts.
+
+1. Press Windows + R.
+
+2. Paste the following location, then select OK:
+
+   %APPDATA%\com.example\Smart M' System
+
+3. Find the file named:
+
+   shared_preferences.json
+
+4. Rename it to:
+
+   shared_preferences.backup.json
+
+   Renaming is safer than deleting because the file can be restored if needed.
+
+5. Press Windows + R again.
+
+6. Paste this location, then select OK:
+
+   %USERPROFILE%\Documents\SmartMonitoringSystem
+
+7. If the laptop is being fully reassigned and all previous records are safely
+   synced, rename:
+
+   pos_system.db
+
+   to:
+
+   pos_system.backup.db
+
+   Do not remove this database if it may contain unsynced sales or records.
+
+8. Open the latest Smart Monitoring System application.
+
+9. The app should now start as a fresh local setup. Select Create Owner
+   Account, sign in using the NEW owner's Google account, and enter the NEW
+   activation code.
+
+10. Do not sign in using the revoked email address. It will correctly remain
+    locked.
+
+
+OPTION B: Two active businesses need to use the same physical laptop
+---------------------------------------------------------------------
+Do NOT clear files from an active business owner's Windows profile.
+
+Instead, create a separate Windows user account for each business:
+
+1. Open Windows Settings.
+2. Select Accounts.
+3. Select Other users (or Family & other users).
+4. Select Add account.
+5. Create a Windows account for the next business owner.
+6. Sign in to that new Windows account.
+7. Copy the complete Smart Monitoring System Release folder to that Windows
+   account and open smart_monitoring_system.exe.
+8. Register/sign in using that owner's Google account and activation code.
+
+Each Windows user has separate AppData and Documents folders. This keeps each
+business's local settings and offline cache separate while the cloud remains
+securely separated by each business account.
+
+
+Do not use Factory Reset for this purpose
+-----------------------------------------
+Factory Reset clears all local application data in the current Windows profile.
+It does not delete cloud data, but it may remove local offline records and
+settings for every account that used that Windows profile. Use it only when a
+system administrator has confirmed that the whole local app workspace can be
+cleared.
+
+
+What to send to a client
+------------------------
+Send the COMPLETE Windows Release folder as a ZIP file, not only the .exe file.
+After extracting the ZIP, the client opens:
+
+   smart_monitoring_system.exe
+
+The Release folder contains supporting files required by the application.
+
+
+If "System Locked" still appears after Option A
+------------------------------------------------
+1. Verify that the old application is fully closed.
+2. Verify that shared_preferences.json was renamed in the current Windows
+   user's AppData folder.
+3. Start the newest Release build, not an older copied .exe.
+4. Confirm that the Google account is not the revoked/cancelled email.
+5. If it still appears, contact the system administrator with a screenshot of
+   the locked screen and the Google email being used. Do not repeatedly request
+   activation with the revoked email.
+
+
+Safety summary
+--------------
+- Revoked/cancelled account: remains blocked.
+- Different active account: can use the same physical laptop.
+- Cloud records: are not deleted by the local cache-renaming steps.
+- Two active businesses on one laptop: use separate Windows user accounts.
+- Do not delete the entire app data unless the laptop is being reassigned and
+  sync has been confirmed.

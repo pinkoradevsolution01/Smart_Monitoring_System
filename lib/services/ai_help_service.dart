@@ -6,6 +6,7 @@ import '../services/pos_service.dart';
 import '../services/customer_service.dart';
 import '../services/financial_reporting_service.dart';
 import '../services/smart_plus_notification_service.dart';
+import '../services/smart_plus_gemini_service.dart';
 import '../utils/currency_formatter.dart';
 import '../utils/locale_controller.dart';
 
@@ -599,10 +600,16 @@ On the login screen:
       // abruptly while data rules are evaluated.
       await Future.delayed(const Duration(milliseconds: 650));
       final query = userMessage.toLowerCase().trim();
-      final response = await _generateSmartPlusResponse(query);
+      final geminiReply = await _askGeminiWhenSafe(query);
+      final response =
+          geminiReply?.displayText ??
+          _explainSmartPlusAnswer(
+            query,
+            await _generateSmartPlusResponse(query),
+          );
       _messages.add(
         ChatMessage(
-          text: _explainSmartPlusAnswer(query, response),
+          text: response,
           isUser: false,
           recordTarget: _recordTargetFor(query),
         ),
@@ -611,6 +618,32 @@ On the login screen:
       _isThinking = false;
       notifyListeners();
     }
+  }
+
+  /// Gemini is an optional enhancement for aggregate business questions. Keep
+  /// customer/loyalty and forecast questions local because those flows can
+  /// include person-level records or need deterministic data-quality checks.
+  Future<SmartPlusGeminiReply?> _askGeminiWhenSafe(String query) async {
+    const customerTerms = [
+      'customer',
+      'loyalty',
+      'points',
+      'purchase history',
+      'vip',
+      'at-risk',
+      'inactive',
+      're-engage',
+      'follow-up',
+    ];
+    const forecastTerms = ['forecast', 'christmas', 'season'];
+    if (customerTerms.any(query.contains) ||
+        forecastTerms.any(query.contains)) {
+      return null;
+    }
+    return SmartPlusGeminiService().ask(
+      question: query,
+      useFilipino: LocaleController.locale.value.languageCode == 'fil',
+    );
   }
 
   /// Generate response based on user query and current language

@@ -363,6 +363,15 @@ CREATE TABLE IF NOT EXISTS smartplus_email_deliveries (
     ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB;
 
+-- A project-wide Gemini quota. This is global because free Gemini quota is
+-- shared by the Google API project, not separately by tenant or device.
+CREATE TABLE IF NOT EXISTS smartplus_gemini_daily_usage (
+  usage_date DATE NOT NULL PRIMARY KEY,
+  request_count INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS sale_items (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   sale_id VARCHAR(64) NOT NULL,
