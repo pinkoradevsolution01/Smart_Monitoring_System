@@ -1145,36 +1145,51 @@ class SupabaseSyncService extends ChangeNotifier {
         }
       }
 
-      // A business can accumulate many purchase orders. Sending every order
-      // and line item in one HTTP request can exceed a reverse-proxy/body
-      // parser limit, leaving otherwise valid records unsynced. Keep each
-      // request bounded while preserving each order with all of its items.
-      const ordersPerBatch = 25;
-      for (var start = 0; start < orderData.length; start += ordersPerBatch) {
-        final end = start + ordersPerBatch < orderData.length
-            ? start + ordersPerBatch
-            : orderData.length;
-        final orderBatch = orderData.sublist(start, end);
-        final orderIds = orderBatch
-            .map((order) => order['id']?.toString())
-            .whereType<String>()
-            .toSet();
-        final itemBatch = orderItems
-            .where(
-              (item) => orderIds.contains(
-                (item['purchase_order_id'] ?? item['order_id'])?.toString(),
-              ),
+      // A batch is limited by its serialized byte size, not just the number
+      // of orders. An order can have many line items, so a 25-order batch can
+      // still exceed a proxy limit. Headers are sent first; their items are
+      // then sent in separate bounded requests after the parent orders exist.
+      const maxBatchBytes = 256 * 1024;
+
+      Future<void> pushSizedBatches(
+        String collection,
+        List<Map<String, dynamic>> records,
+      ) async {
+        var batch = <Map<String, dynamic>>[];
+
+        int serializedSize(List<Map<String, dynamic>> candidate) => utf8
+            .encode(
+              jsonEncode({'businessId': _businessId, collection: candidate}),
             )
-            .toList(growable: false);
-        await _api.postJson(
-          'sync/push',
-          body: {
-            'businessId': _businessId,
-            'purchaseOrders': orderBatch,
-            'purchaseOrderItems': itemBatch,
-          },
-        );
+            .length;
+
+        Future<void> sendCurrent() async {
+          if (batch.isEmpty) return;
+          await _api.postJson(
+            'sync/push',
+            body: {'businessId': _businessId, collection: batch},
+          );
+          batch = <Map<String, dynamic>>[];
+        }
+
+        for (final record in records) {
+          final candidate = [...batch, record];
+          if (batch.isNotEmpty && serializedSize(candidate) > maxBatchBytes) {
+            await sendCurrent();
+          }
+          final single = [record];
+          if (serializedSize(single) > maxBatchBytes) {
+            throw StateError(
+              'One purchase-order $collection record is too large to sync. Shorten its notes and retry.',
+            );
+          }
+          batch.add(record);
+        }
+        await sendCurrent();
       }
+
+      await pushSizedBatches('purchaseOrders', orderData);
+      await pushSizedBatches('purchaseOrderItems', orderItems);
       await db.acknowledgePurchaseOrderVersions(pendingVersions);
       _syncStats['purchase_orders_pushed'] = orders.length;
       _syncStats['purchase_order_items_pushed'] = orderItems.length;
