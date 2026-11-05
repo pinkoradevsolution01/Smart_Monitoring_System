@@ -136,8 +136,12 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
   }
 
   Widget _modelSelector(Color primaryColor, {required bool compact}) {
+    final menuWidth = (MediaQuery.sizeOf(context).width - 48)
+        .clamp(220.0, 280.0)
+        .toDouble();
     return PopupMenuButton<String>(
       tooltip: 'Choose SmartPlus answer mode',
+      constraints: BoxConstraints(maxWidth: menuWidth),
       onSelected: (modelId) {
         setState(() => _selectedModelId = modelId);
       },
@@ -146,7 +150,7 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
             (model) => PopupMenuItem<String>(
               value: model.id,
               child: SizedBox(
-                width: 230,
+                width: menuWidth,
                 child: ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
@@ -156,7 +160,11 @@ class _AIHelpDialogState extends State<_AIHelpDialog> {
                         : Icons.auto_awesome_rounded,
                     color: model.id == _selectedModelId ? primaryColor : null,
                   ),
-                  title: Text(model.label),
+                  title: Text(
+                    model.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   subtitle: Text(
                     model.description.isEmpty
                         ? 'Secure Gemini business chat'

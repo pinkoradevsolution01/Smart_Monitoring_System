@@ -6,6 +6,7 @@ const { dispatchOwnerActionCompletion } = require('../services/smartplus_owner_n
 const {
   answerBusinessQuestion,
   allowedModels,
+  fallbackModel,
   configured: geminiConfigured,
   consumeDailyQuota,
 } = require('../services/smartplus_gemini');
@@ -213,8 +214,15 @@ router.use(requireActiveBusiness, requireOwner);
 // a model name itself, and Rule-based is always local (it never reaches this
 // endpoint).
 router.get('/chat/models', (req, res) => {
+  const fallback = fallbackModel();
   const models = geminiConfigured()
-    ? allowedModels().map((id) => ({ id, label: `Gemini · ${id}` }))
+    ? allowedModels().map((id) => ({
+      id,
+      label: `Gemini · ${id}`,
+      description: id === fallback
+        ? 'Automatic backup when the primary Gemini model is busy'
+        : 'Secure business answers from Gemini',
+    }))
     : [];
   return res.json({
     success: true,
