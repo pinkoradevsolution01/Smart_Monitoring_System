@@ -157,6 +157,50 @@ test('SmartPlus Gemini uses ordered, controlled fallback models after a busy pro
   }
 });
 
+test('SmartPlus Gemini skips an unavailable model and uses an approved fallback', { concurrency: false }, async () => {
+  const previousFetch = global.fetch;
+  const previousKey = process.env.GEMINI_API_KEY;
+  const previousFallbacks = process.env.GEMINI_FALLBACK_MODELS;
+  const requestedModels = [];
+  process.env.GEMINI_API_KEY = 'test-key';
+  process.env.GEMINI_FALLBACK_MODELS = 'gemini-3.7-flash,gemini-3.5-flash-lite';
+  global.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    requestedModels.push(request.model);
+    if (request.model === 'gemini-3.8-flash') {
+      return {
+        ok: false,
+        status: 404,
+        async json() { return { error: { message: 'model unavailable' } }; },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Backup answer.' }] }] };
+      },
+    };
+  };
+  try {
+    const result = await callGemini({
+      question: 'What sold best?',
+      context: { dataQuality: 'limited' },
+      locale: 'en',
+      model: 'gemini-3.8-flash',
+    });
+    assert.equal(result.answer, 'Backup answer.');
+    assert.equal(result.model, 'gemini-3.7-flash');
+    assert.deepEqual(requestedModels, ['gemini-3.8-flash', 'gemini-3.7-flash']);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousKey == null) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = previousKey;
+    if (previousFallbacks == null) delete process.env.GEMINI_FALLBACK_MODELS;
+    else process.env.GEMINI_FALLBACK_MODELS = previousFallbacks;
+  }
+});
+
 test('SmartPlus Gemini enforces one shared 100-request Philippines daily cap', async () => {
   let count = 0;
   const db = {

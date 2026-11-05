@@ -292,6 +292,10 @@ async function callGemini({ question, context, locale, model }) {
         error.statusCode = response.status;
         if (response.status === 404) error.code = 'provider_model_not_found';
         error.retryable = [429, 500, 502, 503, 504].includes(response.status);
+        // A configured model can disappear or be unavailable for a specific
+        // Gemini API surface. It is not worth retrying that same model, but a
+        // server-approved fallback may still answer safely.
+        error.fallbackable = error.retryable || response.status === 404;
         throw error;
       }
       const answer = (String(payload.output_text || '') || (payload.steps || [])
@@ -306,32 +310,37 @@ async function callGemini({ question, context, locale, model }) {
       return { answer, model: activeModel };
     };
 
+    const tryFallbacks = async (initialError) => {
+      let lastError = initialError;
+      for (const fallback of fallbackModels()) {
+        if (fallback === model) continue;
+        try {
+          return await requestGemini(fallback);
+        } catch (fallbackError) {
+          lastError = fallbackError;
+          if (!fallbackError.fallbackable || controller.signal.aborted) {
+            throw fallbackError;
+          }
+        }
+      }
+      throw lastError;
+    };
+
     try {
       return await requestGemini(model);
     } catch (error) {
-      // A single bounded retry handles transient Google 5xx/network failures
-      // without turning SmartPlus into an unbounded request loop.
-      if (!error.retryable || controller.signal.aborted) throw error;
+      if (!error.fallbackable || controller.signal.aborted) throw error;
+      // A single bounded retry is appropriate only for a transient provider
+      // error. A 404 moves straight to an approved fallback model.
+      if (!error.retryable) return tryFallbacks(error);
       await new Promise((resolve) => setTimeout(resolve, 600));
       try {
         return await requestGemini(model);
       } catch (retryError) {
-        if (!retryError.retryable || controller.signal.aborted) {
+        if (!retryError.fallbackable || controller.signal.aborted) {
           throw retryError;
         }
-        let lastError = retryError;
-        for (const fallback of fallbackModels()) {
-          if (fallback === model) continue;
-          try {
-            return await requestGemini(fallback);
-          } catch (fallbackError) {
-            lastError = fallbackError;
-            if (!fallbackError.retryable || controller.signal.aborted) {
-              throw fallbackError;
-            }
-          }
-        }
-        throw lastError;
+        return tryFallbacks(retryError);
       }
     }
   } finally {
