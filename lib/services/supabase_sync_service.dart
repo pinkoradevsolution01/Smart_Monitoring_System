@@ -345,14 +345,16 @@ class SupabaseSyncService extends ChangeNotifier {
         return;
       }
       if (_isSyncing) {
-        // Do not lose a local write just because a pull or another push is in
-        // progress. Schedule one follow-up upload instead.
-        queuePushAllData(delay: _queuedPushDelay);
+        // A local write schedules its own queued upload. Do not turn a slow
+        // periodic pull into a full backup when there is no new local change.
         return;
       }
 
       try {
-        await syncBidirectional();
+        // Poll cloud changes without re-uploading every product, sale, and
+        // purchase-order item on every device every 30 seconds. Writes are
+        // still pushed promptly by queuePushAllData after a local mutation.
+        await pullAllData();
       } catch (e) {
         debugPrint('⚠️ Auto-sync tick failed: $e');
       }
