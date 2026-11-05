@@ -382,7 +382,7 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
                   FROM restock_records stock
                  WHERE stock.business_id = po.business_id
                    AND stock.product_id = poi.product_id
-                   AND stock.referenced_by = CONCAT('Purchase Order ', po.order_number)), 0)
+                   AND INSTR(LOWER(stock.referenced_by), LOWER(po.order_number)) > 0), 0)
                   < poi.received_quantity THEN 1 ELSE 0 END) AS missing_inventory,
               CASE WHEN COUNT(poi.id) > 0
                 AND MAX(CASE WHEN poi.quantity <= 0 OR poi.received_quantity < poi.quantity
@@ -390,7 +390,7 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
                     FROM restock_records stock
                    WHERE stock.business_id = po.business_id
                      AND stock.product_id = poi.product_id
-                     AND stock.referenced_by = CONCAT('Purchase Order ', po.order_number)), 0)
+                     AND INSTR(LOWER(stock.referenced_by), LOWER(po.order_number)) > 0), 0)
                     < poi.received_quantity
                   THEN 1 ELSE 0 END) = 0
                 THEN 1 ELSE 0 END AS fully_restocked,

@@ -364,7 +364,7 @@ class _GuidedSmartPlusTaskScreenState
           .where(
             (record) =>
                 record.productId == item.productId &&
-                record.referencedBy == 'Purchase Order $number',
+                isRestockRecordForPurchaseOrder(record, number),
           )
           .fold<int>(0, (sum, record) => sum + record.quantity);
       final totalReceived = order.items

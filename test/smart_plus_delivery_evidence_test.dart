@@ -36,6 +36,20 @@ void main() {
   test('full receipt and order-linked stock close stale order alerts', () {
     expect(isPurchaseOrderFullyRestocked(order(5), [record(5)]), isTrue);
   });
+  test('legacy restock wording still closes its matching order only', () {
+    expect(
+      isPurchaseOrderFullyRestocked(order(5), [
+        record(5, reference: 'Delivery receipt — Purchase Order: PO-1'),
+      ]),
+      isTrue,
+    );
+    expect(
+      isPurchaseOrderFullyRestocked(order(5), [
+        record(5, reference: 'Delivery receipt — Purchase Order: PO-10'),
+      ]),
+      isFalse,
+    );
+  });
   test('partial, missing, and unrelated restocks do not hide alerts', () {
     expect(isPurchaseOrderFullyRestocked(order(4), [record(5)]), isFalse);
     expect(isPurchaseOrderFullyRestocked(order(5), [record(4)]), isFalse);

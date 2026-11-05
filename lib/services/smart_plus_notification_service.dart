@@ -25,6 +25,17 @@ enum SmartPlusDataQuality { checking, weak, limited, strong }
 
 enum SmartPlusRecordTarget { inventory, sales, customers, suppliers }
 
+/// Matches both the current and legacy restock-reference wording while
+/// keeping order numbers distinct (for example, PO-1 never matches PO-10).
+bool isRestockRecordForPurchaseOrder(RestockRecord record, String orderNumber) {
+  final number = orderNumber.trim().toLowerCase();
+  if (number.isEmpty) return false;
+  final reference = record.referencedBy.trim().toLowerCase();
+  return RegExp(
+    '(^|[^a-z0-9])${RegExp.escape(number)}(?=\$|[^a-z0-9])',
+  ).hasMatch(reference);
+}
+
 /// A stale order status is not evidence of an outstanding delivery when all
 /// ordered units have matching, order-linked receipt and restock records.
 bool isPurchaseOrderFullyRestocked(
@@ -42,13 +53,13 @@ bool isPurchaseOrderFullyRestocked(
     quantities[item.productId] =
         (quantities[item.productId] ?? 0) + item.receivedQuantity;
   }
-  final reference = 'purchase order ${order.orderNumber}'.toLowerCase();
+  final reference = order.orderNumber;
   for (final entry in quantities.entries) {
     final recorded = restocks
         .where(
           (record) =>
               record.productId == entry.key &&
-              record.referencedBy.toLowerCase() == reference,
+              isRestockRecordForPurchaseOrder(record, reference),
         )
         .fold<int>(0, (sum, record) => sum + record.quantity);
     if (recorded < entry.value) return false;
@@ -1443,9 +1454,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
       if (status == 'received' &&
           order.items.any((item) => item.receivedQuantity > 0) &&
           !restocks.any(
-            (record) => record.referencedBy.contains(
-              'Purchase Order ${order.orderNumber}',
-            ),
+            (record) =>
+                isRestockRecordForPurchaseOrder(record, order.orderNumber),
           )) {
         suggestions.add(
           _supplierRule(
