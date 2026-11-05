@@ -84,6 +84,47 @@ class BusinessInfoService extends ChangeNotifier {
     }
   }
 
+  /// Restores the minimum business-profile state for an owner whose existing
+  /// tenant was verified by the backend after a reinstall. Existing device
+  /// details always win; this only fills missing local preferences and never
+  /// creates or changes a backend business.
+  Future<bool> restoreFromVerifiedBackendBusiness({
+    required String storeName,
+    String? storeAddress,
+  }) async {
+    final normalizedName = storeName.trim();
+    if (normalizedName.isEmpty) return false;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final localName = prefs.getString('business_store_name')?.trim();
+      final localType = prefs.getString('business_business_type')?.trim();
+      final localAddress = prefs.getString('business_store_address')?.trim();
+      final localLogo = prefs.getString('business_logo_path');
+
+      return saveBusinessInfo(
+        BusinessInfo(
+          storeName: localName?.isNotEmpty == true
+              ? localName!
+              : normalizedName,
+          // Older releases stored this only on the device. Preserve it where
+          // available; otherwise use an editable neutral value instead of
+          // forcing the owner through first-time onboarding again.
+          businessType: localType?.isNotEmpty == true ? localType! : 'Other',
+          storeAddress: localAddress?.isNotEmpty == true
+              ? localAddress
+              : storeAddress?.trim().isNotEmpty == true
+              ? storeAddress!.trim()
+              : null,
+          logoPath: localLogo,
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error restoring verified business info: $e');
+      return false;
+    }
+  }
+
   Future<void> clearBusinessInfo() async {
     try {
       final prefs = await SharedPreferences.getInstance();

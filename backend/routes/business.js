@@ -65,7 +65,7 @@ router.post('/init', async (req, res) => {
     // A device can retain a business ID from a previous owner. The authenticated
     // owner email is canonical and always wins over cached client state.
     const existing = await query(
-      'SELECT id FROM businesses WHERE LOWER(owner_email) = ? LIMIT 1',
+      'SELECT id, name, address FROM businesses WHERE LOWER(owner_email) = ? LIMIT 1',
       [normalizedEmail],
     );
     let businessId;
@@ -126,6 +126,10 @@ router.post('/init', async (req, res) => {
       // select a package again.
       subscriptionPackage: entitlement?.package_name || null,
       subscriptionExpiresAt: entitlement?.expires_at || null,
+      // The profile comes from the authenticated owner's canonical tenant,
+      // never from a device-selected business ID.
+      businessName: existing[0]?.name || businessName,
+      businessAddress: existing[0]?.address || null,
     });
   } catch (error) {
     console.error('Business init error:', error);

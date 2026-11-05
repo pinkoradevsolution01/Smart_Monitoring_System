@@ -10,6 +10,7 @@ import '../../utils/oauth_checker.dart';
 import '../../utils/policy_dialogs.dart';
 import 'package_selection_screen.dart';
 import '../../services/package_service.dart';
+import '../../services/business_info_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/supabase_sync_service.dart';
 import '../owner/owner_dashboard.dart';
@@ -208,6 +209,11 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
       final businessId = businessResponse['businessId'].toString();
       final verifiedSubscriptionPackage =
           businessResponse['subscriptionPackage']?.toString();
+      final verifiedBusinessName =
+          businessResponse['businessName']?.toString() ??
+          googleUser['name'] as String;
+      final verifiedBusinessAddress = businessResponse['businessAddress']
+          ?.toString();
 
       // Create owner user from Google account
       final owner = user_model.User(
@@ -241,6 +247,12 @@ class _OwnerRegistrationScreenState extends State<OwnerRegistrationScreen>
         await GetIt.I<PackageService>().restoreFromVerifiedBackendSubscription(
           verifiedSubscriptionPackage,
         );
+        if (ownerAlreadyRegistered) {
+          await BusinessInfoService().restoreFromVerifiedBackendBusiness(
+            storeName: verifiedBusinessName,
+            storeAddress: verifiedBusinessAddress,
+          );
+        }
       }
 
       if (!mounted) return;
