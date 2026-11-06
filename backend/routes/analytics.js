@@ -1,7 +1,9 @@
 const express = require('express');
+const { createHash } = require('crypto');
 const { query } = require('../db');
 const { tokenFromRequest, verifySession } = require('../security/session_tokens');
 const { activeEntitlementForOwner } = require('../security/business_access');
+const { currentOwnerSuggestions } = require('../services/smartplus_owner_notifications');
 
 const router = express.Router();
 const BUSINESS_ROLES = new Set(['owner', 'admin', 'manager']);
@@ -211,33 +213,34 @@ router.get('/suppliers', async (req, res) => {
   }
 });
 
-// SmartPlus is intentionally owner-only in Smart Monitoring. Analytics exposes
-// only the owner queue's notification-safe fields, never a proposal/evidence
-// payload, and derives the business scope exclusively from the signed session.
+// SmartPlus is intentionally owner-only in Smart Monitoring. Analytics mirrors
+// the live, tenant-scoped operational suggestions; it never exposes the Action
+// Review Center workflow or lets Analytics approve, dismiss, or execute work.
 router.get('/notifications', async (req, res) => {
   if (req.analytics.role !== 'owner') {
     return res.json({ success: true, data: { notifications: [], unreadCount: 0 }, meta: meta(req) });
   }
   try {
-    const notifications = await query(
-      `SELECT id, action_type, title, status, created_at, updated_at
-       FROM smartplus_action_drafts
-       WHERE business_id = ? AND status IN ('draft', 'approved')
-       ORDER BY created_at DESC LIMIT 20`,
-      [req.analytics.businessId],
-    );
+    const { suggestions } = await currentOwnerSuggestions(req.analytics.businessId);
+    const generatedAt = new Date().toISOString();
+    const notifications = suggestions.map((suggestion) => ({
+      id: `smartplus-live-${createHash('sha256')
+        .update(`${suggestion.level}|${suggestion.title}|${suggestion.message}`)
+        .digest('hex')
+        .slice(0, 24)}`,
+      source: 'SmartPlus',
+      actionType: 'operational_suggestion',
+      title: suggestion.title,
+      message: suggestion.message,
+      level: suggestion.level,
+      status: 'active',
+      createdAt: generatedAt,
+      updatedAt: generatedAt,
+    }));
     return res.json({
       success: true,
       data: {
-        notifications: notifications.map((notification) => ({
-          id: notification.id,
-          source: 'SmartPlus',
-          actionType: notification.action_type,
-          title: notification.title,
-          status: notification.status,
-          createdAt: notification.created_at,
-          updatedAt: notification.updated_at,
-        })),
+        notifications,
         unreadCount: notifications.length,
       },
       meta: meta(req),

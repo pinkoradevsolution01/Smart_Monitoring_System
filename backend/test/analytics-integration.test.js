@@ -93,9 +93,29 @@ function analyticsDb(calls) {
         assert.deepEqual(params, ['2026-08-01', '2026-08-31', '2026-08-01', '2026-08-31', '2026-08-01', '2026-08-31', 'business-a']);
         return [{ id: 'supplier-a', name: 'Supplier A', is_active: 1, purchase_order_count: 1, total_ordered: 420, open_order_count: 1, last_order_date: '2026-08-20 10:00:00', delivery_status: 'pending', expected_delivery: '2026-08-25 10:00:00' }];
       }
-      if (sql.includes('FROM smartplus_action_drafts')) {
+      if (sql.includes('FROM smartplus_notification_preferences')) {
         assert.deepEqual(params, ['business-a']);
-        return [{ id: 'draft-a', action_type: 'reorder', title: 'Reorder coffee beans', status: 'draft', created_at: '2026-08-20 10:00:00', updated_at: '2026-08-20 10:00:00' }];
+        return [{ low_stock_enabled: 1, discount_enabled: 1, supplier_delivery_enabled: 1, minimum_severity: 'info' }];
+      }
+      if (sql.includes('WHERE business_id = ? AND quantity <= 0')) {
+        assert.deepEqual(params, ['business-a']);
+        return [];
+      }
+      if (sql.includes('quantity > 0') && sql.includes('quantity <= low_stock_threshold')) {
+        assert.deepEqual(params, ['business-a']);
+        return [{ name: 'Coffee beans', quantity: 2, low_stock_threshold: 5 }];
+      }
+      if (sql.includes('discount / subtotal')) {
+        assert.deepEqual(params, ['business-a']);
+        return [{ count: 0 }];
+      }
+      if (sql.includes('FROM purchase_orders po')) {
+        assert.deepEqual(params, ['business-a']);
+        return [];
+      }
+      if (sql.includes('FROM restock_records')) {
+        assert.deepEqual(params, ['business-a']);
+        return [];
       }
       if (sql.includes('MAX(CASE WHEN event_type')) return [{ lastSuccessfulSync: '2026-08-30 09:30:00', lastFailedSync: null }];
       if (sql.includes('FROM operational_events')) return [{ event_type: 'sync_success', severity: 'info', message: 'Business synchronization completed.', created_at: '2026-08-30 09:30:00' }];
@@ -195,7 +215,9 @@ test('analytics supplies and SmartPlus notifications are tenant-scoped and owner
       });
       assert.equal(notifications.status, 200);
       const notificationBody = await notifications.json();
-      assert.equal(notificationBody.data.notifications[0].title, 'Reorder coffee beans');
+      assert.equal(notificationBody.data.notifications[0].title, 'Low-stock reorder suggested');
+      assert.equal(notificationBody.data.notifications[0].status, 'active');
+      assert.equal(notificationBody.data.notifications[0].actionType, 'operational_suggestion');
       assert.equal(notificationBody.data.notifications[0].proposal, undefined);
 
       const managerNotifications = await fetch(`${base}/api/analytics/notifications`, {

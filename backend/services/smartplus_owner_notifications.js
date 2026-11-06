@@ -511,6 +511,108 @@ async function dispatchOwnerActionCompletion(businessId, action, dependencies = 
 }
 
 /**
+ * Returns the current, tenant-scoped operational suggestions. This has no
+ * side effects: it does not write an action draft, send email, or mark a
+ * suggestion reviewed. It is shared by Analytics so that its notification
+ * panel mirrors Smart Monitoring's current operations data instead of an
+ * older Action Review Center status.
+ */
+async function currentOwnerSuggestions(businessId, dependencies = {}) {
+  const dbQuery = dependencies.query || query;
+  const [
+    preferenceRows,
+    outOfStock,
+    lowStock,
+    discountRows,
+    supplierDeliveryLines,
+    restockRecords,
+  ] = await Promise.all([
+    dbQuery(
+      `SELECT email_enabled, low_stock_enabled, discount_enabled, supplier_delivery_enabled,
+              minimum_severity, quiet_hours_start, quiet_hours_end
+         FROM smartplus_notification_preferences
+        WHERE business_id = ? LIMIT 1`,
+      [businessId],
+    ).catch(() => []),
+    dbQuery(
+      `SELECT name, quantity
+         FROM products
+        WHERE business_id = ? AND quantity <= 0
+        ORDER BY name ASC LIMIT 3`,
+      [businessId],
+    ),
+    dbQuery(
+      `SELECT name, quantity, low_stock_threshold
+         FROM products
+        WHERE business_id = ?
+          AND quantity > 0
+          AND quantity <= low_stock_threshold
+        ORDER BY quantity ASC, name ASC LIMIT 3`,
+      [businessId],
+    ),
+    dbQuery(
+      `SELECT COUNT(*) AS count
+         FROM sales
+        WHERE business_id = ?
+          AND status = 'completed'
+          AND datetime >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+          AND subtotal > 0
+          AND discount / subtotal >= 0.20`,
+      [businessId],
+    ),
+    dbQuery(
+      `SELECT po.id AS order_id, po.order_number, po.status, po.order_date,
+              po.expected_delivery, COALESCE(s.name, 'Unassigned supplier') AS supplier_name,
+              poi.product_id, poi.product_name, poi.quantity, poi.received_quantity,
+              p.quantity AS product_quantity, p.low_stock_threshold
+         FROM purchase_orders po
+         LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.business_id = po.business_id
+         LEFT JOIN purchase_order_items poi ON poi.order_id = po.id AND poi.business_id = po.business_id
+         LEFT JOIN products p ON p.id = poi.product_id AND p.business_id = po.business_id
+        WHERE po.business_id = ?
+          AND po.status <> 'cancelled'
+          AND (
+            po.status IN ('received', 'completed', 'partial')
+            OR (po.status = 'pending' AND po.expected_delivery IS NULL
+                AND po.order_date <= DATE_SUB(CURDATE(), INTERVAL 2 DAY))
+            OR (po.expected_delivery IS NOT NULL AND po.expected_delivery <= CURDATE())
+          )`,
+      [businessId],
+    ).catch((error) => {
+      console.error('SmartPlus supplier delivery query failed:', error.message);
+      return [];
+    }),
+    dbQuery(
+      `SELECT product_id, quantity, referenced_by, restock_date
+         FROM restock_records
+        WHERE business_id = ?
+          AND referenced_by IS NOT NULL
+          AND referenced_by <> ''`,
+      [businessId],
+    ).catch((error) => {
+      console.error('SmartPlus restock-reference query failed:', error.message);
+      return [];
+    }),
+  ]);
+
+  const preferences = preferenceRows[0] || {};
+  const supplierDelivery = buildSupplierDeliveryRows(supplierDeliveryLines, restockRecords);
+  const suggestions = normalizeSuggestions({
+    outOfStock,
+    lowStock,
+    discountReview: discountRows[0],
+    preferences: {
+      low_stock_enabled: Number(preferences.low_stock_enabled ?? 1) === 1,
+      discount_enabled: Number(preferences.discount_enabled ?? 1) === 1,
+      supplier_delivery_enabled: Number(preferences.supplier_delivery_enabled ?? 1) === 1,
+      minimum_severity: preferences.minimum_severity,
+    },
+    supplierDelivery,
+  });
+  return { suggestions, preferences };
+}
+
+/**
  * Sends one combined email when a new or materially changed important
  * SmartPlus condition is found. The owner email and tenant scope always come
  * from the database; this service never accepts either from a Flutter client.
@@ -754,6 +856,7 @@ async function dispatchScheduledOwnerAlerts(dependencies = {}) {
 
 module.exports = {
   dispatchOwnerAlert,
+  currentOwnerSuggestions,
   emailContent,
   manilaDate,
   manilaHour,
