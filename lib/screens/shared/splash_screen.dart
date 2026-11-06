@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -11,6 +10,7 @@ import '../../services/package_service.dart';
 import '../../services/license_service.dart';
 import '../../services/user_service.dart';
 import '../../services/supabase_sync_service.dart';
+import '../../services/google_auth_service.dart';
 import '../../models/user.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -28,6 +28,7 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _dot2;
   late final Animation<double> _dot3;
   late final Animation<double> _fadeIn;
+  bool _isNavigating = false;
 
   @override
   void initState() {
@@ -89,6 +90,8 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateToNextScreen() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
     final packageService = GetIt.I<PackageService>();
     final licenseService = GetIt.I<LicenseService>();
     final userService = GetIt.I<UserService>();
@@ -140,28 +143,44 @@ class _SplashScreenState extends State<SplashScreen>
       if (ownerAccounts.isNotEmpty) {
         final owner = ownerAccounts.first;
 
-        // The verified restore can take longer than the splash animation.
-        // Never hold the owner on a blank loading screen: initializeBusiness
-        // restores before any upload, and completes safely in the background.
-        unawaited(_initializeBusinessInBackground(owner));
-
-        // If owner has set a password, they can login
-        // Otherwise, go directly to dashboard for password setup
-        if (owner.password.isNotEmpty) {
-          // Owner has password, go to login screen
-          debugPrint('👤 Owner has password - going to login');
-          Navigator.of(context).pushReplacementNamed('/login');
-        } else {
-          // Owner has no password yet (fresh Google OAuth), go directly to dashboard
-          debugPrint('🔐 Owner has no password - going to dashboard for setup');
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) =>
-                  OwnerDashboard(user: owner, showManageAccount: true),
-            ),
-          );
+        // Restore only after confirming that the persisted backend session is
+        // for this same owner. The former background restore raced with the
+        // Login screen's fresh Google sign-in and could run twice at startup.
+        final auth = GoogleAuthService();
+        final sessionEmail = auth.currentUser?['email']
+            ?.toString()
+            .trim()
+            .toLowerCase();
+        final sessionMatchesOwner =
+            auth.isSignedIn &&
+            sessionEmail != null &&
+            sessionEmail == owner.email.trim().toLowerCase();
+        if (sessionMatchesOwner) {
+          try {
+            await GetIt.I<SupabaseSyncService>().initializeBusiness(
+              businessName: owner.name,
+              ownerEmail: owner.email,
+              existingBusinessId: owner.businessId,
+            );
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (_) => OwnerDashboard(
+                  user: owner,
+                  showManageAccount: owner.password.isEmpty,
+                ),
+              ),
+            );
+            return;
+          } catch (error) {
+            // Login can obtain a fresh Google session. Do not upload local
+            // data after a failed restore.
+            debugPrint('Owner session restore deferred to Login: $error');
+          }
         }
+
+        if (!mounted) return;
+        Navigator.of(context).pushReplacementNamed('/login');
       } else {
         // No owner found, go to login (shouldn't happen)
         Navigator.of(context).pushReplacementNamed('/login');
@@ -179,20 +198,6 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
       );
-    }
-  }
-
-  Future<void> _initializeBusinessInBackground(User owner) async {
-    try {
-      final sync = GetIt.I<SupabaseSyncService>();
-      await sync.initializeBusiness(
-        businessName: owner.name,
-        ownerEmail: owner.email,
-        existingBusinessId: owner.businessId,
-      );
-      debugPrint('✅ Background business initialization completed');
-    } catch (e) {
-      debugPrint('ℹ️ Background business initialization: $e');
     }
   }
 
