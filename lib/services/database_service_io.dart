@@ -179,7 +179,7 @@ class DatabaseService {
 
     final db = await openDatabase(
       path,
-      version: 27,
+      version: 28,
       onCreate: (db, version) {
         debugPrint('🆕 Creating new database (version $version)');
         return _createTables(db, version);
@@ -475,6 +475,7 @@ class DatabaseService {
         receivedQuantity INTEGER NOT NULL DEFAULT 0,
         unitPrice REAL NOT NULL,
         totalPrice REAL NOT NULL,
+        UNIQUE(orderId, productId),
         FOREIGN KEY (orderId) REFERENCES purchase_orders(id) ON DELETE CASCADE,
         FOREIGN KEY (productId) REFERENCES products(id)
       )
@@ -837,6 +838,15 @@ class DatabaseService {
       } catch (_) {
         // A partially upgraded database may already have the column.
       }
+    }
+    if (oldVersion < 28) {
+      // Older sync versions could append the same cloud purchase-order item
+      // repeatedly. Keep the most recent row per order/product, then make
+      // that identity unique so the corruption cannot return locally.
+      await _cleanupDuplicatePurchaseOrderItems(db);
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_order_items_order_product ON purchase_order_items(orderId, productId)',
+      );
     }
     if (oldVersion < 16) {
       // Add shoe size support for shoe store business type
@@ -1755,6 +1765,27 @@ class DatabaseService {
         '🧹 Removed ${duplicateIds.length} duplicate sale record(s) during database cleanup',
       );
     });
+  }
+
+  /// Repairs the local copy of the historical purchase-order-item sync bug.
+  /// The newest row is retained because receipt updates are append-only in the
+  /// affected builds. This runs once during the v28 database upgrade.
+  Future<void> _cleanupDuplicatePurchaseOrderItems(Database db) async {
+    final removed = await db.rawDelete('''
+      DELETE FROM purchase_order_items
+      WHERE id NOT IN (
+        SELECT retained_id FROM (
+          SELECT MAX(id) AS retained_id
+          FROM purchase_order_items
+          GROUP BY orderId, productId
+        )
+      )
+    ''');
+    if (removed > 0) {
+      debugPrint(
+        'Removed $removed duplicate purchase-order item record(s) during database cleanup',
+      );
+    }
   }
 
   /// Insert or replace a sale by sale number.
@@ -3159,6 +3190,34 @@ class DatabaseService {
     return 'PO-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-$timestamp';
   }
 
+  /// A purchase order has one line per product. Normalize records restored
+  /// from older sync versions before writing them locally so a historical
+  /// duplicate cannot remain in the device database or be uploaded again.
+  List<PurchaseOrderItem> _uniquePurchaseOrderItems(
+    Iterable<PurchaseOrderItem> items,
+  ) {
+    final byProduct = <int, PurchaseOrderItem>{};
+    for (final item in items) {
+      final existing = byProduct[item.productId];
+      if (existing == null) {
+        byProduct[item.productId] = item;
+        continue;
+      }
+      // Exact duplicates are normalised to one row. If an older sync sent
+      // slightly different copies, preserve the highest recorded receipt and
+      // ordered quantity so receiving progress is never reduced.
+      byProduct[item.productId] = existing.copyWith(
+        quantity: item.quantity > existing.quantity
+            ? item.quantity
+            : existing.quantity,
+        receivedQuantity: item.receivedQuantity > existing.receivedQuantity
+            ? item.receivedQuantity
+            : existing.receivedQuantity,
+      );
+    }
+    return byProduct.values.toList(growable: false);
+  }
+
   /// Insert a new purchase order with items
   Future<int> insertPurchaseOrder(PurchaseOrder order) async {
     final db = await database;
@@ -3168,7 +3227,7 @@ class DatabaseService {
       final orderId = await txn.insert('purchase_orders', order.toMap());
 
       // Insert order items
-      for (final item in order.items) {
+      for (final item in _uniquePurchaseOrderItems(order.items)) {
         await txn.insert(
           'purchase_order_items',
           item.copyWith(orderId: orderId).toMap(),
@@ -3227,6 +3286,7 @@ class DatabaseService {
   /// Used by cloud restore so repeated syncs do not create duplicates.
   Future<int> insertOrUpdatePurchaseOrder(PurchaseOrder order) async {
     final db = await database;
+    final normalizedItems = _uniquePurchaseOrderItems(order.items);
 
     return await db.transaction((txn) async {
       await txn.execute(
@@ -3260,7 +3320,7 @@ class DatabaseService {
           where: 'orderId = ?',
           whereArgs: [orderId],
         );
-        for (final item in order.items) {
+        for (final item in normalizedItems) {
           final itemMap = item.copyWith(orderId: orderId).toMap();
           // SQLite item IDs are device-local. A cloud item can have the same
           // numeric ID as an unrelated local row, so never reuse it here.
@@ -3274,7 +3334,7 @@ class DatabaseService {
       }
 
       final orderId = await txn.insert('purchase_orders', order.toMap());
-      for (final item in order.items) {
+      for (final item in normalizedItems) {
         final itemMap = item.copyWith(orderId: orderId).toMap();
         // See the matching update path above: local SQLite owns this ID.
         itemMap['id'] = null;
@@ -3404,7 +3464,7 @@ class DatabaseService {
       );
 
       // Insert updated items
-      for (final item in order.items) {
+      for (final item in _uniquePurchaseOrderItems(order.items)) {
         await txn.insert(
           'purchase_order_items',
           item.copyWith(orderId: order.id!).toMap(),

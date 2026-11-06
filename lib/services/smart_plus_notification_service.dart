@@ -36,32 +36,105 @@ bool isRestockRecordForPurchaseOrder(RestockRecord record, String orderNumber) {
   ).hasMatch(reference);
 }
 
+/// Older app versions saved a generic `Purchase order` reference instead of
+/// the actual PO number. It is safe to treat that legacy record as receipt
+/// evidence only when it was recorded on/after the order date and it belongs
+/// to a product on that order. New restocks continue to require the exact PO
+/// number above.
+bool _isLegacyRestockRecordForPurchaseOrder(
+  RestockRecord record,
+  PurchaseOrder order,
+) {
+  final reference = record.referencedBy.trim().toLowerCase();
+  final isGenericPurchaseOrder = RegExp(
+    r'(^|[^a-z])purchase\s+order([^a-z]|$)',
+  ).hasMatch(reference);
+  if (!isGenericPurchaseOrder) return false;
+
+  final orderDay = DateTime(
+    order.orderDate.year,
+    order.orderDate.month,
+    order.orderDate.day,
+  );
+  final restockDay = DateTime(
+    record.restockDate.year,
+    record.restockDate.month,
+    record.restockDate.day,
+  );
+  return !restockDay.isBefore(orderDay);
+}
+
+bool _isRestockEvidenceForPurchaseOrder(
+  RestockRecord record,
+  PurchaseOrder order,
+) =>
+    isRestockRecordForPurchaseOrder(record, order.orderNumber) ||
+    _isLegacyRestockRecordForPurchaseOrder(record, order);
+
+/// Purchase-order product rows have one natural identity per product. Older
+/// sync versions could write the same row repeatedly, so rule evaluation must
+/// normalize those historical rows before assessing deliveries or stock.
+List<PurchaseOrderItem> _uniquePurchaseOrderItems(
+  Iterable<PurchaseOrderItem> items,
+) {
+  final uniqueItems = <PurchaseOrderItem>[];
+  final seenLines = <String>{};
+  for (final item in items) {
+    final key = [
+      item.productId,
+      item.productName.trim().toLowerCase(),
+      item.quantity,
+      item.receivedQuantity,
+      item.unitPrice,
+    ].join('|');
+    if (seenLines.add(key)) uniqueItems.add(item);
+  }
+  return uniqueItems;
+}
+
 /// A stale order status is not evidence of an outstanding delivery when all
 /// ordered units have matching, order-linked receipt and restock records.
 bool isPurchaseOrderFullyRestocked(
   PurchaseOrder order,
   List<RestockRecord> restocks,
 ) {
-  if (order.items.isEmpty ||
-      order.items.any(
+  // Syncs from older app versions could duplicate an identical PO line. A PO
+  // has one product line per product, so count each identical line once while
+  // assessing SmartPlus. This prevents old sync corruption from producing
+  // false delivery and restock alerts on the device.
+  final uniqueItems = _uniquePurchaseOrderItems(order.items);
+
+  if (uniqueItems.isEmpty ||
+      uniqueItems.any(
         (item) => item.quantity <= 0 || item.receivedQuantity < item.quantity,
       )) {
     return false;
   }
   final quantities = <int, int>{};
-  for (final item in order.items) {
+  for (final item in uniqueItems) {
     quantities[item.productId] =
         (quantities[item.productId] ?? 0) + item.receivedQuantity;
   }
-  final reference = order.orderNumber;
   for (final entry in quantities.entries) {
-    final recorded = restocks
+    final exactRecorded = restocks
         .where(
           (record) =>
               record.productId == entry.key &&
-              isRestockRecordForPurchaseOrder(record, reference),
+              isRestockRecordForPurchaseOrder(record, order.orderNumber),
         )
         .fold<int>(0, (sum, record) => sum + record.quantity);
+    // Do not add the two totals: an older record can contain both phrases.
+    // Use legacy evidence only when exact PO-linked records are insufficient.
+    final legacyRecorded = restocks
+        .where(
+          (record) =>
+              record.productId == entry.key &&
+              _isLegacyRestockRecordForPurchaseOrder(record, order),
+        )
+        .fold<int>(0, (sum, record) => sum + record.quantity);
+    final recorded = exactRecorded >= entry.value
+        ? exactRecorded
+        : legacyRecorded;
     if (recorded < entry.value) return false;
   }
   return true;
@@ -1372,7 +1445,13 @@ class SmartPlusNotificationService extends ChangeNotifier {
     };
     final suggestions = <SmartPlusNotification>[];
 
-    for (final order in orders) {
+    for (final storedOrder in orders) {
+      // Do not let historical duplicated item rows create stale alerts. The
+      // actual receipt state remains unchanged; only the rule input is
+      // normalized for this evaluation.
+      final order = storedOrder.copyWith(
+        items: _uniquePurchaseOrderItems(storedOrder.items),
+      );
       final status = order.status.trim().toLowerCase();
       if (status == 'cancelled') continue;
       if (isPurchaseOrderFullyRestocked(order, restocks)) continue;
@@ -1480,7 +1559,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
           order.items.any((item) => item.receivedQuantity > 0) &&
           !restocks.any(
             (record) =>
-                isRestockRecordForPurchaseOrder(record, order.orderNumber),
+                order.items.any((item) => item.productId == record.productId) &&
+                _isRestockEvidenceForPurchaseOrder(record, order),
           )) {
         suggestions.add(
           _supplierRule(
