@@ -671,15 +671,17 @@ async function ensurePurchaseOrderItemSyncIdentity() {
   await pool.execute(`
     UPDATE purchase_order_items target
     INNER JOIN (
-      SELECT business_id, order_id, product_id,
-             MAX(product_name) AS product_name,
-             MAX(quantity) AS quantity,
-             MAX(received_quantity) AS received_quantity,
-             MAX(unit_price) AS unit_price,
-             MAX(total_price) AS total_price
-        FROM purchase_order_items
-       GROUP BY business_id, order_id, product_id
-      HAVING COUNT(*) > 1
+      SELECT * FROM (
+        SELECT business_id, order_id, product_id,
+               MAX(product_name) AS product_name,
+               MAX(quantity) AS quantity,
+               MAX(received_quantity) AS received_quantity,
+               MAX(unit_price) AS unit_price,
+               MAX(total_price) AS total_price
+          FROM purchase_order_items
+         GROUP BY business_id, order_id, product_id
+        HAVING COUNT(*) > 1
+      ) AS grouped_items
     ) merged
       ON merged.business_id = target.business_id
      AND merged.order_id = target.order_id
@@ -690,14 +692,25 @@ async function ensurePurchaseOrderItemSyncIdentity() {
            target.unit_price = merged.unit_price,
            target.total_price = merged.total_price
   `);
+  // Keep one row per natural identity. Joining every duplicate to every older
+  // duplicate is quadratic (and can be catastrophic for a legacy order with
+  // tens of thousands of accidental copies), so join only to the one retained
+  // minimum ID for each group.
   await pool.execute(`
     DELETE duplicate_item
       FROM purchase_order_items duplicate_item
-      INNER JOIN purchase_order_items retained_item
-        ON retained_item.business_id = duplicate_item.business_id
-       AND retained_item.order_id = duplicate_item.order_id
-       AND retained_item.product_id = duplicate_item.product_id
-       AND retained_item.id < duplicate_item.id
+      INNER JOIN (
+        SELECT * FROM (
+          SELECT business_id, order_id, product_id, MIN(id) AS retained_id
+            FROM purchase_order_items
+           GROUP BY business_id, order_id, product_id
+          HAVING COUNT(*) > 1
+        ) AS grouped_items
+      ) retained
+        ON retained.business_id = duplicate_item.business_id
+       AND retained.order_id = duplicate_item.order_id
+       AND retained.product_id = duplicate_item.product_id
+     WHERE duplicate_item.id <> retained.retained_id
   `);
   await pool.execute(
     'ALTER TABLE purchase_order_items ADD UNIQUE KEY uq_purchase_order_items_business_order_product (business_id, order_id, product_id)',
