@@ -96,6 +96,16 @@ test('genuine missing-restock and partial-delivery warnings remain visible', () 
   assert.match(alerts[1].title, /partial/i);
 });
 
+test('old received orders without a legacy receipt link do not remain critical forever', () => {
+  const alerts = supplierDeliverySuggestions([{
+    order_number: 'PO-HISTORICAL-RECEIPT',
+    status: 'received',
+    missing_inventory: 1,
+    receipt_age_days: 21,
+  }]);
+  assert.deepEqual(alerts, []);
+});
+
 test('delivery analysis matches restocks once in memory instead of correlated SQL scans', () => {
   const rows = buildSupplierDeliveryRows(
     [{

@@ -239,6 +239,14 @@ function buildSupplierDeliveryRows(orderItems = [], restockRecords = [], now = n
     fully_restocked: order.itemCount > 0 && order.fully_restocked === 1 ? 1 : 0,
     overdue_days: calendarDaysBetween(order.expected_delivery, today),
     pending_days: calendarDaysBetween(order.order_date, today),
+    // A received order without a linked receipt is actionable only shortly
+    // after delivery. Keeping it critical forever turns missing historical
+    // metadata into permanent false alarms after an owner has already
+    // completed the stock work through an older workflow.
+    receipt_age_days: calendarDaysBetween(
+      order.expected_delivery || order.order_date,
+      today,
+    ),
   }));
 }
 
@@ -253,7 +261,9 @@ function supplierDeliverySuggestions(rows = []) {
     const prefix = `Rule: Purchase Order ${orderNumber}. Supplier: ${supplier}. Ordered: ${items}. Expected delivery: ${expected}.`;
     const impactText = impact > 0 ? ` Impact: ${impact} affected low-stock or out-of-stock product(s).` : '';
     const status = String(row.status || '').toLowerCase();
-    if (status === 'received' && Number(row.missing_inventory || 0) === 1) {
+    if (status === 'received' &&
+        Number(row.missing_inventory || 0) === 1 &&
+        Math.max(0, Number(row.receipt_age_days || 0)) <= 7) {
       return {
         level: 'critical',
         title: 'Delivered stock has not been added to inventory',

@@ -1458,6 +1458,8 @@ class SmartPlusNotificationService extends ChangeNotifier {
       final expected = order.expectedDeliveryDate == null
           ? null
           : _dateOnly(order.expectedDeliveryDate!);
+      final receiptReferenceDay = expected ?? _dateOnly(order.orderDate);
+      final receiptAgeDays = today.difference(receiptReferenceDay).inDays;
       final orderedItems = _orderedItems(order);
       final impact = _stockImpact(order, productsById);
       final context = _deliveryContext(order, expected, today, impact);
@@ -1557,6 +1559,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
 
       if (status == 'received' &&
           order.items.any((item) => item.receivedQuantity > 0) &&
+          receiptAgeDays <= 7 &&
           !restocks.any(
             (record) =>
                 order.items.any((item) => item.productId == record.productId) &&
