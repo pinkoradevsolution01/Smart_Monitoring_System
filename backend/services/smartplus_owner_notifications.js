@@ -126,6 +126,15 @@ function calendarDaysBetween(fromDate, toDate) {
   return Math.floor((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 }
 
+function hasOrderReference(reference, orderNumber) {
+  const normalizedReference = String(reference || '').toLowerCase();
+  const normalizedOrder = String(orderNumber || '').trim().toLowerCase();
+  if (!normalizedReference || !normalizedOrder) return false;
+  return new RegExp(
+    `(^|[^a-z0-9])${normalizedOrder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^a-z0-9])`,
+  ).test(normalizedReference);
+}
+
 // Keep reference matching out of MySQL. The legacy reference is free text, so
 // INSTR(LOWER(...)) forced a restock-table scan for every purchase-order item.
 // We fetch the tenant's bounded records once and match them in memory instead.
@@ -138,6 +147,7 @@ function buildSupplierDeliveryRows(orderItems = [], restockRecords = [], now = n
     records.push({
       quantity: asNumber(restock.quantity),
       reference: String(restock.referenced_by || '').toLowerCase(),
+      restockDate: String(restock.restock_date || '').slice(0, 10),
     });
     restocksByProduct.set(productId, records);
   }
@@ -158,16 +168,49 @@ function buildSupplierDeliveryRows(orderItems = [], restockRecords = [], now = n
       missing_inventory: 0,
       fully_restocked: 1,
       itemCount: 0,
+      lineKeys: new Set(),
     };
 
     if (item.product_id != null) {
       const productId = String(item.product_id);
       const orderNumber = String(item.order_number || '').toLowerCase();
-      const restockedQuantity = (restocksByProduct.get(productId) || [])
-        .filter((restock) => restock.reference.includes(orderNumber))
-        .reduce((total, restock) => total + restock.quantity, 0);
       const orderedQuantity = asNumber(item.quantity);
       const receivedQuantity = asNumber(item.received_quantity);
+      // Legacy clients re-created local item IDs after each restore. Their
+      // next sync produced an identical server line again. Treat an exact
+      // duplicate as one order line so it cannot turn a completed delivery
+      // into hundreds of false critical alerts.
+      const lineKey = [
+        productId,
+        String(item.product_name || '').trim().toLowerCase(),
+        orderedQuantity,
+        receivedQuantity,
+      ].join('|');
+      if (existing.lineKeys.has(lineKey)) {
+        orders.set(orderId, existing);
+        continue;
+      }
+      existing.lineKeys.add(lineKey);
+
+      const productRestocks = restocksByProduct.get(productId) || [];
+      const exactRestockedQuantity = productRestocks
+        .filter((restock) => hasOrderReference(restock.reference, orderNumber))
+        .reduce((total, restock) => total + restock.quantity, 0);
+      // Older completed deliveries were saved before the purchase-order
+      // number was included in the restock reference. A later generic
+      // “purchase order” restock for the same product is enough to prevent a
+      // false critical email; newer records always use the exact match above.
+      const legacyRestockedQuantity = exactRestockedQuantity > 0
+        ? 0
+        : productRestocks
+          .filter((restock) =>
+            /purchase\s+order/i.test(restock.reference) &&
+            (!restock.restockDate || !item.order_date || restock.restockDate >= String(item.order_date).slice(0, 10)))
+          .reduce((total, restock) => total + restock.quantity, 0);
+      const restockedQuantity = Math.max(
+        exactRestockedQuantity,
+        legacyRestockedQuantity,
+      );
       existing.itemCount += 1;
       existing.orderedItems.push(`${item.product_name || 'Unnamed product'} x${orderedQuantity}`);
       if (item.product_quantity != null &&
@@ -223,6 +266,12 @@ function supplierDeliverySuggestions(rows = []) {
     // A status can lag behind a fully synced receipt. Verified item and
     // restock quantities take precedence over that stale status.
     if (Number(row.fully_restocked || 0) === 1) return null;
+    // Delivery email preferences are intentionally calm: due today, the
+    // first overdue day, then every third overdue day. The rule may remain
+    // visible in-app, but it must not produce a new email every day.
+    if (overdueDays > 0 && overdueDays !== 1 && overdueDays % 3 !== 0) {
+      return null;
+    }
     if (status === 'partial') {
       return {
         level: 'warning',
@@ -543,7 +592,7 @@ async function evaluateOwnerAlert(businessId, dependencies = {}) {
       return [];
     }),
     dbQuery(
-      `SELECT product_id, quantity, referenced_by
+      `SELECT product_id, quantity, referenced_by, restock_date
          FROM restock_records
         WHERE business_id = ?
           AND referenced_by IS NOT NULL

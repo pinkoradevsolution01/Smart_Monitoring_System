@@ -680,6 +680,7 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   KEY idx_purchase_order_items_order (order_id),
   KEY idx_purchase_order_items_product (product_id),
   KEY idx_purchase_order_items_sync (order_id, product_id),
+  UNIQUE KEY uq_purchase_order_items_business_order_product (business_id, order_id, product_id),
   CONSTRAINT fk_purchase_order_items_business
     FOREIGN KEY (business_id) REFERENCES businesses(id)
     ON DELETE CASCADE

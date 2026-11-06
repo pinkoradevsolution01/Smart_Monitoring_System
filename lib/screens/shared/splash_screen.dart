@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -156,27 +157,20 @@ class _SplashScreenState extends State<SplashScreen>
             sessionEmail != null &&
             sessionEmail == owner.email.trim().toLowerCase();
         if (sessionMatchesOwner) {
-          try {
-            await GetIt.I<SupabaseSyncService>().initializeBusiness(
-              businessName: owner.name,
-              ownerEmail: owner.email,
-              existingBusinessId: owner.businessId,
-            );
-            if (!mounted) return;
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => OwnerDashboard(
-                  user: owner,
-                  showManageAccount: owner.password.isEmpty,
-                ),
+          // Do not keep the brand loading screen open while cloud records
+          // restore. The sync service serializes this initialization and
+          // refreshes in the background after the dashboard is visible.
+          unawaited(_initializeOwnerSyncInBackground(owner));
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => OwnerDashboard(
+                user: owner,
+                showManageAccount: owner.password.isEmpty,
               ),
-            );
-            return;
-          } catch (error) {
-            // Login can obtain a fresh Google session. Do not upload local
-            // data after a failed restore.
-            debugPrint('Owner session restore deferred to Login: $error');
-          }
+            ),
+          );
+          return;
         }
 
         if (!mounted) return;
@@ -198,6 +192,22 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ),
       );
+    }
+  }
+
+  Future<void> _initializeOwnerSyncInBackground(User owner) async {
+    try {
+      await GetIt.I<SupabaseSyncService>().initializeBusiness(
+        businessName: owner.name,
+        ownerEmail: owner.email,
+        existingBusinessId: owner.businessId,
+      );
+    } catch (error, stackTrace) {
+      // A dashboard with locally stored records is still usable. The sync
+      // status can surface the safe error and retry later without trapping
+      // the owner indefinitely on the splash screen.
+      debugPrint('Background owner sync initialization failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
   }
 

@@ -37,20 +37,29 @@ class SupabaseSyncService extends ChangeNotifier {
   final Map<String, int> _syncStats = {};
   Timer? _autoSyncTimer;
   Timer? _queuedPushTimer;
+  Timer? _initialCloudRestoreTimer;
   bool _autoSyncEnabled = true;
   // A full restore touches every local module table. Running it every 30
   // seconds competes with screen queries and SQLite writes, which makes the
   // app appear to freeze on devices with real sales and purchase-order data.
   // Local changes still use the short queued upload below; this cadence only
   // controls cloud-to-device refreshes from other devices.
-  Duration _autoSyncInterval = const Duration(minutes: 2);
-  Duration _queuedPushDelay = const Duration(seconds: 2);
+  // A full pull currently contains all tenant records. Keep this deliberately
+  // conservative so background refreshes do not repeatedly contend with POS
+  // and inventory SQLite reads on mobile devices.
+  Duration _autoSyncInterval = const Duration(minutes: 5);
+  // Multiple local writes (such as a POS checkout) are collapsed into one
+  // upload instead of starting an upload for every individual write.
+  Duration _queuedPushDelay = const Duration(seconds: 5);
   int _retryAttempts = 0;
   DateTime? _nextRetryAt;
   int _activeExternalDatabaseReads = 0;
   Completer<void>? _externalReadsDrained;
   Completer<void>? _syncIdle;
   Future<bool>? _restoreInFlight;
+  Future<void>? _initialCloudRestoreInFlight;
+  bool _initialCloudRestoreVerified = false;
+  bool _pendingLocalPush = false;
 
   // Getters
   bool get isSyncing => _isSyncing;
@@ -192,6 +201,8 @@ class SupabaseSyncService extends ChangeNotifier {
         }
         if (_businessId != null && _businessId != resolvedBusinessId) {
           stopAutoSync();
+          _initialCloudRestoreVerified = false;
+          _pendingLocalPush = false;
           debugPrint(
             'Replaced stale sync business context with $resolvedBusinessId',
           );
@@ -207,25 +218,65 @@ class SupabaseSyncService extends ChangeNotifier {
       }
 
       debugPrint('✅ Business initialized: $_businessId');
-      // A newly installed app has an empty local database. Always restore the
-      // verified tenant first; starting auto-sync or queuing a backup before
-      // this point would upload the empty device state and make an existing
-      // owner appear to be starting over.
-      final restored = await pullAllData();
-      if (!restored) {
-        throw StateError(
-          'Could not restore the existing business data. Uploads were paused to protect the cloud records.',
-        );
-      }
       startAutoSync();
-      // The restore completed successfully, so it is safe to upload any
-      // remaining local changes after the cloud records have been merged.
-      queuePushAllData(delay: Duration.zero);
+      // A complete cloud restore can take several seconds on a business with
+      // sales history. Do not make Google sign-in or the splash screen wait
+      // for it. The dashboard can use its local database immediately while
+      // one verified restore runs in the background.
+      _scheduleInitialCloudRestore();
       notifyListeners();
     } catch (e) {
       debugPrint('❌ Error initializing business: $e');
       _lastError = e.toString();
       rethrow;
+    }
+  }
+
+  /// Starts exactly one non-blocking initial restore for the active business.
+  /// It intentionally does not queue a full upload afterwards: routine local
+  /// changes already schedule their own debounced upload, while a full upload
+  /// on every app launch is both slow and unnecessary.
+  void _startInitialCloudRestore() {
+    final running = _initialCloudRestoreInFlight;
+    if (running != null) return;
+
+    final restore = _restoreCloudDataInBackground();
+    _initialCloudRestoreInFlight = restore;
+    unawaited(
+      restore.whenComplete(() {
+        if (identical(_initialCloudRestoreInFlight, restore)) {
+          _initialCloudRestoreInFlight = null;
+        }
+      }),
+    );
+  }
+
+  /// Give the first dashboard frame and its local SQLite queries a chance to
+  /// complete before beginning a large restore. This avoids a visible freeze
+  /// immediately after sign-in while still refreshing the cloud state soon.
+  void _scheduleInitialCloudRestore() {
+    if (_initialCloudRestoreInFlight != null ||
+        _initialCloudRestoreTimer?.isActive == true) {
+      return;
+    }
+    _initialCloudRestoreTimer = Timer(const Duration(seconds: 2), () {
+      _initialCloudRestoreTimer = null;
+      _startInitialCloudRestore();
+    });
+  }
+
+  Future<void> _restoreCloudDataInBackground() async {
+    final restored = await pullAllData();
+    if (restored) {
+      _initialCloudRestoreVerified = true;
+      if (_pendingLocalPush) {
+        _pendingLocalPush = false;
+        queuePushAllData(delay: const Duration(seconds: 2));
+      }
+    } else {
+      debugPrint(
+        'Background cloud restore did not complete. Local data remains available and uploads stay paused until the next successful refresh.',
+      );
     }
   }
 
@@ -255,6 +306,14 @@ class SupabaseSyncService extends ChangeNotifier {
   Future<bool> pushAllData() async {
     if (!isConfigured) {
       _lastError = 'Business not initialized. Please activate license first.';
+      notifyListeners();
+      return false;
+    }
+    if (!_initialCloudRestoreVerified) {
+      // Never upload an empty or stale local snapshot before the canonical
+      // cloud business records have completed their first merge.
+      _pendingLocalPush = true;
+      _lastError = 'Waiting for the initial cloud restore before uploading changes.';
       notifyListeners();
       return false;
     }
@@ -381,6 +440,11 @@ class SupabaseSyncService extends ChangeNotifier {
 
       await _recordSyncSuccess();
       _finishSync();
+      _initialCloudRestoreVerified = true;
+      if (_pendingLocalPush) {
+        _pendingLocalPush = false;
+        queuePushAllData(delay: const Duration(seconds: 2));
+      }
       notifyListeners();
 
       debugPrint('✅ Restore completed successfully');
@@ -486,6 +550,11 @@ class SupabaseSyncService extends ChangeNotifier {
   /// Repeated calls within a short window collapse into one sync.
   void queuePushAllData({Duration? delay}) {
     if (!isConfigured || !_autoSyncEnabled) {
+      return;
+    }
+
+    if (!_initialCloudRestoreVerified) {
+      _pendingLocalPush = true;
       return;
     }
 
@@ -1179,7 +1248,6 @@ class SupabaseSyncService extends ChangeNotifier {
         if (orderId == null) continue;
         for (final item in order.items) {
           orderItems.add({
-            'id': item.id?.toString(),
             'business_id': _businessId,
             'purchase_order_id': orderId.toString(),
             'order_id': orderId.toString(),
@@ -2192,7 +2260,12 @@ class SupabaseSyncService extends ChangeNotifier {
     stopAutoSync();
     _queuedPushTimer?.cancel();
     _queuedPushTimer = null;
+    _initialCloudRestoreTimer?.cancel();
+    _initialCloudRestoreTimer = null;
     _businessId = null;
+    _initialCloudRestoreVerified = false;
+    _pendingLocalPush = false;
+    _initialCloudRestoreInFlight = null;
     _lastError = null;
     _syncStats.clear();
     notifyListeners();

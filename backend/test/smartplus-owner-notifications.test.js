@@ -34,7 +34,7 @@ test('SmartPlus supplier delivery suggestions identify the order, timing, impact
       supplier_name: 'ABC Supplies',
       ordered_items: 'Milk x12, Bread x6',
       expected_delivery: '2026-10-14',
-      overdue_days: 2,
+      overdue_days: 3,
       low_stock_count: 3,
       status: 'approved',
     }],
@@ -44,7 +44,7 @@ test('SmartPlus supplier delivery suggestions identify the order, timing, impact
   assert.match(suggestions[0].message, /Rule:/);
   assert.match(suggestions[0].message, /PO-20261016-001/);
   assert.match(suggestions[0].message, /ABC Supplies/);
-  assert.match(suggestions[0].message, /2 day\(s\) overdue/);
+  assert.match(suggestions[0].message, /3 day\(s\) overdue/);
   assert.match(suggestions[0].message, /3 affected/);
   assert.match(suggestions[0].message, /Confirm delivery status/);
 });
@@ -120,6 +120,47 @@ test('delivery analysis matches restocks once in memory instead of correlated SQ
   assert.equal(rows[0].fully_restocked, 1);
   assert.equal(rows[0].low_stock_count, 1);
   assert.deepEqual(supplierDeliverySuggestions(rows), []);
+});
+
+test('duplicate synced order lines and legacy restock references do not create false critical alerts', () => {
+  const line = {
+    order_id: 9,
+    order_number: 'PO-LEGACY-9',
+    status: 'received',
+    order_date: '2026-10-01',
+    expected_delivery: '2026-10-02',
+    product_id: 4,
+    product_name: 'Mouse',
+    quantity: 15,
+    received_quantity: 15,
+  };
+  const rows = buildSupplierDeliveryRows(
+    [line, { ...line }, { ...line }],
+    [{
+      product_id: 4,
+      quantity: 15,
+      referenced_by: 'Restocked from purchase order',
+      restock_date: '2026-10-03',
+    }],
+    new Date('2026-10-10T04:00:00.000Z'),
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ordered_items, 'Mouse x15');
+  assert.equal(rows[0].missing_inventory, 0);
+  assert.equal(rows[0].fully_restocked, 1);
+  assert.deepEqual(supplierDeliverySuggestions(rows), []);
+});
+
+test('overdue supplier emails are limited to day one and every third day', () => {
+  const base = {
+    order_number: 'PO-CADENCE-1',
+    status: 'approved',
+    expected_delivery: '2026-10-01',
+    fully_restocked: 0,
+  };
+  assert.equal(supplierDeliverySuggestions([{ ...base, overdue_days: 1 }]).length, 1);
+  assert.equal(supplierDeliverySuggestions([{ ...base, overdue_days: 2 }]).length, 0);
+  assert.equal(supplierDeliverySuggestions([{ ...base, overdue_days: 3 }]).length, 1);
 });
 
 test('owner email is skipped when only received orders remain', async () => {
