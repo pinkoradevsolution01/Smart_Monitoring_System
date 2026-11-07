@@ -6,13 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get_it/get_it.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../models/product.dart';
 import '../../models/shoe_size.dart';
 import '../../services/pos_service.dart';
 import '../../services/package_service.dart';
 import '../../services/business_info_service.dart';
 import '../../services/product_image_service.dart';
+import '../../services/product_image_recovery_service.dart';
+import '../shared/product_camera_launcher.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/remote_product_image.dart';
 
@@ -766,6 +767,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _imagePath = p?.imagePath;
     _expirationDate = p?.expirationDate;
 
+    // If Android restarted while an older external camera flow was active,
+    // offer the recovered image only to a new product form.
+    if (p == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _restoreRecoveredProductImage();
+      });
+    }
+
     // Initialize shoe size data if editing existing product
     if (p?.shoeSizes != null && p!.shoeSizes!.isNotEmpty) {
       _selectedSizeType = p.sizeType;
@@ -797,11 +806,22 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   Future<void> _pickImage() async {
     final file = await FilePicker.pickFile(type: FileType.image);
 
-    if (file?.path != null) {
-      setState(() {
-        _imagePath = file!.path;
-      });
-    }
+    if (!mounted || file?.path == null) return;
+    setState(() => _imagePath = file!.path);
+  }
+
+  void _restoreRecoveredProductImage() {
+    if (!mounted || _imagePath != null) return;
+    final recoveredPath =
+        ProductImageRecoveryService.takeRecoveredProductImage();
+    if (recoveredPath == null) return;
+
+    setState(() => _imagePath = recoveredPath);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Recovered the product photo captured before restart.'),
+      ),
+    );
   }
 
   Future<void> _pickExpirationDate() async {
@@ -820,23 +840,21 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
 
   Future<void> _captureImage() async {
     if (kIsWeb) {
-      // Web doesn't support camera capture via image_picker
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.t('camera_not_supported_web'))),
       );
       return;
     }
 
-    final ImagePicker picker = ImagePicker();
-    final XFile? photo = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 85,
-    );
-
-    if (photo != null) {
-      setState(() {
-        _imagePath = photo.path;
-      });
+    try {
+      final imagePath = await captureProductImage(context);
+      if (!mounted || imagePath == null) return;
+      setState(() => _imagePath = imagePath);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not capture product photo: $error')),
+      );
     }
   }
 
@@ -857,17 +875,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
             ListTile(
               leading: const Icon(Icons.camera_alt),
               title: Text(AppLocalizations.t('camera')),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                _captureImage();
+                await _captureImage();
               },
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
               title: Text(AppLocalizations.t('gallery')),
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
-                _pickImage();
+                await _pickImage();
               },
             ),
           ],

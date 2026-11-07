@@ -5,6 +5,7 @@ import '../../services/smart_plus_notification_service.dart';
 import '../../services/smart_plus_action_service.dart';
 import '../../services/backend_api_service.dart';
 import '../../services/database_service.dart';
+import '../../services/supabase_sync_service.dart';
 import '../owner/customer_management_screen.dart';
 import '../owner/sales_report_screen.dart';
 import '../owner/supplier_management_screen.dart';
@@ -118,8 +119,18 @@ class _SmartPlusDecisionCenterScreenState
                 // Completion confirmations belong in the notification inbox,
                 // not among outstanding items requiring attention.
                 if (item.id.startsWith('action-completed-')) return false;
-                return actionForSmartPlusNotification(item, actions)?.status !=
-                    'executed';
+                if (actionForSmartPlusNotification(item, actions)?.status ==
+                    'executed') {
+                  return false;
+                }
+                // Message wording can change after a successful sync. Match
+                // an executed action by its stable source ID so an already
+                // completed delivery/reorder never reappears as Critical.
+                return !(item.id.startsWith('supplier-') &&
+                    hasCompletedActionForSmartPlusNotification(
+                      item,
+                      actions,
+                    ));
               }).toList();
               final critical = attention
                   .where(
@@ -406,6 +417,15 @@ class _GuidedSmartPlusTaskScreenState
     setState(() => _workspaceOpened = true);
     if (_receivingOrderNumber != null) {
       try {
+        final sync = GetIt.I<SupabaseSyncService>();
+        final synced = await sync.syncPurchaseOrderForSmartPlus(
+          _receivingOrderNumber!,
+        );
+        if (!synced) {
+          throw StateError(
+            sync.lastError ?? 'The received delivery could not be synced yet.',
+          );
+        }
         final recorded = await _deliveryRecorded();
         if (!mounted) return;
         setState(() => _receivingDone = recorded);
@@ -414,7 +434,9 @@ class _GuidedSmartPlusTaskScreenState
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Unable to verify this delivery. Please retry.'),
+              content: Text(
+                'Unable to sync and verify this delivery. Please retry.',
+              ),
             ),
           );
         }
@@ -425,12 +447,25 @@ class _GuidedSmartPlusTaskScreenState
   Future<void> _completeTask() async {
     bool recorded = true;
     try {
-      if (_receivingOrderNumber != null) recorded = await _deliveryRecorded();
+      if (_receivingOrderNumber != null) {
+        final sync = GetIt.I<SupabaseSyncService>();
+        final synced = await sync.syncPurchaseOrderForSmartPlus(
+          _receivingOrderNumber!,
+        );
+        if (!synced) {
+          throw StateError(
+            sync.lastError ?? 'The received delivery could not be synced yet.',
+          );
+        }
+        recorded = await _deliveryRecorded();
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Unable to verify this delivery. Please retry.'),
+            content: Text(
+              'Unable to sync and verify this delivery. Please retry.',
+            ),
           ),
         );
       }
@@ -478,7 +513,15 @@ class _GuidedSmartPlusTaskScreenState
       await _service.execute(widget.action.id);
       if (!mounted) return;
       if (GetIt.I.isRegistered<SmartPlusNotificationService>()) {
-        GetIt.I<SmartPlusNotificationService>().notifyActionCompleted(
+        final notifications = GetIt.I<SmartPlusNotificationService>();
+        final sourceNotificationId = widget
+            .action
+            .proposal['sourceNotificationId']
+            ?.toString();
+        if (sourceNotificationId != null && sourceNotificationId.isNotEmpty) {
+          await notifications.confirmOwnerReview(sourceNotificationId);
+        }
+        notifications.notifyActionCompleted(
           actionId: widget.action.id,
           title: 'Task completed',
           message:
@@ -821,9 +864,9 @@ class _ActionDraftsSheetState extends State<_ActionDraftsSheet> {
         false;
     if (!confirmed) return;
     try {
-      await _service.approve(draft.id);
+      final approvedDraft = await _service.approve(draft.id);
       if (!mounted) return;
-      Navigator.of(context).pop(draft);
+      Navigator.of(context).pop(approvedDraft);
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(

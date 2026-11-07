@@ -68,6 +68,9 @@ class SmartPlusNotificationButton extends StatelessWidget {
     BuildContext context,
     SmartPlusNotificationService service,
   ) {
+    // Informational context is acknowledged when the owner opens the inbox.
+    // Warnings and critical tasks remain in the bell until resolved.
+    service.markInformationalRead();
     service.refresh();
     showModalBottomSheet<void>(
       context: context,
@@ -220,9 +223,6 @@ class _SmartPlusNotificationsSheetState
                               notification.level,
                               colors,
                             );
-                            final reviewed = service.isReviewed(
-                              notification.id,
-                            );
                             return Card(
                               color: color.withValues(alpha: 0.08),
                               child: Padding(
@@ -314,16 +314,20 @@ class _SmartPlusNotificationsSheetState
                                       Align(
                                         alignment: Alignment.centerLeft,
                                         child: TextButton.icon(
-                                          onPressed: () => _openRecords(
-                                            context,
-                                            notification.recordTarget!,
-                                          ),
+                                          onPressed: () {
+                                            _openRecords(
+                                              context,
+                                              notification.recordTarget!,
+                                            );
+                                          },
                                           icon: const Icon(
                                             Icons.open_in_new_rounded,
                                             size: 17,
                                           ),
                                           label: Text(
-                                            _text('Open supporting records'),
+                                            _text(
+                                              'Open ${_targetLabel(notification.recordTarget!)}',
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -332,31 +336,10 @@ class _SmartPlusNotificationsSheetState
                                       service,
                                       notification.id,
                                     ),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: reviewed
-                                          ? Chip(
-                                              avatar: const Icon(
-                                                Icons.verified_outlined,
-                                                size: 18,
-                                              ),
-                                              label: Text(
-                                                _text('Reviewed by owner'),
-                                              ),
-                                            )
-                                          : OutlinedButton.icon(
-                                              onPressed: () => _confirmReview(
-                                                context,
-                                                service,
-                                                notification,
-                                              ),
-                                              icon: const Icon(
-                                                Icons.verified_user_outlined,
-                                              ),
-                                              label: Text(
-                                                _text('Confirm review'),
-                                              ),
-                                            ),
+                                    _notificationOptions(
+                                      context,
+                                      service,
+                                      notification,
                                     ),
                                   ],
                                 ),
@@ -524,6 +507,88 @@ class _SmartPlusNotificationsSheetState
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
+  String _targetLabel(SmartPlusRecordTarget target) => switch (target) {
+    SmartPlusRecordTarget.inventory => 'Inventory',
+    SmartPlusRecordTarget.sales => 'Sales reports',
+    SmartPlusRecordTarget.customers => 'Customer Management',
+    SmartPlusRecordTarget.suppliers => 'Supplier Management',
+  };
+
+  Widget _notificationOptions(
+    BuildContext context,
+    SmartPlusNotificationService service,
+    SmartPlusNotification notification,
+  ) {
+    // Critical issues cannot be hidden by acknowledgement; they remain until
+    // the underlying inventory, sale, customer, or supplier record is fixed.
+    if (notification.level == SmartPlusNotificationLevel.critical) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: Chip(
+            avatar: const Icon(Icons.priority_high_rounded, size: 18),
+            label: Text(_text('Resolve the underlying record')),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Wrap(
+          spacing: 4,
+          runSpacing: 2,
+          children: [
+            PopupMenuButton<Duration>(
+              tooltip: _text('Snooze'),
+              onSelected: (duration) {
+                service.snooze(notification.id, duration);
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: const Duration(days: 1),
+                  child: Text(_text('Tomorrow')),
+                ),
+                PopupMenuItem(
+                  value: const Duration(days: 7),
+                  child: Text(_text('One week')),
+                ),
+              ],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 7,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.snooze_outlined, size: 18),
+                    const SizedBox(width: 6),
+                    Text(_text('Snooze')),
+                  ],
+                ),
+              ),
+            ),
+            if (notification.level == SmartPlusNotificationLevel.info)
+              TextButton.icon(
+                onPressed: () {
+                  service.dismissOptional(notification.id);
+                },
+                icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                label: Text(_text('Dismiss')),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /* Obsolete confirmation flow retained only as source history. It is not
+     compiled or reachable from the SmartPlus inbox. */
+  /*
   Future<void> _confirmReview(
     BuildContext context,
     SmartPlusNotificationService service,
@@ -553,6 +618,7 @@ class _SmartPlusNotificationsSheetState
     if (confirmed) await service.confirmOwnerReview(notification.id);
   }
 
+  */
   Future<void> _recordFeedback(
     BuildContext context,
     SmartPlusNotificationService service,
@@ -850,6 +916,15 @@ class _SmartPlusInboxText {
     'Open supporting records': 'Buksan ang kaugnay na mga rekord',
     'Reviewed by owner': 'Nasuri na ng may-ari',
     'Confirm review': 'Kumpirmahin ang pagsusuri',
+    'Inventory': 'Imbentaryo',
+    'Sales reports': 'Mga ulat ng benta',
+    'Customer Management': 'Pamamahala ng customer',
+    'Supplier Management': 'Pamamahala ng supplier',
+    'Resolve the underlying record': 'Ayusin ang pangunahing rekord',
+    'Snooze': 'Ipaalala mamaya',
+    'Tomorrow': 'Bukas',
+    'One week': 'Isang linggo',
+    'Dismiss': 'Alisin',
     'Was this helpful?': 'Nakatulong ba ito?',
     'Feedback saved': 'Naitala ang feedback',
     'Useful': 'Nakatulong',

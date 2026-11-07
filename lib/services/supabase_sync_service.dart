@@ -9,6 +9,7 @@ import '../models/sale.dart';
 import '../models/sale_item.dart';
 import '../models/purchase_order.dart';
 import '../models/supplier.dart';
+import '../models/restock_record.dart';
 import '../models/damage_report.dart';
 import '../models/customer.dart';
 import '../models/user.dart';
@@ -326,21 +327,64 @@ class SupabaseSyncService extends ChangeNotifier {
     try {
       debugPrint('📤 Starting full backup to Supabase...');
 
-      // Push data in order (respecting foreign keys)
-      await _pushUsers();
-      await _pushCustomers();
-      await _pushLoyaltyLedger();
-      await _pushCameras();
-      await _pushCctvTimestamps();
-      await _pushAttendance();
-      await _pushActivityLogs();
-      await _pushSuppliers();
-      await _pushProducts();
-      await _pushSales();
-      await _pushInventoryMovements();
-      await _pushPurchaseOrders();
-      await _pushRestockRecords();
-      await _pushDamageReports();
+      final failedCollections = <String>[];
+
+      // A bad historical record in one module must not prevent an unrelated
+      // supplier order or restock from reaching the backend. Each collection
+      // is independently retried, while the overall backup remains marked as
+      // incomplete until every collection succeeds.
+      await _pushCollection('users', _pushUsers, failedCollections);
+      await _pushCollection('customers', _pushCustomers, failedCollections);
+      await _pushCollection(
+        'loyalty records',
+        _pushLoyaltyLedger,
+        failedCollections,
+      );
+      await _pushCollection('cameras', _pushCameras, failedCollections);
+      await _pushCollection(
+        'CCTV timestamps',
+        _pushCctvTimestamps,
+        failedCollections,
+      );
+      await _pushCollection('attendance', _pushAttendance, failedCollections);
+      await _pushCollection(
+        'activity logs',
+        _pushActivityLogs,
+        failedCollections,
+      );
+      await _pushCollection('suppliers', _pushSuppliers, failedCollections);
+      await _pushCollection('products', _pushProducts, failedCollections);
+      await _pushCollection('sales', _pushSales, failedCollections);
+      await _pushCollection(
+        'inventory movements',
+        _pushInventoryMovements,
+        failedCollections,
+      );
+      await _pushCollection(
+        'purchase orders',
+        _pushPurchaseOrders,
+        failedCollections,
+      );
+      await _pushCollection(
+        'restock records',
+        _pushRestockRecords,
+        failedCollections,
+      );
+      await _pushCollection(
+        'damage reports',
+        _pushDamageReports,
+        failedCollections,
+      );
+
+      if (failedCollections.isNotEmpty) {
+        _lastError =
+            'Some changes are still waiting to sync: ${failedCollections.join(', ')}.';
+        debugPrint('Partial backup completed. $_lastError');
+        _finishSync();
+        await _scheduleRetry();
+        notifyListeners();
+        return false;
+      }
 
       await _recordSyncSuccess();
       _finishSync();
@@ -358,6 +402,196 @@ class SupabaseSyncService extends ChangeNotifier {
       return false;
     }
   }
+
+  Future<void> _pushCollection(
+    String name,
+    Future<void> Function() push,
+    List<String> failedCollections,
+  ) async {
+    try {
+      await push();
+    } catch (error) {
+      failedCollections.add(name);
+      debugPrint('Cloud sync skipped $name for this attempt: $error');
+    }
+  }
+
+  /// Sends the exact supplier order that a SmartPlus guided task is checking.
+  /// This is intentionally separate from a full backup: a stale sale or
+  /// historical loyalty record must not block completion of a real, approved
+  /// supplier order or a recorded delivery.
+  Future<bool> syncPurchaseOrderForSmartPlus(String orderNumber) async {
+    final normalizedOrderNumber = orderNumber.trim();
+    if (!isConfigured || normalizedOrderNumber.isEmpty) {
+      _lastError = 'The supplier order cannot be synced before business setup is complete.';
+      notifyListeners();
+      return false;
+    }
+    if (!_initialCloudRestoreVerified) {
+      _lastError =
+          'Waiting for the first cloud restore before syncing this supplier order.';
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      final snapshot = await readLocalDataSafely<Map<String, dynamic>>(() async {
+        final db = DatabaseService();
+        final order = await db.getPurchaseOrderByNumber(normalizedOrderNumber);
+        if (order == null || order.id == null) {
+          throw StateError('Supplier order $normalizedOrderNumber was not found on this device.');
+        }
+
+        final supplier = await db.getSupplierById(order.supplierId);
+        if (supplier == null) {
+          throw StateError('The supplier for $normalizedOrderNumber was not found.');
+        }
+
+        final productsById = <int, Product>{};
+        for (final item in order.items) {
+          final product = await db.getProductById(item.productId);
+          if (product == null) {
+            throw StateError('Product ${item.productName} is missing from inventory.');
+          }
+          productsById[item.productId] = product;
+        }
+
+        final restocks = await db.getAllRestockRecords();
+        final linkedRestocks = restocks
+            .where(
+              (record) => record.referencedBy.toLowerCase().contains(
+                normalizedOrderNumber.toLowerCase(),
+              ),
+            )
+            .toList(growable: false);
+        final pendingVersions = await db.pendingPurchaseOrderVersions();
+
+        return {
+          'pendingVersions': pendingVersions.containsKey(order.orderNumber)
+              ? <String, int>{
+                  order.orderNumber: pendingVersions[order.orderNumber]!,
+                }
+              : <String, int>{},
+          'payload': <String, dynamic>{
+            'businessId': _businessId,
+            'products': productsById.values.map(_productSyncRecord).toList(),
+            'suppliers': [_supplierSyncRecord(supplier)],
+            'purchaseOrders': [_purchaseOrderSyncRecord(order)],
+            'purchaseOrderItems': order.items
+                .map((item) => _purchaseOrderItemSyncRecord(order, item))
+                .toList(),
+            'restockRecords': linkedRestocks
+                .map(_restockRecordSyncRecord)
+                .toList(),
+          },
+        };
+      });
+
+      await _api.postJson(
+        'sync/push',
+        body: Map<String, dynamic>.from(snapshot['payload'] as Map),
+      );
+      final pendingVersions = Map<String, int>.from(
+        snapshot['pendingVersions'] as Map,
+      );
+      if (pendingVersions.isNotEmpty) {
+        await DatabaseService().acknowledgePurchaseOrderVersions(
+          pendingVersions,
+        );
+      }
+      _lastSyncTime = DateTime.now();
+      await _saveSyncState();
+      notifyListeners();
+      debugPrint('SmartPlus synced supplier order $normalizedOrderNumber');
+      return true;
+    } catch (error) {
+      _lastError = safeApiError(error);
+      debugPrint(
+        'Unable to sync SmartPlus supplier order $normalizedOrderNumber: $error',
+      );
+      await _scheduleRetry();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Map<String, dynamic> _productSyncRecord(Product product) => {
+    'id': product.id.toString(),
+    'business_id': _businessId,
+    'name': product.name,
+    'barcode': product.barcode,
+    'description': product.description,
+    'buying_price': product.buyingPrice,
+    'category': product.category,
+    'selling_price': product.sellingPrice,
+    'quantity': product.quantity,
+    'image_path': product.imagePath,
+    'low_stock_threshold': product.reorderLevel,
+    'shoe_sizes': product.shoeSizes == null
+        ? null
+        : jsonEncode(product.shoeSizes!.map((size) => size.toMap()).toList()),
+    'size_type': product.sizeType,
+    'expiration_date': product.expirationDate?.toIso8601String(),
+    'created_at': product.createdAt.toIso8601String(),
+    'updated_at': DateTime.now().toIso8601String(),
+  };
+
+  Map<String, dynamic> _supplierSyncRecord(Supplier supplier) => {
+    'id': supplier.id.toString(),
+    'business_id': _businessId,
+    'name': supplier.name,
+    'contact_person': supplier.contactPerson,
+    'email': supplier.email,
+    'phone': supplier.phone,
+    'address': supplier.address,
+    'notes': supplier.notes,
+    'is_active': supplier.isActive,
+    'created_at': supplier.createdAt.toIso8601String(),
+  };
+
+  Map<String, dynamic> _purchaseOrderSyncRecord(PurchaseOrder order) => {
+    'id': order.id.toString(),
+    'business_id': _businessId,
+    'supplier_id': order.supplierId.toString(),
+    'order_number': order.orderNumber,
+    'order_date': order.orderDate.toIso8601String(),
+    'expected_delivery': order.expectedDeliveryDate?.toIso8601String(),
+    'status': order.status,
+    'total_amount': order.totalAmount,
+    'notes': order.notes,
+    'created_by': order.approvedBy ?? 'system',
+    'created_at': order.orderDate.toIso8601String(),
+  };
+
+  Map<String, dynamic> _purchaseOrderItemSyncRecord(
+    PurchaseOrder order,
+    PurchaseOrderItem item,
+  ) => {
+    'business_id': _businessId,
+    'purchase_order_id': order.id.toString(),
+    'order_id': order.id.toString(),
+    'product_id': item.productId.toString(),
+    'product_name': item.productName,
+    'quantity': item.quantity,
+    'received_quantity': item.receivedQuantity,
+    'unit_price': item.unitPrice,
+    'total_price': item.totalPrice,
+  };
+
+  Map<String, dynamic> _restockRecordSyncRecord(RestockRecord record) => {
+    'business_id': _businessId,
+    'product_id': record.productId.toString(),
+    'product_name': record.productName,
+    'quantity': record.quantity,
+    'supplier_id': record.supplierId?.toString(),
+    'supplier_name': record.supplierName,
+    'delivery_receipt_no': record.deliveryReceiptNo,
+    'damage_quantity': record.damageQuantity,
+    'damage_reason': record.damageReason,
+    'notes': record.notes,
+    'referenced_by': record.referencedBy,
+    'restock_date': record.restockDate.toIso8601String(),
+  };
 
   /// Coalesce concurrent startup restores. This prevents overlapping SQLite
   /// writes and makes every caller wait for the same verified restore.

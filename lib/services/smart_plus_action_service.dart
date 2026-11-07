@@ -165,3 +165,23 @@ SmartPlusActionDraft? actionForSmartPlusNotification(
   }
   return null;
 }
+
+/// An executed server action is a durable completion record. Its evidence
+/// message can change on a later refresh (for example when delivery dates or
+/// stock quantities are normalized), so completion must be linked by the
+/// stable source notification ID rather than by the old message text.
+bool hasCompletedActionForSmartPlusNotification(
+  SmartPlusNotification notification,
+  Iterable<SmartPlusActionDraft> actions,
+) {
+  for (final action in actions) {
+    if (action.status != 'executed') {
+      continue;
+    }
+    final sourceId = action.proposal['sourceNotificationId']?.toString();
+    if (sourceId == notification.id) {
+      return true;
+    }
+  }
+  return false;
+}

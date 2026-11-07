@@ -41,10 +41,15 @@ import 'services/backend_config.dart';
 import 'services/backend_server_resolver.dart';
 import 'services/google_auth_service.dart';
 import 'services/supabase_sync_service.dart';
+import 'services/product_image_recovery_service.dart';
 import 'screens/shared/trial_locked_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Run before the longer startup sequence. If Android had reclaimed an older
+  // external camera flow, retain its result for the next Add Product form.
+  await ProductImageRecoveryService.recoverLostProductImage();
 
   debugPrint('✅ Backend auth and sync initialized via REST API');
   if (BackendConfig.googleWebClientId.isEmpty) {

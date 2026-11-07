@@ -386,9 +386,11 @@ class SmartPlusNotificationService extends ChangeNotifier {
   static const _preferencesKey = 'smartplus_notification_preferences_v1';
   static const _reviewedKey = 'smartplus_reviewed_suggestions_v1';
   static const _feedbackKey = 'smartplus_suggestion_feedback_v1';
+  static const _snoozedKey = 'smartplus_snoozed_suggestions_v1';
   final POSService _pos;
   final Set<String> _readIds = <String>{};
   final Set<String> _reviewedIds = <String>{};
+  final Map<String, DateTime> _snoozedUntil = <String, DateTime>{};
   final Map<String, DateTime> _detectedAtByNotification = <String, DateTime>{};
   final Map<String, String> _feedbackByNotification = <String, String>{};
   final Map<String, SmartPlusNotification> _milestones =
@@ -418,16 +420,24 @@ class SmartPlusNotificationService extends ChangeNotifier {
   List<SmartPlusNotification> get notifications =>
       List.unmodifiable(_notifications);
 
-  /// The bell represents work that still needs the owner's attention.
-  /// A confirmed review is persisted, while a transient "read" state is not,
-  /// so always exclude reviewed suggestions here as well.
+  /// The bell represents unresolved, owner-actionable work only. Informational
+  /// context and completed milestones never inflate the urgent-work count.
   int get unreadCount => _notifications
-      .where((item) => !item.isRead && !_reviewedIds.contains(item.id))
+      .where(
+        (item) =>
+            item.requiresOwnerConfirmation &&
+            !item.isRead &&
+            !_reviewedIds.contains(item.id),
+      )
       .length;
   SmartPlusNotificationPreferences get preferences => _preferences;
   SmartPlusDataTrust get dataTrust => _dataTrust;
   SmartPlusDailyBrief get dailyBrief => _dailyBrief;
   bool isReviewed(String id) => _reviewedIds.contains(id);
+  bool isSnoozed(String id) {
+    final until = _snoozedUntil[id];
+    return until != null && until.isAfter(DateTime.now());
+  }
   String? feedbackFor(String notificationId) =>
       _feedbackByNotification[notificationId];
 
@@ -444,6 +454,22 @@ class SmartPlusNotificationService extends ChangeNotifier {
       }
     }
     _reviewedIds.addAll(prefs.getStringList(_reviewedKey) ?? const []);
+    final rawSnoozes = prefs.getString(_snoozedKey);
+    if (rawSnoozes != null) {
+      try {
+        final decoded = Map<String, dynamic>.from(
+          jsonDecode(rawSnoozes) as Map,
+        );
+        for (final entry in decoded.entries) {
+          final until = DateTime.tryParse(entry.value.toString());
+          if (until != null && until.isAfter(DateTime.now())) {
+            _snoozedUntil[entry.key] = until;
+          }
+        }
+      } catch (_) {
+        // Snoozes are optional and a malformed cache is safe to ignore.
+      }
+    }
     final rawFeedback = prefs.getString(_feedbackKey);
     if (rawFeedback != null) {
       try {
@@ -530,6 +556,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
       (id, _) => !visible.any((notification) => notification.id == id),
     );
 
+    _snoozedUntil.removeWhere((_, until) => !until.isAfter(DateTime.now()));
     _notifications =
         visible
             .map(
@@ -651,6 +678,17 @@ class SmartPlusNotificationService extends ChangeNotifier {
     refresh();
   }
 
+  /// Opening the inbox acknowledges informational context automatically. It
+  /// does not hide or acknowledge warnings and critical operational work.
+  void markInformationalRead() {
+    _readIds.addAll(
+      _notifications
+          .where((item) => item.level == SmartPlusNotificationLevel.info)
+          .map((item) => item.id),
+    );
+    _applyVisibleNotifications();
+  }
+
   void markRead(String id) {
     _readIds.add(id);
     refresh();
@@ -664,6 +702,25 @@ class SmartPlusNotificationService extends ChangeNotifier {
     refresh();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(_reviewedKey, _reviewedIds.toList());
+  }
+
+  /// Optional suggestions may be dismissed; critical alerts intentionally
+  /// cannot be dismissed because their underlying business record is still
+  /// unresolved.
+  Future<void> dismissOptional(String id) => confirmOwnerReview(id);
+
+  Future<void> snooze(String id, Duration duration) async {
+    _snoozedUntil[id] = DateTime.now().add(duration);
+    _applyVisibleNotifications();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _snoozedKey,
+      jsonEncode(
+        _snoozedUntil.map(
+          (key, until) => MapEntry(key, until.toIso8601String()),
+        ),
+      ),
+    );
   }
 
   /// Feedback is tenant-scoped and owner-only on the backend. It is used for
@@ -701,6 +758,7 @@ class SmartPlusNotificationService extends ChangeNotifier {
   }
 
   bool _shouldShowNotification(SmartPlusNotification notification) {
+    if (isSnoozed(notification.id)) return false;
     int rank(SmartPlusNotificationLevel value) => switch (value) {
       SmartPlusNotificationLevel.info => 0,
       SmartPlusNotificationLevel.warning => 1,

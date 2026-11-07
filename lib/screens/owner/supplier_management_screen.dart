@@ -12,6 +12,7 @@ import '../../services/backend_api_service.dart';
 import '../../services/purchase_order_pdf_service.dart';
 import '../../services/smart_plus_action_service.dart';
 import '../../services/smart_plus_notification_service.dart';
+import '../../services/supabase_sync_service.dart';
 import '../../services/damage_return_pdf_service.dart';
 import '../../utils/app_localizations.dart';
 import '../../widgets/signature_pad.dart';
@@ -143,6 +144,16 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen>
     }
     setState(() => _finishingSmartPlus = true);
     try {
+      final sync = GetIt.I<SupabaseSyncService>();
+      final synced = await sync.syncPurchaseOrderForSmartPlus(
+        order.orderNumber,
+      );
+      if (!synced) {
+        throw StateError(
+          sync.lastError ??
+              'The approved supplier order could not be synced yet.',
+        );
+      }
       await SmartPlusActionService().execute(actionId);
       if (!mounted) return;
       Navigator.pop(

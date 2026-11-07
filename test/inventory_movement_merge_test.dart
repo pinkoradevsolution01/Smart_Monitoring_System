@@ -47,12 +47,21 @@ void main() {
     );
   });
 
-  test('conflicting local and cloud IDs fail without erasing history', () {
+  test('conflicting local and cloud IDs preserve both movement histories', () {
     final local = [movement(10, 'SAL24', -24)];
-    expect(
-      () => mergeInventoryMovements(local, [movement(10, 'OTHER', -2)]),
-      throwsStateError,
+    final merged = mergeInventoryMovements(
+      local,
+      [movement(10, 'OTHER', -2)],
     );
+
     expect(local.single['reference'], 'SAL24');
+    expect(merged, hasLength(2));
+    expect(merged[0]['id'], 10);
+    expect(merged[1]['id'], isNot(10));
+    expect(merged[1]['reference'], 'OTHER');
+    expect(
+      mergeInventoryMovements(merged, [movement(10, 'OTHER', -2)]),
+      hasLength(2),
+    );
   });
 }

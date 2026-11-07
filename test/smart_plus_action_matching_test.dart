@@ -43,6 +43,24 @@ void main() {
     );
   });
 
+  test('completed supplier workflow remains linked when evidence wording changes', () {
+    expect(
+      hasCompletedActionForSmartPlusNotification(notification, [
+        action(message: 'Delivery wording was refreshed.'),
+      ]),
+      isTrue,
+    );
+  });
+
+  test('a completed workflow for another alert is never linked', () {
+    expect(
+      hasCompletedActionForSmartPlusNotification(notification, [
+        action(sourceId: 'another-alert'),
+      ]),
+      isFalse,
+    );
+  });
+
   test('same title on a different alert does not match', () {
     expect(
       actionForSmartPlusNotification(notification, [
