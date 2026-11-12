@@ -256,13 +256,16 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                   ),
                   child: Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           Icon(Icons.payment, color: Colors.orange.shade700),
-                          const SizedBox(width: 8),
                           Text(
                             'PAYMENT SETTLEMENT REQUIRED',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -326,13 +329,16 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                       padding: const EdgeInsets.all(20.0),
                       child: Column(
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
                             children: [
                               Icon(Icons.vpn_key, color: Colors.blue.shade700),
-                              const SizedBox(width: 8),
                               const Text(
                                 'Enter Activation Code',
+                                textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -415,8 +421,10 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 4,
+                            runSpacing: 2,
                             children: [
                               TextButton.icon(
                                 onPressed: _contactSupport,
@@ -455,11 +463,13 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                         children: [
                           Icon(Icons.info_outline, color: Colors.blue[700]),
                           const SizedBox(width: 8),
-                          Text(
-                            'How to Settle Payment and Unlock',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[700],
+                          Expanded(
+                            child: Text(
+                              'How to Settle Payment and Unlock',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[700],
+                              ),
                             ),
                           ),
                         ],
@@ -487,14 +497,16 @@ class _TrialLockedScreenState extends State<TrialLockedScreen> {
                   ),
                   child: Column(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           Icon(
                             Icons.contact_support,
                             color: Colors.green.shade700,
                           ),
-                          const SizedBox(width: 8),
                           Text(
                             'Sales Support',
                             style: TextStyle(
