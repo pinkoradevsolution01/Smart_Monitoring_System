@@ -117,7 +117,7 @@ class LicenseService extends ChangeNotifier {
 
     // MONTHLY RENTAL: Check if subscription has expired
     if (_subscriptionExpires != null &&
-        DateTime.now().isAfter(_subscriptionExpires!)) {
+        !DateTime.now().isBefore(_subscriptionExpires!)) {
       _isLocked = true;
       if (!wasLocked) {
         debugPrint(
@@ -159,7 +159,7 @@ class LicenseService extends ChangeNotifier {
 
     // Check if in free trial mode
     if (_subscriptionMode == 'free_trial') {
-      if (_trialExpires != null && DateTime.now().isAfter(_trialExpires!)) {
+      if (_trialExpires != null && !DateTime.now().isBefore(_trialExpires!)) {
         // Trial has expired - lock the app
         _isLocked = true;
         if (!wasLocked) {
@@ -591,7 +591,7 @@ class LicenseService extends ChangeNotifier {
     }
 
     final now = DateTime.now();
-    if (now.isAfter(_trialExpires!)) {
+    if (!now.isBefore(_trialExpires!)) {
       return 0;
     }
 
@@ -605,7 +605,7 @@ class LicenseService extends ChangeNotifier {
     }
 
     final now = DateTime.now();
-    if (now.isAfter(_trialExpires!)) {
+    if (!now.isBefore(_trialExpires!)) {
       return 0;
     }
 
@@ -625,7 +625,7 @@ class LicenseService extends ChangeNotifier {
     }
 
     final now = DateTime.now();
-    if (now.isAfter(_subscriptionExpires!)) {
+    if (!now.isBefore(_subscriptionExpires!)) {
       return 0;
     }
 
@@ -639,7 +639,7 @@ class LicenseService extends ChangeNotifier {
     }
 
     final now = DateTime.now();
-    if (now.isAfter(_subscriptionExpires!)) {
+    if (!now.isBefore(_subscriptionExpires!)) {
       return 0;
     }
 
@@ -655,14 +655,14 @@ class LicenseService extends ChangeNotifier {
   /// Check if lock is due to subscription expiry (not trial expiry)
   bool isSubscriptionExpired() {
     return _subscriptionExpires != null &&
-        DateTime.now().isAfter(_subscriptionExpires!);
+        !DateTime.now().isBefore(_subscriptionExpires!);
   }
 
   /// Check if lock is due to trial expiry (not subscription expiry)
   bool isTrialExpired() {
     return _subscriptionMode == 'free_trial' &&
         _trialExpires != null &&
-        DateTime.now().isAfter(_trialExpires!);
+        !DateTime.now().isBefore(_trialExpires!);
   }
 
   /// Fetch all used activation codes from Supabase (admin/developer only)

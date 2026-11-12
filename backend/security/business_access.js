@@ -21,7 +21,7 @@ async function activeEntitlementForOwner(ownerEmail) {
         AND r.status = 'fulfilled'
         AND c.status = 'used'
         AND s.status = 'active'
-        AND (s.expires_at IS NULL OR s.expires_at >= NOW())
+        AND (s.expires_at IS NULL OR s.expires_at > NOW())
       ORDER BY s.activated_at DESC
       LIMIT 1`,
     [normalizedEmail],
@@ -101,7 +101,7 @@ function requireFinancialReporting(req, res, next) {
   const packageName = String(req.businessContext?.subscriptionPackage || '').trim().toLowerCase();
   const validPackages = new Set(['standard', 'premium', 'enterprise']);
   const expiry = req.businessContext?.subscriptionExpiresAt;
-  const expired = expiry && new Date(expiry).getTime() < Date.now();
+  const expired = expiry && new Date(expiry).getTime() <= Date.now();
   if (!validPackages.has(packageName) || expired) {
     return res.status(403).json({
       success: false,

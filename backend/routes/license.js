@@ -155,7 +155,7 @@ router.post('/activate', async (req, res) => {
     if (codeRow.status === 'revoked') {
       return res.status(400).json({ success: false, message: 'This activation code has been revoked.' });
     }
-    if (codeRow.expires_at && new Date(codeRow.expires_at).getTime() < Date.now()) {
+    if (codeRow.expires_at && new Date(codeRow.expires_at).getTime() <= Date.now()) {
       return res.status(400).json({
         success: false,
         message: 'This activation code expired 24 hours after it was emailed.',
@@ -262,7 +262,7 @@ router.post('/status', async (req, res) => {
       [code, deviceId],
     );
     const record = rows[0];
-    const expired = record?.expires_at && new Date(record.expires_at).getTime() < Date.now();
+    const expired = record?.expires_at && new Date(record.expires_at).getTime() <= Date.now();
     const active = Boolean(
       record &&
       record.code_status === 'used' &&

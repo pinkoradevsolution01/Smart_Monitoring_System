@@ -181,16 +181,31 @@ class SmartStoreApp extends StatefulWidget {
   State<SmartStoreApp> createState() => _SmartStoreAppState();
 }
 
-class _SmartStoreAppState extends State<SmartStoreApp> {
+class _SmartStoreAppState extends State<SmartStoreApp>
+    with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Listen for license changes and auto-lock when trial expires
     _setupLicenseListener();
     // Initialize deep-link listener (Supabase reset links -> app)
     _initDeepLinkListener();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state != AppLifecycleState.resumed ||
+        !GetIt.I.isRegistered<LicenseService>()) {
+      return;
+    }
+    // A business may expire while the device is in the background. Re-check
+    // immediately upon return instead of leaving the previous dashboard open
+    // until the five-minute background interval runs again.
+    unawaited(GetIt.I<LicenseService>().forceCheck());
   }
 
   StreamSubscription? _sub;
@@ -227,6 +242,7 @@ class _SmartStoreAppState extends State<SmartStoreApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     super.dispose();
   }
