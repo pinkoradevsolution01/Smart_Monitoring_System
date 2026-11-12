@@ -21,6 +21,7 @@ import 'attendance_service.dart';
 import 'user_service.dart';
 import 'package_service.dart';
 import 'business_info_service.dart';
+import 'license_service.dart';
 
 /// Comprehensive cloud sync service for Supabase integration
 /// Syncs all business data: products, sales, inventory, purchases, suppliers, etc.
@@ -229,6 +230,12 @@ class SupabaseSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Error initializing business: $e');
       _lastError = e.toString();
+      if (LicenseService.isServerEntitlementFailure(e) &&
+          GetIt.I.isRegistered<LicenseService>()) {
+        // The backend is authoritative. An explicit inactive-subscription
+        // response must lock cached dashboard data immediately.
+        await GetIt.I<LicenseService>().lockFromServerEntitlementFailure();
+      }
       rethrow;
     }
   }
@@ -396,6 +403,12 @@ class SupabaseSyncService extends ChangeNotifier {
     } catch (e) {
       debugPrint('❌ Backup failed: $e');
       _lastError = safeApiError(e);
+      if (LicenseService.isServerEntitlementFailure(e) &&
+          GetIt.I.isRegistered<LicenseService>()) {
+        // A sync failure can be the first authoritative signal after a stale
+        // session. Lock immediately instead of retrying an inactive tenant.
+        await GetIt.I<LicenseService>().lockFromServerEntitlementFailure();
+      }
       _finishSync();
       await _scheduleRetry();
       notifyListeners();
@@ -689,6 +702,12 @@ class SupabaseSyncService extends ChangeNotifier {
       debugPrintStack(stackTrace: stackTrace, label: 'Restore failure stack');
       debugPrint('❌ Restore failed: $e');
       _lastError = safeApiError(e);
+      if (LicenseService.isServerEntitlementFailure(e) &&
+          GetIt.I.isRegistered<LicenseService>()) {
+        // A restore is commonly the first secured backend request after app
+        // startup. It must turn an expired entitlement into System Locked.
+        await GetIt.I<LicenseService>().lockFromServerEntitlementFailure();
+      }
       _finishSync();
       notifyListeners();
       return false;

@@ -451,7 +451,7 @@ class _SmartStoreAppState extends State<SmartStoreApp>
                   Icon(Icons.lock_clock, color: Colors.red.shade700, size: 32),
                   const SizedBox(width: 12),
                   const Text(
-                    'Trial Expired',
+                    'System Locked',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Colors.red,
@@ -464,12 +464,12 @@ class _SmartStoreAppState extends State<SmartStoreApp>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Your free trial period has ended.',
+                    'Your subscription is expired, cancelled, revoked, or inactive.',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'The system is now locked and all features are disabled.',
+                          'The system is locked and all business features are disabled.',
                     style: TextStyle(fontSize: 14),
                   ),
                   const SizedBox(height: 12),

@@ -61,6 +61,13 @@ router.post('/init', async (req, res) => {
       });
     }
     const entitlement = await activeEntitlementForEmail(normalizedEmail);
+    if (!entitlement) {
+      return res.status(403).json({
+        success: false,
+        code: 'subscription_inactive',
+        message: 'This business subscription is inactive, cancelled, revoked, or expired.',
+      });
+    }
 
     // A device can retain a business ID from a previous owner. The authenticated
     // owner email is canonical and always wins over cached client state.

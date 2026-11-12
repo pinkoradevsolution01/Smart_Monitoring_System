@@ -42,6 +42,28 @@ class LicenseService extends ChangeNotifier {
   String? get activationCode => _activationCode;
   String? get subscriptionMode => _subscriptionMode;
 
+  /// Matches only the backend's explicit expired/cancelled/revoked
+  /// subscription response. Other authorization or network errors never lock
+  /// a device automatically.
+  static bool isServerEntitlementFailure(Object error) {
+    final message = error.toString().toLowerCase();
+    return error is ApiException &&
+        error.statusCode == 403 &&
+        (message.contains('subscription is inactive') ||
+            message.contains('subscription_inactive') ||
+            message.contains('subscription is expired') ||
+            message.contains('subscription has expired') ||
+            message.contains('subscription is cancelled') ||
+            message.contains('subscription is revoked'));
+  }
+
+  /// Persists a lock after the server confirms this device's business no
+  /// longer has an active subscription. The UI listener then opens System
+  /// Locked instead of leaving cached dashboard data usable.
+  Future<void> lockFromServerEntitlementFailure() async {
+    await _lockRevokedActivation();
+  }
+
   /// Initialize the service and check current license status
   Future<void> initialize() async {
     // Initialize device fingerprint
